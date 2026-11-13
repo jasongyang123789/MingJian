@@ -20,6 +20,7 @@ from planagent.services.pipeline import PhaseOnePipelineService
 from planagent.services.platform_topology import PlatformTopologyService
 from planagent.services.runtime import RuntimeMonitorService
 from planagent.services.simulation import SimulationService
+from planagent.services.skills.service import SkillDeliberationService
 from planagent.services.workbench import WorkbenchService
 from planagent.simulation.rules import get_rule_registry
 from planagent.simulation.domain_packs import registry as domain_pack_registry
@@ -34,6 +35,7 @@ _CACHED_SERVICE_ATTRS = (
     "runtime_monitor_service",
     "platform_topology_service",
     "assistant_service",
+    "skill_service",
 )
 _last_app_state = None
 _fallback_services_state = type("_FallbackServicesState", (), {})()
@@ -85,6 +87,8 @@ def _cache_business_services(state: object) -> None:
             debate_workflow=state.debate_service.workflow,
             workbench_service=state.workbench_service,
         )
+    if not hasattr(state, "skill_service"):
+        state.skill_service = SkillDeliberationService(settings, state.openai_service)
 
 
 def _get_state_or_fallback() -> object:
@@ -154,6 +158,15 @@ def get_debate_service(request: Request) -> DebateService:
 def get_debate_workflow(request: Request) -> DebateWorkflow:
     """Return the canonical debate workflow shared by routes and workers."""
     return get_debate_service(request).workflow
+
+
+def get_skill_service(request: Request) -> SkillDeliberationService:
+    ensure_app_services(request)
+    if not hasattr(request.app.state, "skill_service"):
+        request.app.state.skill_service = SkillDeliberationService(
+            get_settings(), request.app.state.openai_service
+        )
+    return request.app.state.skill_service  # type: ignore[no-any-return]  # app.state 动态属性
 
 
 def get_workbench_service() -> WorkbenchService:
