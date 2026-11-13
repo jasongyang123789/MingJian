@@ -26,7 +26,7 @@ same evidence set even when new claims arrived after the original run.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 #: Configuration key holding the firewall fragment on a run.
@@ -52,7 +52,7 @@ def normalize_cutoff(value: datetime) -> datetime:
     """
 
     if value.tzinfo is not None:
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.astimezone(UTC).replace(tzinfo=None)
     return value
 
 
@@ -114,7 +114,11 @@ def firewall_cutoff_from_configuration(
     if fragment is None:
         return None, None
     if not isinstance(fragment, dict):
-        raise ValueError("Hindsight firewall fragment must be an object.")
+        # A corrupt stored fragment is a data error, mapped to 400 by
+        # the audit route; TypeError would 500.
+        raise ValueError(  # noqa: TRY004
+            "Hindsight firewall fragment must be an object."
+        )
     decision_time = fragment.get("decision_time")
     if not isinstance(decision_time, str) or not decision_time:
         raise ValueError("Hindsight firewall fragment is missing decision_time.")

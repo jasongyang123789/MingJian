@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from planagent.api.routes.analysis import router as analysis_router
 from planagent.api.routes.agents import router as agents_router
+from planagent.api.routes.calibration import router as calibration_router
 from planagent.api.routes.debate_votes import router as debate_votes_router
 from planagent.api.routes.debate_replay import router as debate_replay_router
 from planagent.api.routes.debate_interrupt import router as debate_interrupt_router
@@ -41,6 +42,7 @@ router.include_router(admin_router, tags=["Admin"])
 router.include_router(monitoring_router)
 router.include_router(prediction_router)
 router.include_router(robustness_router, tags=["Robustness"])
+router.include_router(calibration_router, tags=["Calibration"])
 router.include_router(sources_router)
 router.include_router(auth_router)
 router.include_router(export_router, dependencies=[Depends(get_community_access_payload)])

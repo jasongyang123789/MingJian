@@ -66,22 +66,16 @@ def _require_finite_matrix(
     features: list[list[float]], target: list[float], prior: list[float]
 ) -> tuple[list[list[float]], list[float], list[float]]:
     if len(features) < 2:
-        raise ValueError(
-            f"Ridge fit requires at least 2 observations; got {len(features)}."
-        )
+        raise ValueError(f"Ridge fit requires at least 2 observations; got {len(features)}.")
     if len(features) != len(target):
-        raise ValueError(
-            f"Feature rows ({len(features)}) and targets ({len(target)}) must align."
-        )
+        raise ValueError(f"Feature rows ({len(features)}) and targets ({len(target)}) must align.")
     width = len(prior)
     if width < 1:
         raise ValueError("Ridge fit requires at least one coefficient.")
     rows: list[list[float]] = []
     for row in features:
         if len(row) != width:
-            raise ValueError(
-                f"Feature rows must all have {width} columns; got {len(row)}."
-            )
+            raise ValueError(f"Feature rows must all have {width} columns; got {len(row)}.")
         values = [float(value) for value in row]
         if not all(math.isfinite(value) for value in values):
             raise ValueError("Ridge fit requires finite feature values.")
@@ -111,8 +105,7 @@ def _solve_linear_system(matrix: list[list[float]], rhs: list[float]) -> list[fl
         pivot = max(range(column, n), key=lambda row: abs(augmented[row][column]))
         if abs(augmented[pivot][column]) < 1e-12:
             raise ValueError(
-                "Ridge system is singular; increase ridge_strength or "
-                "remove collinear features."
+                "Ridge system is singular; increase ridge_strength or remove collinear features."
             )
         augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
         pivot_value = augmented[column][column]
@@ -124,9 +117,7 @@ def _solve_linear_system(matrix: list[list[float]], rhs: list[float]) -> list[fl
                 augmented[row][j] -= factor * augmented[column][j]
     solution = [0.0] * n
     for i in range(n - 1, -1, -1):
-        residual = augmented[i][n] - sum(
-            augmented[i][j] * solution[j] for j in range(i + 1, n)
-        )
+        residual = augmented[i][n] - sum(augmented[i][j] * solution[j] for j in range(i + 1, n))
         solution[i] = residual / augmented[i][i]
     return solution
 
@@ -233,8 +224,7 @@ def leave_one_out_rmse(
             clip_nonnegative=clip_nonnegative,
         )
         predicted = sum(
-            coefficient * value
-            for coefficient, value in zip(coefficients, features[position])
+            coefficient * value for coefficient, value in zip(coefficients, features[position])
         )
         squared_errors.append((predicted - float(target[position])) ** 2)
     return math.sqrt(sum(squared_errors) / len(squared_errors))
@@ -317,7 +307,9 @@ def _worst_tail(
             return tail
         ordered = sorted(values, reverse=True)
         return ordered[: max(1, math.ceil(len(ordered) / 4))]
-    raise ValueError(f"preferred_direction must be 'increase' or 'decrease'; got {preferred_direction!r}.")
+    raise ValueError(
+        f"preferred_direction must be 'increase' or 'decrease'; got {preferred_direction!r}."
+    )
 
 
 def _ordering_holds(
@@ -480,13 +472,10 @@ def calibrate_rule_weights(
             f"got {len(outcomes)}."
         )
     if len(rule_ids) != len(priors):
-        raise ValueError(
-            f"Rule ids ({len(rule_ids)}) and priors ({len(priors)}) must align."
-        )
+        raise ValueError(f"Rule ids ({len(rule_ids)}) and priors ({len(priors)}) must align.")
     if len(match_counts) != len(outcomes):
         raise ValueError(
-            f"Match-count rows ({len(match_counts)}) and outcomes ({len(outcomes)}) "
-            "must align."
+            f"Match-count rows ({len(match_counts)}) and outcomes ({len(outcomes)}) must align."
         )
     fitted = fit_ridge_to_prior(
         match_counts, outcomes, priors, ridge_strength, clip_nonnegative=True
@@ -501,9 +490,7 @@ def calibrate_rule_weights(
         level=level,
         clip_nonnegative=True,
     )
-    loo = leave_one_out_rmse(
-        match_counts, outcomes, priors, ridge_strength, clip_nonnegative=True
-    )
+    loo = leave_one_out_rmse(match_counts, outcomes, priors, ridge_strength, clip_nonnegative=True)
     changes: dict[str, Any] = {}
     for position, rule_id in enumerate(rule_ids):
         changes[rule_id] = {
@@ -511,9 +498,7 @@ def calibrate_rule_weights(
             "prior_weight": float(priors[position]),
             "fitted_weight": fitted[position],
             "bootstrap": intervals[position],
-            "total_matches": sum(
-                float(row[position]) for row in match_counts
-            ),
+            "total_matches": sum(float(row[position]) for row in match_counts),
         }
     return {
         "weights": {rule_id: fitted[position] for position, rule_id in enumerate(rule_ids)},

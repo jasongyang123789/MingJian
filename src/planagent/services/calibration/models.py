@@ -136,7 +136,9 @@ class FirewallRead(BaseModel):
     exclusion set is exactly the claims the firewall kept out of
     consideration — claims that match neither fetch (wrong subject or
     scope) appear in neither list. ``stored_evidence_ids`` is the
-    execution-time record from the run summary, for completed runs.
+    execution-time record from the run summary: evidence-item ids
+    (a different id space from claim ids), included so the audit can
+    be compared against what the run actually recorded.
     """
 
     model_config = ConfigDict(extra="forbid")

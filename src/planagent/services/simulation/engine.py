@@ -410,9 +410,7 @@ class SimulationEngineMixin:
         # (pre-Sprint-5 rows, direct construction) keep the legacy
         # unfiltered reads; a malformed fragment fails loudly rather
         # than silently leaking hindsight.
-        firewall_cutoff, firewall_source = firewall_cutoff_from_configuration(
-            run.configuration
-        )
+        firewall_cutoff, firewall_source = firewall_cutoff_from_configuration(run.configuration)
         claims = await self._fetch_relevant_claims(session, run, cutoff=firewall_cutoff)
         rules = self.rule_registry.get_rules(run.domain_id)
         matched_rules: list[str] = []
