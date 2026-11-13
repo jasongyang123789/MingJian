@@ -79,6 +79,25 @@ def _stored_bindings(run: SimulationRun) -> VariableSet | None:
     return variable_set if variable_set.variables else None
 
 
+def compare_snapshot_hashes(
+    original_hashes: dict[str, str],
+    replay_hashes: dict[str, str],
+) -> tuple[bool, int | None]:
+    """Compare per-tick state hashes; report the first diverging tick.
+
+    Ticks are compared in numeric order; a tick present on one side only
+    counts as diverging at that tick. Returns ``(match,
+    first_diverging_tick)`` with the tick None when the trajectories
+    match exactly.
+    """
+
+    all_ticks = sorted({*original_hashes, *replay_hashes}, key=int)
+    for tick_key in all_ticks:
+        if original_hashes.get(tick_key) != replay_hashes.get(tick_key):
+            return False, int(tick_key)
+    return True, None
+
+
 class SimulationDistributionsMixin:
     async def run_monte_carlo(
         self,
@@ -300,13 +319,7 @@ class SimulationDistributionsMixin:
         await self._execute_run(session, replay_run)
 
         replay_hashes = await self._snapshot_hashes(session, replay_run.id)
-        first_diverging_tick: int | None = None
-        all_ticks = sorted({*original_hashes, *replay_hashes}, key=int)
-        for tick_key in all_ticks:
-            if original_hashes.get(tick_key) != replay_hashes.get(tick_key):
-                first_diverging_tick = int(tick_key)
-                break
-        match = first_diverging_tick is None
+        match, first_diverging_tick = compare_snapshot_hashes(original_hashes, replay_hashes)
 
         original_input_hash = compute_input_hash(
             domain_id=original.domain_id,

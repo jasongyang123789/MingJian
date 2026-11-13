@@ -76,20 +76,23 @@ def state_hash(state: Mapping[str, Any]) -> str:
 
 
 def derive_sub_seed(seed: int, *labels: str) -> int:
-    """Derive a non-negative 64-bit sub-seed from a seed and string labels.
+    """Derive a non-negative 63-bit sub-seed from a seed and string labels.
 
     The derivation hashes canonical seed material, so the same (seed,
     labels) always yields the same sub-seed and different labels yield
-    (cryptographically) independent streams. Monte Carlo trials derive
-    their per-trial seed from ``(base_seed, "monte-carlo", trial_index)``
-    — the arm is deliberately NOT a label, so baseline/strategy pairs
-    share one RNG stream (see :mod:`sampler`).
+    (cryptographically) independent streams. The result is masked to 63
+    bits so it fits a signed 64-bit ``INTEGER`` column (SQLite and
+    Postgres) when stored as a trial run's seed. Monte Carlo trials
+    derive their per-trial seed from ``(base_seed, "monte-carlo",
+    trial_index)`` — the arm is deliberately NOT a label, so
+    baseline/strategy pairs share one RNG stream (see :mod:`sampler`).
     """
 
     material = canonical_json(
         {"protocol": HASH_PROTOCOL_VERSION, "seed": seed, "labels": list(labels)}
     )
-    return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
+    digest = hashlib.sha256(material.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
 
 
 def compute_input_hash(
