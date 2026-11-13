@@ -1471,3 +1471,33 @@ class PredictionCalibrationContext(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class VariableTemplateRecord(Base):
+    """Stored variable template (Sprint 2, PRD deltas D2/D3).
+
+    A template generalizes the hardcoded domain-pack state defaults and
+    ``_STATE_POLICIES`` thresholds into an editable, stored form: state field
+    defaults, metric policies, an optional variable set, and the
+    internal-situation table. Built-in presets (``builtin:<domain_id>``) are
+    synthesized from pack code and are never stored here.
+    """
+
+    __tablename__ = "variable_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    domain_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    state_fields: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    policies: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    variables: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    internal: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    preset_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
