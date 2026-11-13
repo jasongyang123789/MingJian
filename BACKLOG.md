@@ -64,17 +64,44 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   `0031_calibration_fits`). Gap G5 closed. Tests 912 → 963 passed.
   Report: `SPRINT5.md` (branch `strategy-engine/sprint5-calibration`).
 
-## Sprint 6+ — skill grafts + cockpit UI (next)
+## Sprint 6 — skill grafts (done, PRD delta D9)
 
-- Graft the verified Claude Code strategy skills (mckinsey-strategy-team,
-  5-persona-advisory-board, strategic-partner, gambit) as prompt
-  templates / pipeline stages; prompt/orchestration only, no Claude Code
-  runtime features. Fitted-vs-prior threshold/weight deltas from Sprint 5
-  are structured inputs a deliberation stage can consume.
-- Cockpit UI: MECE authoring, variable-table editing, distribution
-  visualization, living-strategy loop (monitor → re-simulate); fit
-  history + template provenance views and the firewall audit's
-  excluded-claims view need no new backend work (see SPRINT5.md §7).
+- Grafted the verified strategy skills as versioned prompt templates /
+  pipeline stages over the existing LLM adapter: McKinsey
+  strategy-team pipeline (intake → fan-out → generate-and-filter →
+  synthesis → verifier panel; deep mode adds tournament +
+  loop-until-done), 5-persona advisory board (CRIT intake → 5 lenses
+  → forced debate → revisions → decision contract), gambit
+  pre-mortem as a fourth verifier lens, flingjie MECE authoring as a
+  proposal aid only (Sprint 1 validator disposes, unchanged).
+  Strategic-partner skipped (dev-process skill, no deliberation
+  stage maps); gambit decide/options skipped (duplicate coverage);
+  advisory "full" mode unsupported (no research worker wired).
+  Agent-teams adaptation recorded: waves run as sequential stage
+  calls over a shared context store, not parallel agents.
+- 17 templates with provenance + license notes (flingjie: no license
+  declared, structure adapted, wording original); one Pydantic
+  contract per template; stages consume engine artifacts as rendered
+  context (MECE, variables, ensemble, robustness, Sprint 5
+  calibration deltas, firewall cutoff) and write only the
+  append-only `skill_deliberations` summary fragment (no migration).
+  No new LLM client; unavailable LLM is 503, malformed output 502,
+  nothing fabricated. 4 endpoints. Tests 963 → 1085 passed, all
+  without a live LLM call. Live deliberation quality UNVERIFIED
+  (no key). Report: `SPRINT6.md` (branch
+  `strategy-engine/sprint6-skills`).
+
+## Sprint 7 — cockpit UI (next)
+
+- Cockpit UI: MECE authoring (proposal + inline validation issues +
+  re-propose revision path), variable-table editing, distribution
+  visualization, deliberation launcher + results views (shortlist /
+  Pyramid / panel tally / decision contract, veto banners),
+  living-strategy loop (monitor → re-simulate); fit history +
+  template provenance views and the firewall audit's
+  excluded-claims view need no new backend work (see SPRINT5.md §7
+  and SPRINT6.md §7). Surface the 503 unconfigured-LLM state
+  honestly.
 - Decision-direction narrative output (pre-mortems, 48-hour first
   steps, LLM narrative/red-team layer): still deferred; consumes the
   Sprint 4 robustness outputs + Sprint 5 fitted templates, needs LLM
