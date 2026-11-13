@@ -48,22 +48,37 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   graph. Tests 850 → 912 passed. Report: `SPRINT4.md` (branch
   `strategy-engine/sprint4-robustness`).
 
-## Sprint 5 — calibration + deliberation integrity (next, approved enrichment)
+- **Sprint 5 — calibration loop + hindsight firewall (PRD delta D8).**
+  Decision-time evidence cutoff (per saisrikolanu): runs record
+  `decision_time` (explicit, or creation-time default), claim reads
+  filter to `created_at <= decision_time`, the cutoff enters the
+  Sprint 3 input hash so replays reproduce the same evidence set,
+  plus a firewall audit endpoint reporting exactly which claims were
+  kept out. Ridge-to-prior calibration (per jasonrkeen): policy
+  thresholds fit from stored run outcomes and stored as NEW template
+  versions with provenance (source runs, shrinkage, inputs hash;
+  prior never overwritten), rule weights fit from decision-record
+  match counts and applied only through an explicit audited apply
+  step; seeded bootstrap intervals reuse the Sprint 4 primitive;
+  fits recorded in the new `calibration_fits` table (migration
+  `0031_calibration_fits`). Gap G5 closed. Tests 912 → 963 passed.
+  Report: `SPRINT5.md` (branch `strategy-engine/sprint5-calibration`).
 
-- Hindsight firewall (per saisrikolanu): deliberate separation of
-  evidence available at decision time from later outcomes.
-- Ridge-to-prior calibration (per jasonrkeen): shrink heuristic
-  constants toward calibrated priors using stored run outcomes.
-- Gap G5 (uncalibrated heuristic constants) is the target.
-
-## Sprint 6+ — skill grafts + cockpit UI
+## Sprint 6+ — skill grafts + cockpit UI (next)
 
 - Graft the verified Claude Code strategy skills (mckinsey-strategy-team,
   5-persona-advisory-board, strategic-partner, gambit) as prompt
   templates / pipeline stages; prompt/orchestration only, no Claude Code
-  runtime features.
+  runtime features. Fitted-vs-prior threshold/weight deltas from Sprint 5
+  are structured inputs a deliberation stage can consume.
 - Cockpit UI: MECE authoring, variable-table editing, distribution
-  visualization, living-strategy loop (monitor → re-simulate).
+  visualization, living-strategy loop (monitor → re-simulate); fit
+  history + template provenance views and the firewall audit's
+  excluded-claims view need no new backend work (see SPRINT5.md §7).
+- Decision-direction narrative output (pre-mortems, 48-hour first
+  steps, LLM narrative/red-team layer): still deferred; consumes the
+  Sprint 4 robustness outputs + Sprint 5 fitted templates, needs LLM
+  access + presentation design.
 - Product decisions still open: making decomposition/bindings mandatory,
   LLM-assisted decomposition authoring (must pass the same gates).
 
