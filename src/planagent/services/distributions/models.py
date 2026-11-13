@@ -130,3 +130,5 @@ class DeterminismRead(BaseModel):
     state_hashes: dict[str, str] = Field(default_factory=dict)
     sampled_values: dict[str, float] = Field(default_factory=dict)
     sampled_applied: list[str] = Field(default_factory=list)
+    derived_values: dict[str, float] = Field(default_factory=dict)
+    derived_applied: list[str] = Field(default_factory=list)

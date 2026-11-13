@@ -30,6 +30,7 @@ from .sampler import (
     MONTE_CARLO_CONFIGURATION_KEY,
     VARIABLES_CONFIGURATION_KEY,
     resolve_run_samples,
+    resolve_run_values,
     rng_for_seed,
     sample_variable_set,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "paired_delta_stats",
     "percentile",
     "resolve_run_samples",
+    "resolve_run_values",
     "rng_for_seed",
     "sample_variable_set",
     "sha256_hash",

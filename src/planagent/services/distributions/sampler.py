@@ -28,6 +28,7 @@ import random
 from collections.abc import Mapping
 from typing import Any
 
+from planagent.services.variables.formulas import evaluate_formulas
 from planagent.services.variables.models import DistributionType, VariableSet
 from planagent.services.variables.validator import validate_variable_set
 
@@ -114,6 +115,31 @@ def sample_variable_set(
     return sampled
 
 
+def _read_bindings_and_levers(
+    configuration: Mapping[str, Any] | None,
+) -> tuple[VariableSet | None, dict[str, float]]:
+    """Read a run's stored variable bindings and Monte Carlo levers.
+
+    Returns ``(None, {})`` when the run carries no bindings fragment.
+    """
+
+    if not isinstance(configuration, Mapping):
+        return None, {}
+    fragment = configuration.get(VARIABLES_CONFIGURATION_KEY)
+    if not isinstance(fragment, Mapping):
+        return None, {}
+    bindings = fragment.get("bindings")
+    if not isinstance(bindings, Mapping):
+        return None, {}
+    variable_set = VariableSet.model_validate(bindings)
+
+    levers: dict[str, float] = {}
+    monte_carlo = configuration.get(MONTE_CARLO_CONFIGURATION_KEY)
+    if isinstance(monte_carlo, Mapping) and isinstance(monte_carlo.get("levers"), Mapping):
+        levers = dict(monte_carlo["levers"])
+    return variable_set, levers
+
+
 def resolve_run_samples(
     configuration: Mapping[str, Any] | None,
     seed: int,
@@ -126,26 +152,47 @@ def resolve_run_samples(
     configuration. Returns ``(sampled, applied)``: every sampled value,
     and the subset whose variable id matches a state field (those are the
     values the executor applies to the initial state). Runs without
-    bindings sample nothing.
+    bindings sample nothing. Formula evaluation is deliberately out of
+    scope here; see :func:`resolve_run_values`.
     """
 
-    if not isinstance(configuration, Mapping):
+    variable_set, levers = _read_bindings_and_levers(configuration)
+    if variable_set is None or not variable_set.variables:
         return {}, {}
-    fragment = configuration.get(VARIABLES_CONFIGURATION_KEY)
-    if not isinstance(fragment, Mapping):
-        return {}, {}
-    bindings = fragment.get("bindings")
-    if not isinstance(bindings, Mapping):
-        return {}, {}
-    variable_set = VariableSet.model_validate(bindings)
-    if not variable_set.variables:
-        return {}, {}
-
-    levers: dict[str, float] = {}
-    monte_carlo = configuration.get(MONTE_CARLO_CONFIGURATION_KEY)
-    if isinstance(monte_carlo, Mapping) and isinstance(monte_carlo.get("levers"), Mapping):
-        levers = dict(monte_carlo["levers"])
 
     sampled = sample_variable_set(variable_set, rng_for_seed(seed), levers)
     applied = {key: value for key, value in sampled.items() if key in state_keys}
     return sampled, applied
+
+
+def resolve_run_values(
+    configuration: Mapping[str, Any] | None,
+    seed: int,
+    state_keys: set[str],
+) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    """Sample a run's bound variables and evaluate its formula graph.
+
+    Sampling follows :func:`resolve_run_samples` (seeded draws, levers
+    replacing drawn values after the draw is consumed). Formulas then
+    evaluate over the post-lever sampled values, in list order, so
+    strategy levers propagate through derived values — the reference's
+    evaluation order. Returns ``(sampled, derived, applied)``: every
+    sampled value, every derived value, and the subset of both whose id
+    matches a state field (the values the executor applies to the initial
+    state, with the same precedence as sampled values). Runs without
+    bindings or formulas resolve nothing.
+    """
+
+    variable_set, levers = _read_bindings_and_levers(configuration)
+    if variable_set is None or (not variable_set.variables and not variable_set.formulas):
+        return {}, {}, {}
+
+    sampled: dict[str, float] = {}
+    if variable_set.variables:
+        sampled = sample_variable_set(variable_set, rng_for_seed(seed), levers)
+    derived = (
+        evaluate_formulas(variable_set.formulas, sampled) if variable_set.formulas else {}
+    )
+    combined = {**sampled, **derived}
+    applied = {key: value for key, value in combined.items() if key in state_keys}
+    return sampled, derived, applied

@@ -400,10 +400,14 @@ class SimulationDistributionsMixin:
         state_hashes: dict[str, str] = {}
         sampled_values: dict[str, float] = {}
         sampled_applied: list[str] = []
+        derived_values: dict[str, float] = {}
+        derived_applied: list[str] = []
         if isinstance(summary_fragment, dict):
             state_hashes = dict(summary_fragment.get("state_hashes") or {})
             sampled_values = dict(summary_fragment.get("sampled_values") or {})
             sampled_applied = list(summary_fragment.get("sampled_applied") or [])
+            derived_values = dict(summary_fragment.get("derived_values") or {})
+            derived_applied = list(summary_fragment.get("derived_applied") or [])
         if not state_hashes:
             state_hashes = await self._snapshot_hashes(session, run.id)
         return DeterminismRead(
@@ -414,4 +418,6 @@ class SimulationDistributionsMixin:
             state_hashes=state_hashes,
             sampled_values=sampled_values,
             sampled_applied=sampled_applied,
+            derived_values=derived_values,
+            derived_applied=derived_applied,
         )

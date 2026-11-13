@@ -23,7 +23,7 @@ from planagent.domain.models import (
 )
 from planagent.services.distributions import (
     determinism_input_fragment,
-    resolve_run_samples,
+    resolve_run_values,
     state_hash,
 )
 from planagent.services.mece import MeceValidationResult, validate_or_raise
@@ -368,14 +368,15 @@ class SimulationEngineMixin:
             pack, run.actor_template, state_defaults=template_defaults
         )
         # Sprint 3: sample the run's bound variables once, from the run
-        # seed. Sampled values whose variable id matches a state field
-        # override that field's initial value; the explicit initial_state
-        # overlay below keeps precedence over sampled values. Runs without
-        # bindings sample nothing and behave exactly as before.
-        sampled_values, applied_samples = resolve_run_samples(
+        # seed. Sprint 4: evaluate the formula graph over the sampled
+        # values (post-lever). Sampled and derived values whose id matches
+        # a state field override that field's initial value; the explicit
+        # initial_state overlay below keeps precedence over both. Runs
+        # without bindings sample nothing and behave exactly as before.
+        sampled_values, derived_values, applied_values = resolve_run_values(
             run.configuration, run.seed, set(initial_state)
         )
-        initial_state.update(applied_samples)
+        initial_state.update(applied_values)
         initial_state.update(
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
@@ -549,11 +550,14 @@ class SimulationEngineMixin:
             # Sprint 3: determinism audit trail — the input hash recorded
             # at creation, the per-tick state hashes, and the sampled
             # variable values (with the subset applied to the state).
+            # Sprint 4: derived formula values, recorded alongside.
             "determinism": {
                 "input_hash": (run.configuration.get("determinism") or {}).get("input_hash"),
                 "state_hashes": state_hashes,
                 "sampled_values": sampled_values,
-                "sampled_applied": list(applied_samples),
+                "sampled_applied": [key for key in applied_values if key in sampled_values],
+                "derived_values": derived_values,
+                "derived_applied": [key for key in applied_values if key in derived_values],
             },
             "military_tick_summaries": military_tick_summaries
             if run.domain_id == "military"
