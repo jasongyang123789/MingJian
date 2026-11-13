@@ -24,6 +24,7 @@ from planagent.services.simulation_military import MilitaryCombatResolver
 from planagent.simulation.domain_packs import registry
 from planagent.simulation.rules import RuleRegistry, RuleSpec
 
+from .distributions import SimulationDistributionsMixin
 from .domain_packs import SimulationDomainPacksMixin
 from .engine import SimulationEngineMixin
 from .impact import ActionCandidate, RuleScore, SelectedAction, SimulationImpactMixin
@@ -34,6 +35,7 @@ from .scenarios import SimulationScenariosMixin
 class SimulationService(
     SimulationEngineMixin,
     SimulationScenariosMixin,
+    SimulationDistributionsMixin,
     SimulationImpactMixin,
     SimulationReportMixin,
     SimulationDomainPacksMixin,
