@@ -1,0 +1,26 @@
+{
+  "branch_count": 5,
+  "checks": [
+    {
+      "check": "mutual_exclusion",
+      "detail": "4 child branches have pairwise disjoint scope tags",
+      "node": "root",
+      "status": "PASS"
+    },
+    {
+      "check": "exhaustiveness",
+      "detail": "children union equals parent scope, 12 scope tags",
+      "node": "root",
+      "status": "PASS"
+    },
+    {
+      "check": "structure",
+      "detail": "all branch scope lists are non-empty and duplicate-free",
+      "node": "root",
+      "status": "PASS"
+    }
+  ],
+  "is_mece": true,
+  "issues": [],
+  "scope_tag_count": 12
+}
