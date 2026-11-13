@@ -4,6 +4,10 @@
   over a completed run's variable bindings and stores the aggregated
   distributions on the base run's summary (audit trail, not ephemeral).
 - ``GET /runs/{run_id}/monte-carlo`` retrieves the stored ensemble result.
+- ``GET /runs/{run_id}/monte-carlo/trial-values`` returns the per-trial
+  metric values behind the stored ensemble (re-read from the trial run
+  rows, never re-executed), pinned by the same trial-values hash the
+  robustness analyses carry. Read-only exposure for charting.
 - ``POST /runs/{run_id}/replay`` re-executes a run from its stored inputs
   and compares per-tick state hashes, reporting the first diverging tick.
 - ``GET /runs/{run_id}/determinism`` returns the input hash, per-tick
@@ -21,9 +25,11 @@ from planagent.services.distributions.models import (
     DeterminismRead,
     MonteCarloRequest,
     MonteCarloResult,
+    MonteCarloTrialValues,
     ReplayResult,
 )
 from planagent.services.simulation.distributions import MonteCarloError
+from planagent.services.simulation.robustness import RobustnessError
 
 router = APIRouter()
 
@@ -57,6 +63,28 @@ async def get_monte_carlo(
 ) -> MonteCarloResult:
     service = get_simulation_service(request)
     result = await service.get_monte_carlo(session, run_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Simulation run {run_id} was not found or has no Monte Carlo results.",
+        )
+    return result
+
+
+@router.get("/runs/{run_id}/monte-carlo/trial-values", response_model=MonteCarloTrialValues)
+async def get_monte_carlo_trial_values(
+    run_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> MonteCarloTrialValues:
+    service = get_simulation_service(request)
+    try:
+        result = await service.get_monte_carlo_trial_values(session, run_id)
+    except RobustnessError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     if result is None:
         raise HTTPException(
             status_code=404,

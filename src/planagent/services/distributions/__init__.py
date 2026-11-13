@@ -23,6 +23,7 @@ from .models import (
     DistributionSummary,
     MonteCarloRequest,
     MonteCarloResult,
+    MonteCarloTrialValues,
     PairedDeltaSummary,
     ReplayResult,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "DistributionSummary",
     "MonteCarloRequest",
     "MonteCarloResult",
+    "MonteCarloTrialValues",
     "PairedDeltaSummary",
     "ReplayResult",
     "canonical_json",

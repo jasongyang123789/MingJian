@@ -103,6 +103,30 @@ class MonteCarloResult(BaseModel):
     protocol: str
 
 
+class MonteCarloTrialValues(BaseModel):
+    """Per-trial metric values behind a stored ensemble (Sprint 8).
+
+    Read-only exposure for charting: the ensemble fragment stores only
+    trial run ids + summaries, so the histogram needs the values behind
+    the summaries. Values are re-read from the trial run rows' summaries
+    (never re-executed) and pinned by the same trial-values hash the
+    robustness analyses carry, so a chart and an analysis provably share
+    one input set. Trials are paired by index across the two arms, as in
+    ``PairedDeltaSummary``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ensemble_id: str
+    base_run_id: str
+    metric: str
+    loss_threshold: float
+    baseline: list[float]
+    strategy: list[float]
+    trial_values_hash: str
+    protocol: str
+
+
 class ReplayResult(BaseModel):
     """Outcome of re-executing a run from its stored inputs."""
 

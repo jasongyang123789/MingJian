@@ -50,6 +50,7 @@ from planagent.services.distributions.models import (
     DistributionSummary,
     MonteCarloRequest,
     MonteCarloResult,
+    MonteCarloTrialValues,
     PairedDeltaSummary,
     ReplayResult,
 )
@@ -260,6 +261,39 @@ class SimulationDistributionsMixin:
         if not isinstance(fragment, dict):
             return None
         return MonteCarloResult.model_validate(fragment)
+
+    async def get_monte_carlo_trial_values(
+        self,
+        session: AsyncSession,
+        run_id: str,
+    ) -> MonteCarloTrialValues | None:
+        """Per-trial values behind a stored ensemble, for charting (Sprint 8).
+
+        Returns None when the run is missing or has no stored ensemble
+        (the route maps that to 404, like :meth:`get_monte_carlo`). The
+        values are re-read from the trial run rows via the robustness
+        mixin's helpers — the same re-read and the same hash the
+        robustness analyses use — so the hash on this response equals
+        the ``trial_values_hash`` pinned on every robustness result for
+        the ensemble. Nothing is re-executed. A missing trial row raises
+        the robustness mixin's missing-values error, mapped by the route
+        to 400 with its stable code.
+        """
+
+        ensemble = await self.get_monte_carlo(session, run_id)
+        if ensemble is None:
+            return None
+        baseline, strategy = await self._trial_values_for_ensemble(session, ensemble)
+        return MonteCarloTrialValues(
+            ensemble_id=ensemble.ensemble_id,
+            base_run_id=ensemble.base_run_id,
+            metric=ensemble.metric,
+            loss_threshold=ensemble.loss_threshold,
+            baseline=baseline,
+            strategy=strategy,
+            trial_values_hash=self._trial_values_hash(ensemble, baseline, strategy),
+            protocol=HASH_PROTOCOL_VERSION,
+        )
 
     async def replay_simulation_run(
         self,
