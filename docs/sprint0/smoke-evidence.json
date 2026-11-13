@@ -1,0 +1,202 @@
+{
+  "steps": [
+    {
+      "step": "GET /health",
+      "status": 200,
+      "body": {
+        "status": "ok"
+      }
+    },
+    {
+      "step": "POST /ingest/runs",
+      "status": 201,
+      "body": {
+        "id": "e86bb25b-a94f-4afc-aa65-b3c514f3104e",
+        "requested_by": "agent-startup-playbook",
+        "execution_mode": "INLINE",
+        "status": "COMPLETED",
+        "source_types": [
+          "case-study",
+          "ops",
+          "product",
+          "research"
+        ],
+        "request_payload": {
+          "items": [
+            {
+              "source_type": "research",
+              "source_url": "https://example.com/agent-market/pwc-enterprise-adoption",
+              "title": "Enterprise buyers are experimenting with AI agents, but buying friction remains high",
+              "content_text": "Enterprise buyers are piloting AI agents for support, operations, and back-office work. Security review, procurement review, and integration work still slow many pilots before full rollout.",
+              "published_at": "2026-03-25T08:00:00Z",
+              "source_metadata": {}
+            },
+            {
+              "source_type": "product",
+              "source_url": "https://example.com/agent-market/platform-bundling",
+              "title": "Large platforms bundle native copilots and raise pressure on generic agent startups",
+              "content_text": "Large software platforms bundled native copilots into their existing suites, increasing platform pressure on generic agent startups and pushing founders toward narrower vertical wedges.",
+              "published_at": "2026-03-25T08:05:00Z",
+              "source_metadata": {}
+            },
+            {
+              "source_type": "case-study",
+              "source_url": "https://example.com/agent-market/service-proof",
+              "title": "Service agents win when they complete work, not when they just chat",
+              "content_text": "Customers adopted service agents when the product completed useful work inside real systems. Teams that showed measurable ROI, renewal signals, or labor savings earned faster expansion.",
+              "published_at": "2026-03-25T08:10:00Z",
+              "source_metadata": {}
+            },
+            {
+              "source_type": "ops",
+              "source_url": "https://example.com/agent-market/reliability-bar",
+              "title": "Reliability and computer-use quality remain the main trust bottleneck",
+              "content_text": "Latency, reliability, and accuracy issues still block broader deployment. Teams that invest in reliability improvements and workflow-specific quality gates preserve trust better than teams that expand too early.",
+              "published_at": "2026-03-25T08:15:00Z",
+              "source_metadata": {}
+            }
+          ],
+          "tenant_id": null,
+          "preset_id": null
+        },
+        "summary": {
+          "processed_items": 4,
+          "duplicate_items": 0,
+          "accepted_claims": 0,
+          "review_claims": 7,
+          "archived_claims": 0,
+          "failed_items": 0
+        },
+        "created_at": "2026-11-13T02:51:35.507843Z",
+        "updated_at": "2026-11-13T02:51:35.617866Z",
+        "tenant_id": null,
+        "preset_id": null
+      }
+    },
+    {
+      "step": "POST /simulation/runs",
+      "status": 201,
+      "body": {
+        "id": "545b056c-1893-4bf5-bb11-ed759519fcc4",
+        "company_id": "agent-founder-baseline",
+        "force_id": null,
+        "domain_id": "corporate",
+        "actor_template": "developer_tools_saas",
+        "status": "COMPLETED",
+        "execution_mode": "INLINE",
+        "tick_count": 4,
+        "seed": 7,
+        "parent_run_id": null,
+        "summary": {
+          "ticks_completed": 4,
+          "evidence_count": 2,
+          "shock_count": 4,
+          "evidence_ids": [
+            "cde4b2da-55cb-4ee7-bab7-ecffd265250f"
+          ],
+          "evidence_statements": [
+            "Latency, reliability, and accuracy issues still block broader deployment.",
+            "Teams that invest in reliability improvements and workflow-specific quality gates preserve trust better than teams that expand too early."
+          ],
+          "evidence_audit": {
+            "accepted_claim_count": 0,
+            "accepted_evidence_count": 0,
+            "provisional_claim_count": 2,
+            "provisional_claim_ids": [
+              "14919a95-5971-424d-bf48-0e80170d5cfb",
+              "57be2e79-cafb-49f5-af63-5d1e473ab607"
+            ],
+            "provisional_evidence_count": 1,
+            "provisional_evidence_ids": [
+              "cde4b2da-55cb-4ee7-bab7-ecffd265250f"
+            ],
+            "provisional_confidence_floor": 0.62,
+            "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
+          },
+          "matched_rules": [
+            "corp.reliability_reset"
+          ],
+          "final_state": {
+            "cash": 55.0,
+            "runway_weeks": 64.0,
+            "infra_cost_index": 0.95,
+            "delivery_velocity": 0.7625,
+            "brand_index": 0.7175,
+            "market_share": -0.0213,
+            "team_morale": 0.8825,
+            "pipeline": 0.86,
+            "active_deployments": 2.0,
+            "implementation_capacity": 2.8,
+            "support_load": 0.32,
+            "reliability_debt": 0.235,
+            "gross_margin": 0.68,
+            "nrr": 0.9425,
+            "churn_risk": 0.1225
+          },
+          "military_tick_summaries": [],
+          "objective_network": {},
+          "enemy_posture": {},
+          "enemy_order_of_battle": [],
+          "report_id": "e949dfea-9a69-42f4-a967-c955251bc371"
+        },
+        "created_at": "2026-11-13T02:51:35.660631",
+        "updated_at": "2026-11-13T02:51:35.844227",
+        "completed_at": "2026-11-13T02:51:35.734732",
+        "tenant_id": null,
+        "preset_id": null,
+        "military_use_mode": null
+      }
+    },
+    {
+      "step": "GET /runs/{id}/decision-trace",
+      "status": 200,
+      "body": {
+        "records": 4,
+        "methods": [
+          "rule_engine",
+          "rule_engine",
+          "rule_engine",
+          "rule_engine"
+        ]
+      }
+    },
+    {
+      "step": "GET /runs/{id}/workbench",
+      "status": 200,
+      "body": {
+        "keys": [
+          "debate_records",
+          "decision_trace",
+          "domain_id",
+          "evidence_graph",
+          "geo_map",
+          "kpi_comparator",
+          "latest_report_id",
+          "prediction_versions",
+          "preset_id",
+          "review_queue",
+          "run_id",
+          "scenario_compare",
+          "scenario_tree",
+          "startup_kpi_pack",
+          "tenant_id",
+          "timeline"
+        ]
+      }
+    },
+    {
+      "step": "GET /runs/{id}/options",
+      "status": 200,
+      "body": {
+        "options": 1
+      }
+    }
+  ],
+  "summary": {
+    "ingest_run_id": "e86bb25b-a94f-4afc-aa65-b3c514f3104e",
+    "simulation_run_id": "545b056c-1893-4bf5-bb11-ed759519fcc4",
+    "simulation_status": "COMPLETED",
+    "llm_boundary": "POST /debates/trigger NOT exercised: requires a real LLM key (LLMDebateAdapter in services/debate/workflow.py).",
+    "failures": []
+  }
+}
