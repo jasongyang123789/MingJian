@@ -5,9 +5,14 @@ import the models without pulling in the pack registry or the database layer.
 Import ``presets`` and ``store`` from their submodules directly.
 """
 
+from .formulas import FormulaEvaluationError, evaluate_formulas, validate_formulas
 from .models import (
+    MAX_FORMULAS,
+    MAX_FORMULA_DEPTH,
     MAX_VARIABLES,
     DistributionType,
+    FormulaDefinition,
+    FormulaOperator,
     MetricPolicySpec,
     TemplateStateField,
     VariableCheckRecord,
@@ -33,8 +38,13 @@ from .validator import (
 )
 
 __all__ = [
+    "MAX_FORMULAS",
+    "MAX_FORMULA_DEPTH",
     "MAX_VARIABLES",
     "DistributionType",
+    "FormulaDefinition",
+    "FormulaEvaluationError",
+    "FormulaOperator",
     "MetricPolicySpec",
     "TemplateStateField",
     "VariableCheckRecord",
@@ -50,7 +60,9 @@ __all__ = [
     "VariableValidationError",
     "VariableValidationIssue",
     "VariableValidationResult",
+    "evaluate_formulas",
     "merge_variable_sets",
+    "validate_formulas",
     "validate_or_raise",
     "validate_scope_bindings",
     "validate_template",

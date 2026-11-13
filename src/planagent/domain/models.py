@@ -1492,6 +1492,7 @@ class VariableTemplateRecord(Base):
     state_fields: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     policies: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     variables: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    formulas: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     internal: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     tenant_id: Mapped[str | None] = mapped_column(String(120), index=True)
     preset_id: Mapped[str | None] = mapped_column(String(120), index=True)

@@ -35,6 +35,7 @@ from planagent.services.variables.presets import (
     variables_configuration_fragment,
 )
 from planagent.services.variables.store import get_variable_template
+from planagent.services.variables.formulas import validate_formulas
 from planagent.services.variables.validator import (
     VariableTemplateError,
     VariableValidationError,
@@ -127,6 +128,7 @@ class SimulationScenariosMixin:
             base_set = VariableSet(
                 name=template.name,
                 variables=template.variables,
+                formulas=template.formulas,
                 internal=template.internal,
             )
         elif isinstance(parent_bindings, dict):
@@ -148,8 +150,30 @@ class SimulationScenariosMixin:
         if not effective.variables and payload.variable_set is None:
             # A template with no variables: snapshot the template (its
             # state defaults and policies still apply) without bindings
-            # or a validation result, as in the run-creation gate.
-            fragment = variables_configuration_fragment(template, None, None)
+            # or a validation result, as in the run-creation gate —
+            # unless the effective set carries formulas, which need
+            # stored bindings to evaluate at runtime.
+            if not effective.formulas:
+                fragment = variables_configuration_fragment(template, None, None)
+                fragment["variables"]["branch_override"] = True
+                return fragment
+            formula_issues, formula_checks = validate_formulas([], effective.formulas)
+            if formula_issues:
+                raise VariableValidationError(
+                    VariableValidationResult(
+                        is_valid=False,
+                        variable_count=0,
+                        checks=formula_checks,
+                        issues=formula_issues,
+                    )
+                )
+            fragment = variables_configuration_fragment(
+                template,
+                effective,
+                VariableValidationResult(
+                    is_valid=True, variable_count=0, checks=formula_checks, issues=[]
+                ),
+            )
             fragment["variables"]["branch_override"] = True
             return fragment
 

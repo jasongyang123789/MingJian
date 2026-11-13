@@ -28,6 +28,7 @@ from planagent.services.distributions import (
 )
 from planagent.services.mece import MeceValidationResult, validate_or_raise
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
+from planagent.services.variables.formulas import validate_formulas
 from planagent.services.variables.models import VariableSet, VariableValidationResult
 from planagent.services.variables.presets import (
     resolve_policies,
@@ -110,6 +111,7 @@ class SimulationEngineMixin:
             base_set = VariableSet(
                 name=template.name,
                 variables=template.variables,
+                formulas=template.formulas,
                 internal=template.internal,
             )
         inline_set = payload.variable_set
@@ -124,8 +126,29 @@ class SimulationEngineMixin:
         if not effective.variables and inline_set is None:
             # A template with no variables and no inline set: snapshot the
             # template (its state defaults and policies still apply) without
-            # bindings or a validation result.
-            return variables_configuration_fragment(template, None, None)
+            # bindings or a validation result — unless the template carries
+            # formulas, which need stored bindings to evaluate at runtime.
+            # The empty-set rule does not apply to template-only sets, so
+            # only the formulas are validated here.
+            if not effective.formulas:
+                return variables_configuration_fragment(template, None, None)
+            formula_issues, formula_checks = validate_formulas([], effective.formulas)
+            if formula_issues:
+                raise VariableValidationError(
+                    VariableValidationResult(
+                        is_valid=False,
+                        variable_count=0,
+                        checks=formula_checks,
+                        issues=formula_issues,
+                    )
+                )
+            return variables_configuration_fragment(
+                template,
+                effective,
+                VariableValidationResult(
+                    is_valid=True, variable_count=0, checks=formula_checks, issues=[]
+                ),
+            )
         result = validate_variable_set(effective)
         issues = list(result.issues)
         if payload.decomposition is not None:

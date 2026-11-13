@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -39,6 +40,56 @@ class DistributionType(str, Enum):
 MAX_VARIABLES = 30
 MAX_INTERNAL_KEY_LENGTH = 64
 MAX_INTERNAL_VALUE_LENGTH = 2000
+#: Maximum formulas per set/template, ported from the SimplifySimulation
+#: reference (``len(formula_graph) > 40`` is rejected there).
+MAX_FORMULAS = 40
+#: Maximum expression nesting depth, ported from the reference
+#: (``depth > 15`` is rejected there).
+MAX_FORMULA_DEPTH = 15
+
+
+class FormulaOperator(str, Enum):
+    """The formula-graph operator vocabulary.
+
+    Ported from the SimplifySimulation reference (``OPS``): exactly six
+    binary operators, no arbitrary code. ``min``/``max`` are binary here
+    (two arguments), matching the reference's two-argument expressions.
+    """
+
+    ADD = "add"
+    SUBTRACT = "subtract"
+    MULTIPLY = "multiply"
+    DIVIDE = "divide"
+    MIN = "min"
+    MAX = "max"
+
+
+class FormulaDefinition(BaseModel):
+    """One derived variable in a formula graph (Sprint 4, PRD delta D7).
+
+    ``output`` is the derived variable's id (unique within the set, and it
+    must not collide with a sampled variable id). ``expression`` is raw JSON
+    in the reference's expression shape: a finite number literal, a
+    ``{"ref": "<id>"}`` reference, or a ``{"op": "<operator>", "args":
+    [<expr>, <expr>]}`` node with exactly two arguments. The expression is
+    deliberately held as untyped JSON here: its shape is checked by the
+    pure validator (:mod:`formulas`), so malformed expressions surface as
+    structured validation issues at the gate instead of 422s — the same
+    discipline as missing units and provenance on variables.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    output: str = Field(min_length=1, max_length=120)
+    expression: Any
+    description: str = Field(default="", max_length=2000)
+
+    @field_validator("output", "description", mode="before")
+    @classmethod
+    def _strip_strings(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
 
 def _require_finite_number(value: object) -> float:
@@ -133,12 +184,17 @@ class VariableSet(BaseModel):
     normalizer. The validator enforces the 1-30 variable count, so this model
     deliberately carries no length constraint on ``variables`` — an empty or
     oversized set must surface as a structured validation issue, not a 422.
+
+    ``formulas`` (Sprint 4) is the formula graph: derived variables computed
+    from the sampled variables, evaluated in list order (the topological
+    order — a formula may only reference variables and earlier formulas).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(default="", max_length=200)
     variables: list[VariableDefinition] = Field(default_factory=list)
+    formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("name", mode="before")
@@ -270,6 +326,7 @@ class VariableTemplate(BaseModel):
     state_fields: list[TemplateStateField] = Field(default_factory=list)
     policies: dict[str, MetricPolicySpec] = Field(default_factory=dict)
     variables: list[VariableDefinition] = Field(default_factory=list)
+    formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
     is_builtin: bool = False
 
@@ -298,6 +355,7 @@ class VariableTemplateCreate(BaseModel):
     state_fields: list[TemplateStateField] = Field(default_factory=list)
     policies: dict[str, MetricPolicySpec] = Field(default_factory=dict)
     variables: list[VariableDefinition] = Field(default_factory=list)
+    formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("name", "domain_id", "description", mode="before")
@@ -328,6 +386,7 @@ class VariableTemplateUpdate(BaseModel):
     state_fields: list[TemplateStateField] | None = None
     policies: dict[str, MetricPolicySpec] | None = None
     variables: list[VariableDefinition] | None = None
+    formulas: list[FormulaDefinition] | None = None
     internal: dict[str, str] | None = None
 
     @field_validator("name", "description", mode="before")

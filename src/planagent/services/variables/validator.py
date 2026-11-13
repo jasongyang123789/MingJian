@@ -19,6 +19,7 @@ when a run carries both a decomposition tree and variable bindings.
 
 from __future__ import annotations
 
+from .formulas import validate_formulas
 from .models import (
     MAX_VARIABLES,
     DistributionType,
@@ -208,6 +209,14 @@ def validate_variable_set(variable_set: VariableSet) -> VariableValidationResult
         )
     )
 
+    # Formula graph (Sprint 4): derived variables over the sampled set,
+    # validated with the same gate discipline. No formulas means no extra
+    # issues and no extra check record, so sets without formulas serialize
+    # exactly as before.
+    formula_issues, formula_checks = validate_formulas(variables, variable_set.formulas)
+    issues.extend(formula_issues)
+    checks.extend(formula_checks)
+
     return VariableValidationResult(
         is_valid=not issues,
         variable_count=len(variables),
@@ -295,9 +304,17 @@ def validate_template(template: VariableTemplate) -> VariableValidationResult:
             )
         )
         # The set validator cannot flag empty_set here (variables is non-empty);
-        # carry its issues and per-variable checks through unchanged.
+        # carry its issues and per-variable checks through unchanged. Formulas
+        # are deliberately excluded from this constructed set: they are checked
+        # once, below, against the template's own variables.
         issues.extend(set_result.issues)
         checks.extend(set_result.checks)
+
+    # Formula graph (Sprint 4): validated against the template's variables
+    # even when the template carries no variables (literal-only formulas).
+    formula_issues, formula_checks = validate_formulas(template.variables, template.formulas)
+    issues.extend(formula_issues)
+    checks.extend(formula_checks)
 
     if len(template.variables) > MAX_VARIABLES:
         issues.append(
@@ -346,7 +363,8 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
 
     Deterministic: base order is preserved, overridden variables are replaced
     in place, and new override variables are appended in override order. The
-    internal tables merge with override values winning per key.
+    internal tables merge with override values winning per key. Formulas
+    merge with the same discipline: the override wins per output id.
     """
 
     merged: list[VariableDefinition] = list(base.variables)
@@ -357,8 +375,17 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
         else:
             positions[variable.id] = len(merged)
             merged.append(variable)
+    merged_formulas = list(base.formulas)
+    formula_positions = {formula.output: index for index, formula in enumerate(merged_formulas)}
+    for formula in override.formulas:
+        if formula.output in formula_positions:
+            merged_formulas[formula_positions[formula.output]] = formula
+        else:
+            formula_positions[formula.output] = len(merged_formulas)
+            merged_formulas.append(formula)
     return VariableSet(
         name=override.name or base.name,
         variables=merged,
+        formulas=merged_formulas,
         internal={**base.internal, **override.internal},
     )

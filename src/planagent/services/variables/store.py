@@ -32,6 +32,7 @@ def record_to_template(record: VariableTemplateRecord) -> VariableTemplate:
         state_fields=record.state_fields,
         policies=record.policies,
         variables=record.variables,
+        formulas=record.formulas or [],
         internal=record.internal,
         is_builtin=False,
     )
@@ -144,6 +145,7 @@ async def create_variable_template(
         state_fields=data.state_fields,
         policies=data.policies,
         variables=data.variables,
+        formulas=data.formulas,
         internal=data.internal,
     )
     result = validate_template(template)
@@ -156,6 +158,7 @@ async def create_variable_template(
         state_fields=[field.model_dump(mode="json") for field in data.state_fields],
         policies={metric: spec.model_dump(mode="json") for metric, spec in data.policies.items()},
         variables=[variable.model_dump(mode="json") for variable in data.variables],
+        formulas=[formula.model_dump(mode="json") for formula in data.formulas],
         internal=dict(data.internal),
         tenant_id=tenant_id,
         preset_id=preset_id,
@@ -179,6 +182,7 @@ async def update_variable_template(
         state_fields=data.state_fields if data.state_fields is not None else current.state_fields,
         policies=data.policies if data.policies is not None else current.policies,
         variables=data.variables if data.variables is not None else current.variables,
+        formulas=data.formulas if data.formulas is not None else current.formulas,
         internal=data.internal if data.internal is not None else current.internal,
     )
     result = validate_template(merged)
@@ -191,6 +195,7 @@ async def update_variable_template(
         metric: spec.model_dump(mode="json") for metric, spec in merged.policies.items()
     }
     record.variables = [variable.model_dump(mode="json") for variable in merged.variables]
+    record.formulas = [formula.model_dump(mode="json") for formula in merged.formulas]
     record.internal = dict(merged.internal)
     await session.flush()
     return record
