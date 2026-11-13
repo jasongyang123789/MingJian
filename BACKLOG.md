@@ -118,12 +118,33 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
 - Product decisions still open: making decomposition/bindings mandatory,
   LLM-assisted decomposition authoring (must pass the same gates).
 
+## Sprint 8 — variable-template editing + distribution charts (done)
+
+- Delivered on `strategy-engine/sprint8-templates-charts` (see
+  SPRINT8.md): template editor UI (`/cockpit/variable-templates`,
+  list/detail/create/edit, built-ins read-only with duplicate
+  affordance, calibrated-version flags + fit provenance, backend
+  validator as sole arbiter with inline server issues, formula
+  editor constrained to the Sprint 4 graph vocabulary, dirty-state
+  protection) and distribution charts (`/cockpit/charts`, ensemble
+  histograms from trial values + paired-delta view, tornado,
+  bootstrap intervals, threshold search incl. honest unreachable
+  state, all with honest empty states). One minimal backend
+  addition: read-only `GET /runs/{id}/monte-carlo/trial-values`
+  re-reading trial rows via stored ids with the Sprint 4 hash
+  discipline (no numeric-core or validation change). Frontend
+  73 → 132 tests, lint and build green; backend 1085 → 1088
+  tests, Sprint 0 smoke re-run PASS. Live backend integration and
+  real deliberation rendering against a live LLM remain UNVERIFIED.
+- NOT built (deferred, not done): living-strategy loop, calibration
+  hardening, decision-direction narrative output, template deletion,
+  ensemble/analysis launch buttons in the cockpit.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
   (Sprint 6 central open item: live deliberation quality unverified;
   Sprint 7 adds live backend integration as unverified).
-- Variable-template editing + distribution charts in the cockpit.
 - Living-strategy loop: monitor → re-simulate from the cockpit.
 - Calibration hardening (persist current weights, intercept/centering,
   exclude/weight scenario children, fit-quality gates).
