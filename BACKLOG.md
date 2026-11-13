@@ -36,20 +36,19 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   801 → 850 passed. Report: `SPRINT3.md` (branch
   `strategy-engine/sprint3-distributions`).
 
-## Sprint 4 — robustness evaluation (next, approved enrichment)
+- **Sprint 4 — robustness evaluation + formula graph (PRD deltas
+  D6/D7).** Expected shortfall / tornado sensitivity / threshold
+  search / pre-registered decision gates (per taylanakgn) + bootstrap
+  intervals (per jasonrkeen), grafted onto the Sprint 3 persisted
+  ensembles, all pure/deterministic with stored audit results; plus a
+  no-arbitrary-code formula graph (per agilhaykal) evaluated per trial
+  before the tick loop, validated at template/binding time with gate
+  discipline, persisted via migration `0030_variable_template_formulas`,
+  with a golden test porting the prototype's variables through the
+  graph. Tests 850 → 912 passed. Report: `SPRINT4.md` (branch
+  `strategy-engine/sprint4-robustness`).
 
-## Sprint 4 — robustness evaluation (next, approved enrichment)
-
-- Expected shortfall / tornado sensitivity / threshold search /
-  pre-registered decision gates (per taylanakgn) + bootstrap intervals
-  (per jasonrkeen), grafted onto the Sprint 3 sampling runner.
-- Distribution layer (PRD deltas D4/D5): aggregate across sampled runs;
-  scenario-lab ensemble statistics as the aggregation reference.
-- Formula graph (derived variables, no arbitrary code) if it fits
-  cleanly — lets non-state-field variables drive tick dynamics.
-- Entry points: `SPRINT3.md` §7.
-
-## Sprint 5 — calibration + deliberation integrity (approved enrichment)
+## Sprint 5 — calibration + deliberation integrity (next, approved enrichment)
 
 - Hindsight firewall (per saisrikolanu): deliberate separation of
   evidence available at decision time from later outcomes.
