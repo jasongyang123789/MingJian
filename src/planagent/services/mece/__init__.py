@@ -18,6 +18,7 @@ from .models import (
 from .validator import (
     MAX_TREE_DEPTH,
     MeceValidationError,
+    find_branch_by_path,
     validate_decomposition,
     validate_or_raise,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "MeceRunRead",
     "MeceValidationError",
     "MeceValidationResult",
+    "find_branch_by_path",
     "validate_decomposition",
     "validate_or_raise",
 ]

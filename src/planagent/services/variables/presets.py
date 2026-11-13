@@ -13,6 +13,8 @@ defaults and policies from the snapshot stored at run creation.
 
 from __future__ import annotations
 
+from typing import Any
+
 from planagent.services.simulation_branching import _STATE_POLICIES, MetricPolicy
 from planagent.simulation.domain_packs import registry
 
@@ -87,7 +89,7 @@ def variables_configuration_fragment(
     template: VariableTemplate | None,
     bindings: VariableSet | None,
     validation: VariableValidationResult | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Build the ``variables`` fragment stored in a run's configuration.
 
     The template is snapshotted at creation time, so later edits to a stored

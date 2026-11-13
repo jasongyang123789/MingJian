@@ -17,13 +17,31 @@ from planagent.domain.models import (
     generate_id,
 )
 from planagent.services.distributions import determinism_input_fragment
+from planagent.services.mece import find_branch_by_path
+from planagent.services.mece.models import DecompositionTree
 from planagent.services.simulation_branching import (
     build_branch_trajectory,
     build_scenario_compare_summary,
     score_branch_delta,
     summarize_branch_trajectory,
 )
-from planagent.services.variables.presets import resolve_policies
+from planagent.services.variables.models import (
+    VariableSet,
+    VariableTemplate,
+    VariableValidationResult,
+)
+from planagent.services.variables.presets import (
+    resolve_policies,
+    variables_configuration_fragment,
+)
+from planagent.services.variables.store import get_variable_template
+from planagent.services.variables.validator import (
+    VariableTemplateError,
+    VariableValidationError,
+    merge_variable_sets,
+    validate_scope_bindings,
+    validate_variable_set,
+)
 
 
 class SimulationScenariosMixin:
@@ -53,6 +71,140 @@ class SimulationScenariosMixin:
     ) -> list[dict[str, Any]]:
         return [self._build_scenario_template(parent_run, payload) for payload in payloads]
 
+    async def _resolve_scenario_variable_bindings(
+        self,
+        session: AsyncSession,
+        parent_run: SimulationRun,
+        payload: ScenarioRunCreate,
+    ) -> dict[str, Any]:
+        """Branch-level variable bindings (Sprint 3).
+
+        Returns the ``variables`` fragment for the child run, or {} when
+        the payload carries no binding fields (the child then inherits
+        the parent's fragment through the configuration copy, as before).
+
+        Merge semantics: a branch template replaces the parent's template
+        snapshot and supplies the base variable set; otherwise the
+        parent's stored bindings are the base. An inline set merges over
+        the base (inline wins per variable id). The effective set is
+        validated with the same gate as run creation, and scope tags are
+        cross-checked against the named decomposition branch's scope when
+        ``decomposition_branch`` is given (else the parent decomposition's
+        root scope, when the parent carries one). Failures raise before
+        any row is written, mirroring the run-creation gates.
+        """
+        if (
+            payload.variable_template_id is None
+            and payload.variable_set is None
+            and payload.decomposition_branch is None
+        ):
+            return {}
+
+        parent_fragment = (parent_run.configuration or {}).get("variables")
+        parent_fragment = parent_fragment if isinstance(parent_fragment, dict) else {}
+        parent_template = parent_fragment.get("template")
+        parent_bindings = parent_fragment.get("bindings")
+
+        template: VariableTemplate | None = None
+        if payload.variable_template_id is not None:
+            template = await get_variable_template(session, payload.variable_template_id)
+            if template is None:
+                raise VariableTemplateError(
+                    "variable_template_not_found",
+                    f"Variable template {payload.variable_template_id!r} was not found.",
+                )
+            if template.domain_id != parent_run.domain_id:
+                raise VariableTemplateError(
+                    "variable_template_domain_mismatch",
+                    f"Variable template {template.id!r} belongs to domain "
+                    f"{template.domain_id!r}, not {parent_run.domain_id!r}.",
+                )
+        elif isinstance(parent_template, dict):
+            template = VariableTemplate.model_validate(parent_template)
+
+        base_set: VariableSet | None = None
+        if payload.variable_template_id is not None and template is not None:
+            base_set = VariableSet(
+                name=template.name,
+                variables=template.variables,
+                internal=template.internal,
+            )
+        elif isinstance(parent_bindings, dict):
+            base_set = VariableSet.model_validate(parent_bindings)
+
+        if base_set is not None and payload.variable_set is not None:
+            effective = merge_variable_sets(base_set, payload.variable_set)
+        elif base_set is not None:
+            effective = base_set
+        elif payload.variable_set is not None:
+            effective = payload.variable_set
+        else:
+            effective = None
+
+        if effective is None:
+            # Only a decomposition branch was named, with no bindings to
+            # re-check: nothing to override, inherit unchanged.
+            return {}
+        if not effective.variables and payload.variable_set is None:
+            # A template with no variables: snapshot the template (its
+            # state defaults and policies still apply) without bindings
+            # or a validation result, as in the run-creation gate.
+            fragment = variables_configuration_fragment(template, None, None)
+            fragment["variables"]["branch_override"] = True
+            return fragment
+
+        result = validate_variable_set(effective)
+        issues = list(result.issues)
+        allowed_scope = self._branch_scope_for_bindings(parent_run, payload.decomposition_branch)
+        if allowed_scope is not None:
+            issues.extend(validate_scope_bindings(allowed_scope, effective))
+        if issues:
+            raise VariableValidationError(
+                VariableValidationResult(
+                    is_valid=False,
+                    variable_count=result.variable_count,
+                    checks=result.checks,
+                    issues=issues,
+                )
+            )
+        fragment = variables_configuration_fragment(template, effective, result)
+        fragment["variables"]["branch_override"] = True
+        if payload.decomposition_branch is not None:
+            fragment["variables"]["decomposition_branch"] = payload.decomposition_branch
+        return fragment
+
+    def _branch_scope_for_bindings(
+        self,
+        parent_run: SimulationRun,
+        decomposition_branch: str | None,
+    ) -> list[str] | None:
+        """Scope tags the branch's variables must stay inside.
+
+        With a named branch: that branch's scope (the parent must carry a
+        decomposition and the path must resolve). Without one: the parent
+        decomposition's root scope, or None when the parent carries no
+        decomposition (no scope check).
+        """
+        mece_fragment = (parent_run.configuration or {}).get("mece")
+        if not isinstance(mece_fragment, dict) or not isinstance(
+            mece_fragment.get("decomposition"), dict
+        ):
+            if decomposition_branch is not None:
+                raise ValueError(
+                    "decomposition_branch requires the parent run to carry a decomposition."
+                )
+            return None
+        tree = DecompositionTree.model_validate(mece_fragment["decomposition"])
+        if decomposition_branch is None:
+            return list(tree.root.scope)
+        branch = find_branch_by_path(tree, decomposition_branch)
+        if branch is None:
+            raise ValueError(
+                f"Decomposition branch {decomposition_branch!r} was not found in the "
+                "parent run's decomposition tree."
+            )
+        return list(branch.scope)
+
     async def create_scenario_run(
         self,
         session: AsyncSession,
@@ -78,6 +230,12 @@ class SimulationScenariosMixin:
             raise ValueError(
                 f"Scenario branching is not implemented for domain {parent_run.domain_id}."
             )
+
+        # Branch-level variable bindings (Sprint 3): resolved before any
+        # row is written, so an invalid override refuses the branch.
+        variables_fragment = await self._resolve_scenario_variable_bindings(
+            session, parent_run, payload
+        )
 
         fork_step = payload.fork_step or max(1, parent_run.tick_count // 2)
         source_snapshot = (
@@ -121,6 +279,9 @@ class SimulationScenariosMixin:
             },
             "military_use_mode": parent_run.military_use_mode,
         }
+        if variables_fragment:
+            # Branch override replaces the inherited variables fragment.
+            child_configuration["variables"] = variables_fragment["variables"]
         # Sprint 3: hash the child run's inputs at creation. The parent's
         # stored determinism fragment is excluded from the hashed payload,
         # so the child hash covers the child's own inputs.

@@ -140,6 +140,22 @@ async def create_scenario_run(
         branch = await service.create_scenario_run(session, simulation_run_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except VariableValidationError as exc:
+        # Branch binding refusal: same dict-detail shape as the run-creation
+        # variable gate, carrying the full validation result.
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "variable_validation_failed",
+                "message": "Variable bindings failed validation; scenario branch refused.",
+                "validation": exc.result.model_dump(mode="json"),
+            },
+        ) from exc
+    except VariableTemplateError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -47,6 +47,32 @@ class MeceValidationError(ValueError):
         super().__init__(f"MECE validation failed: {summary}")
 
 
+def find_branch_by_path(tree: DecompositionTree, path: str) -> DecompositionBranch | None:
+    """Find a branch by its slash-separated path from the root.
+
+    Path segments are branch names, e.g. ``"Launch / Demand"`` for the
+    ``Demand`` child of the root branch named ``Launch``; the first
+    segment must equal the root branch's name, and a single segment
+    names the root itself. Segments are matched exactly (no
+    normalization, same as scope tags). Returns None when the path is
+    empty or names no branch. Used by Sprint 3 branch-level bindings to
+    scope variable tags against one decomposition branch instead of the
+    whole root scope.
+    """
+
+    segments = [segment.strip() for segment in path.split("/")]
+    segments = [segment for segment in segments if segment]
+    if not segments or segments[0] != tree.root.name:
+        return None
+    current = tree.root
+    for segment in segments[1:]:
+        nxt = next((child for child in current.children if child.name == segment), None)
+        if nxt is None:
+            return None
+        current = nxt
+    return current
+
+
 def validate_decomposition(tree: DecompositionTree) -> MeceValidationResult:
     """Validate a decomposition tree. Pure function of ``tree``."""
     state = _ValidationState()

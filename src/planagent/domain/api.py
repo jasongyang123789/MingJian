@@ -229,6 +229,15 @@ class ScenarioRunCreate(APIModel):
     decision_deltas: list[str] = Field(default_factory=list)
     state_overrides: dict[str, float] = Field(default_factory=dict)
     probability_band: str = "medium"
+    # Optional branch-level variable bindings (Sprint 3). A template id
+    # replaces the parent run's template snapshot; an inline set merges
+    # over the inherited bindings (inline wins per variable id); a
+    # decomposition branch path scopes the tag cross-check to one MECE
+    # branch instead of the root scope. All three absent means the child
+    # inherits the parent's variables fragment unchanged.
+    variable_template_id: str | None = None
+    variable_set: VariableSet | None = None
+    decomposition_branch: str | None = None
 
 
 class ScenarioSearchRequest(APIModel):
