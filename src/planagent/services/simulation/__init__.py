@@ -29,6 +29,7 @@ from .distributions import SimulationDistributionsMixin
 from .domain_packs import SimulationDomainPacksMixin
 from .engine import SimulationEngineMixin
 from .impact import ActionCandidate, RuleScore, SelectedAction, SimulationImpactMixin
+from .living_loop import SimulationLivingLoopMixin
 from .report import SimulationReportMixin
 from .robustness import SimulationRobustnessMixin
 from .scenarios import SimulationScenariosMixin
@@ -40,6 +41,7 @@ class SimulationService(
     SimulationDistributionsMixin,
     SimulationRobustnessMixin,
     SimulationCalibrationMixin,
+    SimulationLivingLoopMixin,
     SimulationImpactMixin,
     SimulationReportMixin,
     SimulationDomainPacksMixin,
