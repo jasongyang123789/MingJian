@@ -1539,3 +1539,101 @@ class VariableTemplateRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class StrategyLoopRecord(Base):
+    """A living-strategy loop (Sprint 9).
+
+    One row per decision kept alive over time: a baseline run, the
+    domain it belongs to, and the append-only list of trigger
+    registrations (stored as JSON, mirroring the Sprint 4 gate
+    registrations on run summaries — a registration is never edited,
+    only superseded). Observations and iterations live in their own
+    tables so the audit trail stays queryable.
+    """
+
+    __tablename__ = "strategy_loops"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    baseline_run_id: Mapped[str] = mapped_column(
+        ForeignKey("simulation_runs.id"), nullable=False, index=True
+    )
+    domain_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="active", nullable=False)
+    triggers: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class LoopObservationRecord(Base):
+    """One recorded actual against a loop (Sprint 9).
+
+    Append-only: an observation is never edited or deleted — a wrong
+    reading is corrected by recording a new observation, and the
+    review window that evaluated the old one keeps its snapshot of
+    observation ids. ``observed_at`` is the time the actual was
+    observed (which decides the review window); ``created_at`` is
+    when it was recorded. ``source_claim_id`` optionally links the
+    evidence claim the actual came from; it is a reference, not a
+    foreign key, because claims may be re-ingested.
+    """
+
+    __tablename__ = "loop_observations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    loop_id: Mapped[str] = mapped_column(
+        ForeignKey("strategy_loops.id"), nullable=False, index=True
+    )
+    field: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    source_claim_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    source_note: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class LoopIterationRecord(Base):
+    """One review iteration of a living-strategy loop (Sprint 9).
+
+    The unit of the loop's audit trail. State machine, strictly
+    forward: ``open`` → ``evaluated`` → ``resimulated`` →
+    ``compared`` → ``decided``; a decision may also be recorded
+    directly from ``evaluated`` (a quiet round needs no
+    re-simulation). ``decided`` is terminal: corrections happen via
+    a new iteration, never by editing a decided one. Each step
+    stores its full record as JSON (window snapshot, trigger
+    evaluations, re-simulation audit, comparison, decision), so the
+    iteration row alone tells the whole story of one review.
+    """
+
+    __tablename__ = "loop_iterations"
+    __table_args__ = (UniqueConstraint("loop_id", "index"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    loop_id: Mapped[str] = mapped_column(
+        ForeignKey("strategy_loops.id"), nullable=False, index=True
+    )
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(24), default="open", nullable=False)
+    decision_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    previous_cutoff: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    window: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    trigger_evaluations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    resimulation: Mapped[dict | None] = mapped_column(JSON)
+    comparison: Mapped[dict | None] = mapped_column(JSON)
+    decision: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
