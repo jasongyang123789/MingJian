@@ -370,6 +370,7 @@ class SimulationImpactMixin:
         recent_decisions: list[DecisionRecordRecord] | None = None,
         calibration_context_text: str = "",
         session: AsyncSession | None = None,
+        policies: dict[str, MetricPolicy] | None = None,
     ) -> SelectedAction:
         evidence_window = self._build_evidence_window(active_claim, recent_claims)
         candidate = self._rank_action_candidates(
@@ -378,6 +379,7 @@ class SimulationImpactMixin:
             evidence_window,
             rules,
             action_history or [],
+            policies=policies,
         )
         if candidate is not None and candidate.total_score >= _DECISION_MIN_SCORE:
             expected = self._aggregate_candidate_effect(candidate)
@@ -527,6 +529,7 @@ class SimulationImpactMixin:
         evidence_window: list[Claim],
         rules: list[RuleSpec],
         action_history: list[str],
+        policies: dict[str, MetricPolicy] | None = None,
     ) -> ActionCandidate | None:
         candidates: dict[str, ActionCandidate] = {}
         for distance, claim in enumerate(reversed(evidence_window)):
@@ -570,6 +573,7 @@ class SimulationImpactMixin:
                 state,
                 candidate.action_id,
                 aggregated_effect,
+                policies=policies,
             )
             candidate.history_penalty = self._score_history_penalty(
                 candidate.action_id, action_history
@@ -617,8 +621,12 @@ class SimulationImpactMixin:
         state: dict[str, float],
         action_id: str,
         effects: dict[str, float],
+        policies: dict[str, MetricPolicy] | None = None,
     ) -> float:
-        policies = _STATE_POLICIES.get(domain_id, {})
+        # Sprint 2: a run carrying a variable template scores alignment
+        # against the template's policies. None keeps the built-in policies.
+        if policies is None:
+            policies = _STATE_POLICIES.get(domain_id, {})
         adjustment = 0.0
         urgent_metric_present = False
         for target, delta in effects.items():

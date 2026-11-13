@@ -300,8 +300,20 @@ class SimulationDomainPacksMixin:
         force.updated_at = utc_now()
         return force
 
-    def _resolve_initial_state(self, pack: Any, actor_template: str) -> dict[str, float]:
-        default_state = {field.name: float(field.default) for field in pack.state_fields}
+    def _resolve_initial_state(
+        self,
+        pack: Any,
+        actor_template: str,
+        state_defaults: dict[str, float] | None = None,
+    ) -> dict[str, float]:
+        # Sprint 2: a run carrying a variable template starts from the
+        # template's state defaults instead of the pack's. None (the default)
+        # keeps the pre-Sprint-2 behavior exactly.
+        default_state = (
+            dict(state_defaults)
+            if state_defaults is not None
+            else {field.name: float(field.default) for field in pack.state_fields}
+        )
         template_map = {
             template.actor_type: template.default_state for template in pack.actor_templates
         }

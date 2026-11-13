@@ -15,6 +15,7 @@ from planagent.domain.enums import (
 )
 from planagent.domain.types import GeneratedReportModel
 from planagent.services.mece.models import DecompositionTree
+from planagent.services.variables.models import VariableSet
 
 
 class APIModel(BaseModel):
@@ -152,6 +153,14 @@ class SimulationRunCreate(APIModel):
     # run creation validates it and REFUSES to run on FAIL — there is no
     # bypass. When absent, runs behave exactly as before.
     decomposition: DecompositionTree | None = None
+    # Optional variable bindings (Sprint 2, PRD deltas D2/D3). A template
+    # id (built-in "builtin:<domain>" or a stored template) supplies state
+    # defaults, metric policies, and a base variable set; an inline set
+    # overrides template variables by id. Invalid bindings refuse run
+    # creation, like the MECE gate. When both are absent, runs behave
+    # exactly as before.
+    variable_template_id: str | None = None
+    variable_set: VariableSet | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":

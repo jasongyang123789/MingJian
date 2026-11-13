@@ -56,6 +56,7 @@ def score_branch_delta(
     domain_id: str,
     baseline_final_state: dict[str, float],
     branch_final_state: dict[str, float],
+    policies: dict[str, MetricPolicy] | None = None,
 ) -> float:
     score = 0.0
     for metric in tracked_branch_metrics(domain_id):
@@ -63,7 +64,7 @@ def score_branch_delta(
             continue
         baseline_end = float(baseline_final_state.get(metric, 0.0))
         scenario_end = float(branch_final_state.get(metric, 0.0))
-        score += metric_compare_score(domain_id, metric, baseline_end, scenario_end)
+        score += metric_compare_score(domain_id, metric, baseline_end, scenario_end, policies)
     return score
 
 
@@ -72,8 +73,13 @@ def metric_compare_score(
     metric: str,
     baseline_end: float,
     scenario_end: float,
+    policies: dict[str, MetricPolicy] | None = None,
 ) -> float:
-    policy = _STATE_POLICIES.get(domain_id, {}).get(metric)
+    # Sprint 2: callers may pass a run's effective (template-overlaid)
+    # policies; None keeps the built-in _STATE_POLICIES.
+    if policies is None:
+        policies = _STATE_POLICIES.get(domain_id, {})
+    policy = policies.get(metric)
     raw_delta = scenario_end - baseline_end
     if policy is None:
         return raw_delta
@@ -86,6 +92,7 @@ def metric_compare_score(
 def summarize_branch_trajectory(
     domain_id: str,
     trajectory: list[dict[str, Any]],
+    policies: dict[str, MetricPolicy] | None = None,
 ) -> list[str]:
     ranked = sorted(
         trajectory,
@@ -95,6 +102,7 @@ def summarize_branch_trajectory(
                 str(item.get("metric")),
                 float(item.get("baseline_end", 0.0)),
                 float(item.get("scenario_end", 0.0)),
+                policies,
             )
         ),
         reverse=True,
@@ -105,7 +113,7 @@ def summarize_branch_trajectory(
         baseline_end = float(item.get("baseline_end", 0.0))
         scenario_end = float(item.get("scenario_end", 0.0))
         delta = round(scenario_end - baseline_end, 4)
-        outcome = metric_outcome_label(domain_id, metric, baseline_end, scenario_end)
+        outcome = metric_outcome_label(domain_id, metric, baseline_end, scenario_end, policies)
         sign = "+" if delta >= 0 else ""
         summaries.append(
             f"{metric} moved from {baseline_end:.3f} to {scenario_end:.3f} ({sign}{delta:.3f}), which is {outcome} than baseline."
@@ -118,8 +126,9 @@ def metric_outcome_label(
     metric: str,
     baseline_end: float,
     scenario_end: float,
+    policies: dict[str, MetricPolicy] | None = None,
 ) -> str:
-    score = metric_compare_score(domain_id, metric, baseline_end, scenario_end)
+    score = metric_compare_score(domain_id, metric, baseline_end, scenario_end, policies)
     if score > 0.08:
         return "better"
     if score < -0.08:

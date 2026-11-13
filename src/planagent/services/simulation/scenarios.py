@@ -22,6 +22,7 @@ from planagent.services.simulation_branching import (
     score_branch_delta,
     summarize_branch_trajectory,
 )
+from planagent.services.variables.presets import resolve_policies
 
 
 class SimulationScenariosMixin:
@@ -232,14 +233,23 @@ class SimulationScenariosMixin:
                 if branch_run is not None
                 else {}
             )
+            # Sprint 2: compare against the baseline run's effective
+            # policies (template-overlaid when the baseline carries one).
+            # Child runs inherit the parent's variables fragment via the
+            # configuration copy in create_scenario_run.
+            effective_policies = resolve_policies(
+                baseline_run.domain_id, baseline_run.configuration
+            )
             branch_score = score_branch_delta(
                 baseline_run.domain_id,
                 baseline_final_state,
                 branch_final_state,
+                effective_policies,
             )
             key_deltas = summarize_branch_trajectory(
                 baseline_run.domain_id,
                 branch.kpi_trajectory,
+                effective_policies,
             )
             recommendation_summary = self._report_recommendations(branch_report)
             if branch_score > best_branch_score:

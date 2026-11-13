@@ -21,11 +21,22 @@ from planagent.domain.models import (
     StateSnapshotRecord,
     utc_now,
 )
-from planagent.services.simulation_branching import (
-    _STATE_POLICIES,
-)
 from planagent.services.mece import MeceValidationResult, validate_or_raise
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
+from planagent.services.variables.models import VariableSet, VariableValidationResult
+from planagent.services.variables.presets import (
+    resolve_policies,
+    resolve_state_defaults,
+    variables_configuration_fragment,
+)
+from planagent.services.variables.store import get_variable_template
+from planagent.services.variables.validator import (
+    VariableTemplateError,
+    VariableValidationError,
+    merge_variable_sets,
+    validate_scope_bindings,
+    validate_variable_set,
+)
 from planagent.simulation.domain_packs import registry
 from .impact import _DECISION_EVIDENCE_WINDOW
 
@@ -60,6 +71,71 @@ class SimulationEngineMixin:
     async def _execute_scenario(self, session: AsyncSession, run: SimulationRun) -> None:
         await self._execute_run(session, run)
 
+    async def _resolve_variable_bindings(
+        self,
+        session: AsyncSession,
+        payload: SimulationRunCreate,
+    ) -> dict[str, Any]:
+        """Variable gate (Sprint 2, PRD deltas D2/D3).
+
+        Resolves the attached template (if any), merges the template's
+        variable set with an inline set (inline wins per variable id),
+        validates the effective set, and cross-checks variable scope tags
+        against the decomposition scope when both are attached. Raises
+        :class:`VariableTemplateError` or :class:`VariableValidationError`
+        before any row is written, mirroring the MECE gate. Returns the
+        ``variables`` configuration fragment, or {} when nothing is attached.
+        """
+        template = None
+        if payload.variable_template_id is not None:
+            template = await get_variable_template(session, payload.variable_template_id)
+            if template is None:
+                raise VariableTemplateError(
+                    "variable_template_not_found",
+                    f"Variable template {payload.variable_template_id!r} was not found.",
+                )
+            if template.domain_id != payload.domain_id:
+                raise VariableTemplateError(
+                    "variable_template_domain_mismatch",
+                    f"Variable template {template.id!r} belongs to domain "
+                    f"{template.domain_id!r}, not {payload.domain_id!r}.",
+                )
+        base_set: VariableSet | None = None
+        if template is not None:
+            base_set = VariableSet(
+                name=template.name,
+                variables=template.variables,
+                internal=template.internal,
+            )
+        inline_set = payload.variable_set
+        if base_set is not None and inline_set is not None:
+            effective = merge_variable_sets(base_set, inline_set)
+        elif base_set is not None:
+            effective = base_set
+        elif inline_set is not None:
+            effective = inline_set
+        else:
+            return {}
+        if not effective.variables and inline_set is None:
+            # A template with no variables and no inline set: snapshot the
+            # template (its state defaults and policies still apply) without
+            # bindings or a validation result.
+            return variables_configuration_fragment(template, None, None)
+        result = validate_variable_set(effective)
+        issues = list(result.issues)
+        if payload.decomposition is not None:
+            issues.extend(validate_scope_bindings(payload.decomposition.root.scope, effective))
+        if issues:
+            raise VariableValidationError(
+                VariableValidationResult(
+                    is_valid=False,
+                    variable_count=result.variable_count,
+                    checks=result.checks,
+                    issues=issues,
+                )
+            )
+        return variables_configuration_fragment(template, effective, result)
+
     async def create_simulation_run(
         self,
         session: AsyncSession,
@@ -71,15 +147,22 @@ class SimulationEngineMixin:
         mece_result: MeceValidationResult | None = None
         if payload.decomposition is not None:
             mece_result = validate_or_raise(payload.decomposition)
+        # Variable gate (Sprint 2, PRD deltas D2/D3): resolves the attached
+        # template and bindings; invalid bindings refuse run creation.
+        variables_fragment = await self._resolve_variable_bindings(session, payload)
         execution_mode = payload.execution_mode or (
             ExecutionMode.INLINE
             if self.settings.inline_simulation_default
             else ExecutionMode.QUEUED
         )
         if payload.domain_id == "corporate":
-            run = await self._create_corporate_run(session, payload, execution_mode, mece_result)
+            run = await self._create_corporate_run(
+                session, payload, execution_mode, mece_result, variables_fragment
+            )
         elif payload.domain_id == "military":
-            run = await self._create_military_run(session, payload, execution_mode, mece_result)
+            run = await self._create_military_run(
+                session, payload, execution_mode, mece_result, variables_fragment
+            )
         else:
             raise ValueError(f"Domain {payload.domain_id} is not implemented yet.")
 
@@ -138,6 +221,7 @@ class SimulationEngineMixin:
         payload: SimulationRunCreate,
         execution_mode: ExecutionMode,
         mece_result: MeceValidationResult | None = None,
+        variables_fragment: dict[str, Any] | None = None,
     ) -> SimulationRun:
         company = await self._upsert_company(session, payload)
         run = SimulationRun(
@@ -157,6 +241,7 @@ class SimulationEngineMixin:
                 "market": payload.market,
                 **startup_preset_config(payload.tenant_id, payload.preset_id),
                 **_mece_configuration_fragment(payload, mece_result),
+                **(variables_fragment or {}),
             },
             summary={},
         )
@@ -170,6 +255,7 @@ class SimulationEngineMixin:
         payload: SimulationRunCreate,
         execution_mode: ExecutionMode,
         mece_result: MeceValidationResult | None = None,
+        variables_fragment: dict[str, Any] | None = None,
     ) -> SimulationRun:
         force = await self._upsert_force(session, payload)
         military_use_mode = payload.military_use_mode or "full_domain"
@@ -192,6 +278,7 @@ class SimulationEngineMixin:
                 "simulation_only": True,
                 **startup_preset_config(payload.tenant_id, payload.preset_id),
                 **_mece_configuration_fragment(payload, mece_result),
+                **(variables_fragment or {}),
             },
             summary={},
         )
@@ -218,10 +305,16 @@ class SimulationEngineMixin:
         run.updated_at = utc_now()
 
         pack = registry.get(run.domain_id)
-        initial_state = self._resolve_initial_state(pack, run.actor_template)
+        # Sprint 2: a run carrying a variable template starts from the
+        # template's state defaults and scores against its policies.
+        template_defaults = resolve_state_defaults(run.domain_id, run.configuration)
+        initial_state = self._resolve_initial_state(
+            pack, run.actor_template, state_defaults=template_defaults
+        )
         initial_state.update(
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
+        effective_policies = resolve_policies(run.domain_id, run.configuration)
         claims = await self._fetch_relevant_claims(session, run)
         rules = self.rule_registry.get_rules(run.domain_id)
         matched_rules: list[str] = []
@@ -261,6 +354,7 @@ class SimulationEngineMixin:
                 recent_decisions=recent_decision_records,
                 calibration_context_text=calibration_ctx["context_text"],
                 session=session,
+                policies=effective_policies,
             )
             matched_rules.extend(selected.rule_ids)
             actual_effect = selected.actual_effect
@@ -565,6 +659,9 @@ class SimulationEngineMixin:
         from planagent.domain.models import DecisionOption, Hypothesis
 
         pack = registry.get(run.domain_id)
+        # Sprint 2: risk text uses the run's effective (template-overlaid)
+        # policies, matching the action-selection scoring for the same run.
+        effective_policies = resolve_policies(run.domain_id, run.configuration)
         decisions = list(
             (
                 await session.scalars(
@@ -607,7 +704,7 @@ class SimulationEngineMixin:
             expected_effects = dict(decision.expected_effect) if decision.expected_effect else {}
             risks: list[str] = []
             for metric, value in expected_effects.items():
-                policy = _STATE_POLICIES.get(run.domain_id, {}).get(metric)
+                policy = effective_policies.get(metric)
                 if policy is not None:
                     if policy.preferred_direction == "increase" and value < -0.02:
                         risks.append(f"{metric} may decrease ({value:+.3f}).")
