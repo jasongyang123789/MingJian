@@ -141,8 +141,14 @@ def test_sampling_applies_to_initial_state_and_initial_state_wins(
 def test_golden_run_same_seed_same_inputs_byte_identical(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        first = _create_bound_run(client)
-        second = _create_bound_run(client)
+        # Sprint 5: the hindsight-firewall cutoff enters the input hash
+        # (the evidence set is a function of it), so "same inputs" must
+        # pin the decision_time explicitly — the creation-time default
+        # is wall-clock-dependent and two runs created at different
+        # instants legitimately hash differently. With the same
+        # explicit cutoff, byte-identity holds exactly as before.
+        first = _create_bound_run(client, decision_time="2026-03-01T00:00:00Z")
+        second = _create_bound_run(client, decision_time="2026-03-01T00:00:00Z")
         assert first["id"] != second["id"]
         assert _snapshots(client, first["id"]) == _snapshots(client, second["id"])
 
