@@ -9,6 +9,7 @@ import {
   meceApi,
   nullOn404,
   parseApiError,
+  parseValidationResult,
   robustnessApi,
   skillsApi,
   variablesApi,
@@ -122,6 +123,13 @@ describe('engine API clients', () => {
     mockFetch(jsonResponse({ run_id: 'r1' }))
     await distributionsApi.getDeterminism('r1')
     expect(lastCall(fetchMock).url).toBe('/api/runs/r1/determinism')
+  })
+
+  it('fetches per-trial values behind a stored ensemble', async () => {
+    const fetchMock = mockFetch(jsonResponse({ ensemble_id: 'e1', baseline: [1, 2], strategy: [3, 4] }))
+    const result = await distributionsApi.getTrialValues('r1')
+    expect(result.baseline).toEqual([1, 2])
+    expect(lastCall(fetchMock).url).toBe('/api/runs/r1/monte-carlo/trial-values')
   })
 
   it('posts the four robustness analyses and reads the stored bundle', async () => {
@@ -252,6 +260,50 @@ describe('parseApiError', () => {
     expect(parseApiError(new Error('boom'))).toEqual({ status: null, code: null, message: 'boom' })
     expect(parseApiError('nope')).toEqual({ status: null, code: null, message: 'nope' })
     expect(isLlmUnavailable(new Error('boom'))).toBe(false)
+  })
+
+  it('joins FastAPI 422 shape errors readably', () => {
+    const invalid = new ApiError(
+      422,
+      JSON.stringify({
+        detail: [
+          { loc: ['body', 'name'], msg: 'String should have at least 1 character', type: 'string_too_short' },
+          { loc: ['body', 'variables', 0, 'id'], msg: 'Field required', type: 'missing' },
+        ],
+      }),
+    )
+    expect(parseApiError(invalid)).toEqual({
+      status: 422,
+      code: null,
+      message: 'body.name: String should have at least 1 character; body.variables.0.id: Field required',
+    })
+  })
+})
+
+describe('parseValidationResult', () => {
+  const VALIDATION = {
+    is_valid: false,
+    variable_count: 1,
+    checks: [{ variable: 'cash', check: 'distribution', status: 'fail', detail: '' }],
+    issues: [{ kind: 'missing_unit', variable: 'cash', message: 'Variable cash is missing a unit.' }],
+  }
+
+  it('recovers the validation payload from a variable_validation_failed error', () => {
+    const error = new ApiError(
+      400,
+      JSON.stringify({
+        detail: { code: 'variable_validation_failed', message: 'Variable validation failed.', validation: VALIDATION },
+      }),
+    )
+    expect(parseValidationResult(error)).toEqual(VALIDATION)
+  })
+
+  it('returns null for other error shapes', () => {
+    expect(parseValidationResult(new ApiError(400, JSON.stringify({ detail: { code: 'other', message: 'x' } })))).toBeNull()
+    expect(parseValidationResult(new ApiError(404, JSON.stringify({ detail: 'not found' })))).toBeNull()
+    expect(parseValidationResult(new ApiError(400, JSON.stringify({ detail: { validation: { nope: true } } })))).toBeNull()
+    expect(parseValidationResult(new Error('boom'))).toBeNull()
+    expect(parseValidationResult(null)).toBeNull()
   })
 })
 

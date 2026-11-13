@@ -231,6 +231,17 @@ export interface MonteCarloResult {
   protocol: string
 }
 
+export interface MonteCarloTrialValues {
+  ensemble_id: string
+  base_run_id: string
+  metric: string
+  loss_threshold: number
+  baseline: number[]
+  strategy: number[]
+  trial_values_hash: string
+  protocol: string
+}
+
 export interface ReplayResult {
   original_run_id: string
   replay_run_id: string

@@ -14,11 +14,14 @@ import type {
   MeceRunRead,
   MeceValidationResult,
   MonteCarloResult,
+  MonteCarloTrialValues,
   RobustnessRead,
   SkillDeliberationRecord,
   StageRecord,
   StrategyTeamResult,
   VariableRunRead,
+  VariableTemplateRead,
+  VariableValidationResult,
 } from '../api/engineTypes'
 
 function stage(label: string, templateId: string, output: Record<string, unknown>): StageRecord {
@@ -870,3 +873,144 @@ export const calibrationFits: CalibrationFitRead[] = [
     created_at: '2026-11-13T08:15:00Z',
   },
 ]
+
+// ---------------------------------------------------------------------------
+// Sprint 8 fixtures: variable templates + monte-carlo trial values.
+// ---------------------------------------------------------------------------
+
+export const builtinTemplate: VariableTemplateRead = {
+  id: 'builtin:corporate',
+  name: 'Corporate (built-in)',
+  domain_id: 'corporate',
+  description: 'Built-in corporate preset synthesized from the domain pack.',
+  state_fields: [
+    { name: 'cash', description: 'Cash on hand', default: 100 },
+    { name: 'pipeline', description: 'Sales pipeline', default: 50 },
+  ],
+  policies: {
+    cash: { preferred_direction: 'increase', alert_threshold: 50, critical_threshold: 25 },
+  },
+  variables: [],
+  formulas: [],
+  internal: {},
+  is_builtin: true,
+  created_at: null,
+  updated_at: null,
+}
+
+export const builtinMilitaryTemplate: VariableTemplateRead = {
+  id: 'builtin:military',
+  name: 'Military (built-in)',
+  domain_id: 'military',
+  description: 'Built-in military preset synthesized from the domain pack.',
+  state_fields: [{ name: 'readiness', description: 'Force readiness', default: 80 }],
+  policies: {
+    readiness: { preferred_direction: 'increase', alert_threshold: 60, critical_threshold: 40 },
+  },
+  variables: [],
+  formulas: [],
+  internal: {},
+  is_builtin: true,
+  created_at: null,
+  updated_at: null,
+}
+
+export const customTemplate: VariableTemplateRead = {
+  id: 'tmpl-1',
+  name: 'AI line case',
+  domain_id: 'corporate',
+  description: 'Custom template for the AI customer-service line case.',
+  state_fields: [
+    { name: 'cash', description: 'Cash on hand', default: 100 },
+    { name: 'pipeline', description: 'Sales pipeline', default: 50 },
+  ],
+  policies: {
+    cash: { preferred_direction: 'increase', alert_threshold: 50, critical_threshold: 25 },
+  },
+  variables: [
+    {
+      id: 'cash',
+      unit: 'k USD',
+      distribution: { type: 'triangular', value: null, mean: null, std: null, min: 60, mode: 100, max: 140, p: null },
+      evidence_ref: 'estimate: founder',
+      description: 'Cash at decision time',
+      scope_tags: ['economics'],
+    },
+    {
+      id: 'cac',
+      unit: 'USD/customer',
+      distribution: { type: 'triangular', value: null, mean: null, std: null, min: 8000, mode: 12000, max: 20000, p: null },
+      evidence_ref: 'crm:q3-actuals',
+      description: 'Customer acquisition cost',
+      scope_tags: ['economics'],
+    },
+  ],
+  formulas: [
+    { output: 'runway_months', expression: { op: 'divide', args: [{ ref: 'cash' }, 12] }, description: 'Cash divided by monthly burn' },
+  ],
+  internal: { runway: '9 months of cash', team: '20 people, no ML hire' },
+  is_builtin: false,
+  created_at: '2026-11-13T06:00:00Z',
+  updated_at: '2026-11-13T06:00:00Z',
+}
+
+export const calibratedTemplate: VariableTemplateRead = {
+  id: 'tmpl-cal-1',
+  name: 'Corporate (built-in) (calibrated)',
+  domain_id: 'corporate',
+  description: 'Calibrated from template builtin:corporate by ridge-to-prior fit (ridge_strength=1, seed=7) over 4 run(s). Source description: Built-in corporate preset synthesized from the domain pack.',
+  state_fields: [
+    { name: 'cash', description: 'Cash on hand', default: 100 },
+    { name: 'pipeline', description: 'Sales pipeline', default: 50 },
+  ],
+  policies: {
+    cash: { preferred_direction: 'increase', alert_threshold: 86, critical_threshold: 52.5 },
+  },
+  variables: [],
+  formulas: [],
+  internal: {},
+  is_builtin: false,
+  created_at: '2026-11-13T08:15:00Z',
+  updated_at: '2026-11-13T08:15:00Z',
+}
+
+export const templateList: VariableTemplateRead[] = [
+  builtinTemplate,
+  builtinMilitaryTemplate,
+  customTemplate,
+  calibratedTemplate,
+]
+
+export const invalidValidationResult: VariableValidationResult = {
+  is_valid: false,
+  variable_count: 1,
+  checks: [
+    { check: 'variable_set_nonempty', status: 'pass', variable: '', detail: '' },
+    { check: 'variables_valid', status: 'fail', variable: '', detail: '2 issue(s)' },
+  ],
+  issues: [
+    { kind: 'missing_unit', variable: 'cac', message: 'Variable "cac" is missing a unit.' },
+    { kind: 'invalid_bounds', variable: 'cac', message: 'triangular bounds must satisfy min <= mode <= max.' },
+  ],
+}
+
+export const validValidationResult: VariableValidationResult = {
+  is_valid: true,
+  variable_count: 2,
+  checks: [
+    { check: 'variable_set_nonempty', status: 'pass', variable: '', detail: '' },
+    { check: 'variables_valid', status: 'pass', variable: '', detail: '' },
+  ],
+  issues: [],
+}
+
+export const trialValues: MonteCarloTrialValues = {
+  ensemble_id: 'ens-1',
+  base_run_id: 'run-1',
+  metric: 'cash',
+  loss_threshold: 90,
+  baseline: [79.4, 98.9, 118.4, 92.0, 105.5],
+  strategy: [140, 140, 140, 140, 140],
+  trial_values_hash: 'sha256:aaaa',
+  protocol: 'sprint3-v1',
+}

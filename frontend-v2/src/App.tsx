@@ -16,6 +16,7 @@ import Cockpit from './pages/Cockpit'
 import Deliberation from './pages/Deliberation'
 import MeceAuthoring from './pages/MeceAuthoring'
 import TemplateProvenance from './pages/TemplateProvenance'
+import VariableTemplates from './pages/VariableTemplates'
 import { AuthGate } from './auth/AuthGate'
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/cockpit" element={<Cockpit />} />
             <Route path="/cockpit/deliberations" element={<Deliberation />} />
             <Route path="/cockpit/mece" element={<MeceAuthoring />} />
+            <Route path="/cockpit/variable-templates" element={<VariableTemplates />} />
             <Route path="/cockpit/templates" element={<TemplateProvenance />} />
           </Route>
         </Routes>

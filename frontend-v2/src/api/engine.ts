@@ -20,6 +20,7 @@ import type {
   MeceValidationResult,
   MonteCarloRequest,
   MonteCarloResult,
+  MonteCarloTrialValues,
   PolicyFitRequest,
   ReplayResult,
   RobustnessRead,
@@ -65,18 +66,40 @@ function readDetailBody(message: string): unknown {
   }
 }
 
+/** The FastAPI `detail` payload of an ApiError, or the raw body when unshaped. */
+function readErrorDetail(error: unknown): unknown {
+  if (!(error instanceof ApiError)) return null
+  const parsed = readDetailBody(error.message)
+  if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+    return (parsed as { detail: unknown }).detail
+  }
+  return parsed
+}
+
 export function parseApiError(error: unknown): ApiErrorInfo {
   if (error instanceof ApiError) {
-    const parsed = readDetailBody(error.message)
-    const detail =
-      parsed && typeof parsed === 'object' && 'detail' in parsed
-        ? (parsed as { detail: unknown }).detail
-        : parsed
+    const detail = readErrorDetail(error)
     if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
       const record = detail as Record<string, unknown>
       const code = typeof record.code === 'string' ? record.code : null
       const message = typeof record.message === 'string' ? record.message : error.message
       return { status: error.status, code, message }
+    }
+    if (Array.isArray(detail)) {
+      // FastAPI 422 shape errors: [{loc, msg, ...}] — join them readably
+      // instead of dumping the raw body.
+      const parts = detail.map((entry) => {
+        if (entry && typeof entry === 'object') {
+          const record = entry as Record<string, unknown>
+          const loc = Array.isArray(record.loc) ? record.loc.join('.') : ''
+          const msg = typeof record.msg === 'string' ? record.msg : JSON.stringify(entry)
+          return loc ? `${loc}: ${msg}` : msg
+        }
+        return String(entry)
+      })
+      if (parts.length > 0) {
+        return { status: error.status, code: null, message: parts.join('; ') }
+      }
     }
     if (typeof detail === 'string' && detail.length > 0) {
       return { status: error.status, code: null, message: detail }
@@ -88,6 +111,22 @@ export function parseApiError(error: unknown): ApiErrorInfo {
     code: null,
     message: error instanceof Error ? error.message : String(error),
   }
+}
+
+/**
+ * Recover the structured validation result carried by a 400
+ * `variable_validation_failed` error (`detail.validation`), so the
+ * template editor can show the backend's issues inline. Returns null
+ * for any other error shape — callers fall back to `parseApiError`.
+ */
+export function parseValidationResult(error: unknown): VariableValidationResult | null {
+  const detail = readErrorDetail(error)
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null
+  const validation = (detail as Record<string, unknown>).validation
+  if (!validation || typeof validation !== 'object' || Array.isArray(validation)) return null
+  const record = validation as Record<string, unknown>
+  if (typeof record.is_valid !== 'boolean' || !Array.isArray(record.issues)) return null
+  return validation as VariableValidationResult
 }
 
 /** True when the failure is the honest "no LLM configured" state. */
@@ -156,6 +195,8 @@ export const distributionsApi = {
     api.post<MonteCarloResult>(`/runs/${encodeURIComponent(runId)}/monte-carlo`, payload),
   getMonteCarlo: (runId: string) =>
     api.get<MonteCarloResult>(`/runs/${encodeURIComponent(runId)}/monte-carlo`),
+  getTrialValues: (runId: string) =>
+    api.get<MonteCarloTrialValues>(`/runs/${encodeURIComponent(runId)}/monte-carlo/trial-values`),
   replay: (runId: string) =>
     api.post<ReplayResult>(`/runs/${encodeURIComponent(runId)}/replay`),
   getDeterminism: (runId: string) =>
