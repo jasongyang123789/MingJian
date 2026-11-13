@@ -7,8 +7,10 @@ mirroring the MECE/variables/distributions pattern. Service orchestration
 """
 
 from .methods import (
+    ThresholdSearchOutcome,
     apply_gate_operator,
     bisect_threshold,
+    bisect_threshold_search,
     bootstrap_intervals,
     expected_shortfall,
     gate_observed_value,
@@ -65,6 +67,7 @@ __all__ = [
     "GateRegistrationRequest",
     "RobustnessRead",
     "ThresholdEvaluation",
+    "ThresholdSearchOutcome",
     "ThresholdSearchRequest",
     "ThresholdSearchResult",
     "TornadoRequest",
@@ -72,6 +75,7 @@ __all__ = [
     "TornadoRow",
     "apply_gate_operator",
     "bisect_threshold",
+    "bisect_threshold_search",
     "bootstrap_intervals",
     "expected_shortfall",
     "gate_observed_value",

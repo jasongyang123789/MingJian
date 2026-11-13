@@ -29,6 +29,7 @@ from .domain_packs import SimulationDomainPacksMixin
 from .engine import SimulationEngineMixin
 from .impact import ActionCandidate, RuleScore, SelectedAction, SimulationImpactMixin
 from .report import SimulationReportMixin
+from .robustness import SimulationRobustnessMixin
 from .scenarios import SimulationScenariosMixin
 
 
@@ -36,6 +37,7 @@ class SimulationService(
     SimulationEngineMixin,
     SimulationScenariosMixin,
     SimulationDistributionsMixin,
+    SimulationRobustnessMixin,
     SimulationImpactMixin,
     SimulationReportMixin,
     SimulationDomainPacksMixin,

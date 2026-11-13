@@ -16,6 +16,7 @@ from planagent.api.routes.variables import router as variables_router
 from planagent.api.routes.admin import router as admin_router
 from planagent.api.routes.monitoring import router as monitoring_router
 from planagent.api.routes.prediction import router as prediction_router
+from planagent.api.routes.robustness import router as robustness_router
 from planagent.api.routes.sources import router as sources_router
 from planagent.api.routes.auth import router as auth_router
 from planagent.api.routes.export import router as export_router
@@ -39,6 +40,7 @@ router.include_router(simulation_router, tags=["Simulation"])
 router.include_router(admin_router, tags=["Admin"])
 router.include_router(monitoring_router)
 router.include_router(prediction_router)
+router.include_router(robustness_router, tags=["Robustness"])
 router.include_router(sources_router)
 router.include_router(auth_router)
 router.include_router(export_router, dependencies=[Depends(get_community_access_payload)])

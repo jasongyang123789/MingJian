@@ -28,11 +28,22 @@ from __future__ import annotations
 import math
 import random
 import statistics
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
+from typing import TypedDict
 
 from planagent.services.distributions.aggregation import percentile
 
 from .models import GateArm, GateDefinition, GateMetric, GateOperator
+
+
+class ThresholdSearchOutcome(TypedDict):
+    """The result of a bisection threshold search."""
+
+    threshold: float | None
+    achieved_statistic: float | None
+    reachable: bool
+    iterations: int
+    evaluations: list[dict[str, float]]
 
 _OPERATORS: Mapping[GateOperator, Callable[[float, float], bool]] = {
     GateOperator.GT: lambda value, threshold: value > threshold,
@@ -137,27 +148,42 @@ def bootstrap_intervals(
     return results
 
 
-def bisect_threshold(
-    statistic_at: Callable[[float], float],
+def bisect_threshold_search(
     *,
     target: float,
     bounds: tuple[float, float],
     direction: str,
     tolerance: float,
     max_iterations: int,
-) -> dict[str, object]:
-    """Bisection search for the input value where a statistic hits a target.
+) -> Generator[float, float, ThresholdSearchOutcome]:
+    """Generator-based bisection search for a statistic's crossing point.
 
-    ``statistic_at`` is evaluated at both bounds first; when the target is
-    not bracketed (in the stated ``direction``), the search reports
-    ``reachable=False`` with ``threshold=None`` instead of inventing a
-    value. Otherwise it bisects until the interval is narrower than
-    ``tolerance`` or ``max_iterations`` steps run out, then evaluates once
-    at the reported threshold so ``achieved_statistic`` is the statistic
-    at that exact value. Monotonicity in the stated direction is assumed
-    (as in the reference); a non-monotone statistic can converge to a
-    crossing that is not the only one, and the evaluation trail records
-    every probe so the search stays auditable.
+    The generator owns all search logic; the caller supplies statistics.
+    Drive it by sending each yielded probe value's statistic back in::
+
+        search = bisect_threshold_search(...)
+        value = next(search)
+        while True:
+            try:
+                value = search.send(statistic_at(value))
+            except StopIteration as done:
+                result = done.value
+                break
+
+    The generator yields both bounds first; when the target is not
+    bracketed (in the stated ``direction``), it returns ``reachable=False``
+    with ``threshold=None`` instead of inventing a value. Otherwise it
+    bisects until the interval is narrower than ``tolerance`` or
+    ``max_iterations`` steps run out, then yields the reported threshold
+    once so ``achieved_statistic`` is the statistic at that exact value.
+    Monotonicity in the stated direction is assumed (as in the reference);
+    a non-monotone statistic can converge to a crossing that is not the
+    only one, and the evaluation trail records every probe so the search
+    stays auditable.
+
+    The generator form exists because probe evaluations are async service
+    calls (they execute simulation runs); a synchronous caller can use
+    :func:`bisect_threshold` instead.
     """
 
     if direction not in ("increasing", "decreasing"):
@@ -174,9 +200,9 @@ def bisect_threshold(
         return statistic if direction == "increasing" else -statistic
 
     evaluations: list[dict[str, float]] = []
-    stat_low = statistic_at(low)
+    stat_low = yield low
     evaluations.append({"value": low, "statistic": stat_low})
-    stat_high = statistic_at(high)
+    stat_high = yield high
     evaluations.append({"value": high, "statistic": stat_high})
     oriented_target = oriented(target)
     if not oriented(stat_low) <= oriented_target <= oriented(stat_high):
@@ -194,14 +220,14 @@ def bisect_threshold(
             break
         iterations += 1
         midpoint = (low + high) / 2.0
-        stat_mid = statistic_at(midpoint)
+        stat_mid = yield midpoint
         evaluations.append({"value": midpoint, "statistic": stat_mid})
         if oriented(stat_mid) < oriented_target:
             low = midpoint
         else:
             high = midpoint
     threshold = (low + high) / 2.0
-    achieved = statistic_at(threshold)
+    achieved = yield threshold
     evaluations.append({"value": threshold, "statistic": achieved})
     return {
         "threshold": threshold,
@@ -210,6 +236,32 @@ def bisect_threshold(
         "iterations": iterations,
         "evaluations": evaluations,
     }
+
+
+def bisect_threshold(
+    statistic_at: Callable[[float], float],
+    *,
+    target: float,
+    bounds: tuple[float, float],
+    direction: str,
+    tolerance: float,
+    max_iterations: int,
+) -> ThresholdSearchOutcome:
+    """Synchronous driver for :func:`bisect_threshold_search`."""
+
+    search = bisect_threshold_search(
+        target=target,
+        bounds=bounds,
+        direction=direction,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+    )
+    value = next(search)
+    while True:
+        try:
+            value = search.send(statistic_at(value))
+        except StopIteration as done:
+            return done.value
 
 
 def _raw_arm_summary(values: list[float], loss_threshold: float) -> dict[str, float]:
