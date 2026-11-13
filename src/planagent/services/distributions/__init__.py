@@ -26,6 +26,7 @@ from .models import (
     PairedDeltaSummary,
     ReplayResult,
 )
+from .quantiles import BETA_PERT_QUANTILE_DRAWS, distribution_median, distribution_quantile
 from .sampler import (
     MONTE_CARLO_CONFIGURATION_KEY,
     VARIABLES_CONFIGURATION_KEY,
@@ -36,6 +37,7 @@ from .sampler import (
 )
 
 __all__ = [
+    "BETA_PERT_QUANTILE_DRAWS",
     "DETERMINISM_CONFIGURATION_KEY",
     "HASH_PROTOCOL_VERSION",
     "MAX_TRIALS",
@@ -51,6 +53,8 @@ __all__ = [
     "compute_input_hash",
     "derive_sub_seed",
     "determinism_input_fragment",
+    "distribution_median",
+    "distribution_quantile",
     "paired_delta_stats",
     "percentile",
     "resolve_run_samples",
