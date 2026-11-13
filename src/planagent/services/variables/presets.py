@@ -48,7 +48,10 @@ def builtin_template(domain_id: str) -> VariableTemplate:
 
     try:
         pack = registry.get(domain_id)
-    except KeyError as exc:
+    except (KeyError, ModuleNotFoundError) as exc:
+        # registry.get raises KeyError for a missing pack, but its
+        # on-demand import raises ModuleNotFoundError when the domain's
+        # package does not exist at all (find_spec on a missing parent).
         raise ValueError(f"Unknown domain_id: {domain_id}") from exc
     return VariableTemplate(
         id=builtin_template_id(domain_id),

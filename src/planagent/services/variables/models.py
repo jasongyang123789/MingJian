@@ -94,14 +94,18 @@ class VariableDefinition(BaseModel):
     an explicit ``estimate: ...`` marker recording that the value is a human
     estimate. ``scope_tags`` optionally bind the variable to MECE scope tags
     from the run's decomposition tree (cross-checked by the validator).
+
+    ``unit`` and ``evidence_ref`` default to empty (rather than failing
+    Pydantic shape validation) so missing values surface as structured
+    validation issues from the validator, matching the empty-set rule.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(min_length=1, max_length=120)
-    unit: str = Field(min_length=1, max_length=60)
+    unit: str = Field(default="", max_length=60)
     distribution: VariableDistribution
-    evidence_ref: str = Field(min_length=1, max_length=500)
+    evidence_ref: str = Field(default="", max_length=500)
     description: str = Field(default="", max_length=2000)
     scope_tags: list[str] = Field(default_factory=list)
 
