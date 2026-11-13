@@ -344,8 +344,11 @@ def calibrate_policy_thresholds(
     ``unchanged_reason``; a fitted pair that would break the
     direction's threshold ordering is rejected wholesale for that
     metric (both priors kept, reason ``ordering_guard``, rejected fit
-    recorded) rather than silently clamped. Returns the fitted policy
-    specs plus per-metric change records.
+    recorded) rather than silently clamped. A one-observation tail
+    yields no bootstrap interval for the critical threshold (there is
+    no resampling variability to report); the fitted value is still
+    recorded and the tail count makes the reason visible. Returns the
+    fitted policy specs plus per-metric change records.
     """
 
     if not math.isfinite(ridge_strength) or ridge_strength < 0:
@@ -395,16 +398,18 @@ def calibrate_policy_thresholds(
             level=level,
             clip_nonnegative=False,
         )[0]
-        critical_interval = bootstrap_coefficient_intervals(
-            [[1.0] for _ in tail],
-            tail,
-            [prior_critical],
-            ridge_strength,
-            draws=bootstrap_draws,
-            seed=critical_seed,
-            level=level,
-            clip_nonnegative=False,
-        )[0]
+        critical_interval = None
+        if len(tail) >= 2:
+            critical_interval = bootstrap_coefficient_intervals(
+                [[1.0] for _ in tail],
+                tail,
+                [prior_critical],
+                ridge_strength,
+                draws=bootstrap_draws,
+                seed=critical_seed,
+                level=level,
+                clip_nonnegative=False,
+            )[0]
         base_change.update(
             {
                 "fitted_alert_threshold": fitted_alert,
