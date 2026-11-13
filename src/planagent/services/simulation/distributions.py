@@ -126,8 +126,7 @@ class SimulationDistributionsMixin:
         if request.metric not in state_fields:
             raise MonteCarloError(
                 "monte_carlo_unknown_metric",
-                f"Metric {request.metric!r} is not a state field of domain "
-                f"{base_run.domain_id!r}.",
+                f"Metric {request.metric!r} is not a state field of domain {base_run.domain_id!r}.",
             )
         variable_ids = {variable.id for variable in bindings.variables}
         unknown_levers = sorted(set(request.strategy_levers) - variable_ids)
@@ -407,7 +406,8 @@ class SimulationDistributionsMixin:
             sampled_applied = list(summary_fragment.get("sampled_applied") or [])
         if not state_hashes:
             state_hashes = await self._snapshot_hashes(session, run.id)
-        return DeterminismRead(            run_id=run.id,
+        return DeterminismRead(
+            run_id=run.id,
             seed=run.seed,
             protocol=HASH_PROTOCOL_VERSION,
             input_hash=input_hash,

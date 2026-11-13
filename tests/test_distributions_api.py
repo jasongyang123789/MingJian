@@ -115,13 +115,13 @@ def _create_bound_run(client: TestClient, **overrides) -> dict:
     return created.json()
 
 
-def test_sampling_applies_to_initial_state_and_initial_state_wins(monkeypatch, tmp_path: Path) -> None:
+def test_sampling_applies_to_initial_state_and_initial_state_wins(
+    monkeypatch, tmp_path: Path
+) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_bound_run(client)
-        expected = sample_variable_set(
-            VariableSet.model_validate(BOUND_SET), rng_for_seed(7)
-        )
+        expected = sample_variable_set(VariableSet.model_validate(BOUND_SET), rng_for_seed(7))
         tick_zero = _snapshots(client, run["id"])[0]["state"]
         assert tick_zero["cash"] == expected["cash"]
         assert tick_zero["pipeline"] == expected["pipeline"]
@@ -210,9 +210,7 @@ def test_replay_requires_completed_run(monkeypatch, tmp_path: Path) -> None:
 def test_monte_carlo_refusals(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        queued = client.post(
-            "/simulation/runs", json=simulation_payload(execution_mode="QUEUED")
-        )
+        queued = client.post("/simulation/runs", json=simulation_payload(execution_mode="QUEUED"))
         assert queued.status_code == 201
         refused = client.post(
             f"/runs/{queued.json()['id']}/monte-carlo",
@@ -299,12 +297,10 @@ def test_monte_carlo_distributions_pairing_and_storage(monkeypatch, tmp_path: Pa
                 f"/runs/{body['trial_run_ids']['strategy'][index]}/determinism"
             ).json()
             assert (
-                baseline_audit["sampled_values"]["cash"]
-                == strategy_audit["sampled_values"]["cash"]
+                baseline_audit["sampled_values"]["cash"] == strategy_audit["sampled_values"]["cash"]
             )
             assert (
-                baseline_audit["sampled_values"]["cac"]
-                == strategy_audit["sampled_values"]["cac"]
+                baseline_audit["sampled_values"]["cac"] == strategy_audit["sampled_values"]["cac"]
             )
             assert strategy_audit["sampled_values"]["pipeline"] == 1.0
 

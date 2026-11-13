@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from planagent.services.variables.models import DistributionType, VariableSet
 from planagent.services.variables.validator import validate_variable_set
@@ -45,7 +46,9 @@ def rng_for_seed(seed: int) -> random.Random:
     return random.Random(seed)
 
 
-def _sample_one(distribution_type: DistributionType, params: Mapping[str, Any], rng: random.Random) -> float:
+def _sample_one(
+    distribution_type: DistributionType, params: Mapping[str, Any], rng: random.Random
+) -> float:
     if distribution_type is DistributionType.FIXED:
         return float(params["value"])
     if distribution_type is DistributionType.NORMAL:
@@ -80,13 +83,15 @@ def sample_variable_set(
 
     result = validate_variable_set(variable_set)
     if not result.is_valid:
-        details = "; ".join(f"{issue.kind}({issue.variable}): {issue.message}" for issue in result.issues)
+        details = "; ".join(
+            f"{issue.kind}({issue.variable}): {issue.message}" for issue in result.issues
+        )
         raise ValueError(f"Variable set failed validation; refusing to sample: {details}")
 
     lever_values = dict(levers or {})
     for lever_id, lever_value in lever_values.items():
         if isinstance(lever_value, bool) or not isinstance(lever_value, (int, float)):
-            raise ValueError(f"Lever {lever_id!r} must be a finite number.")
+            raise TypeError(f"Lever {lever_id!r} must be a finite number.")
         if not math.isfinite(float(lever_value)):
             raise ValueError(f"Lever {lever_id!r} must be a finite number.")
 

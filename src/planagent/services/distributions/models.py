@@ -12,7 +12,6 @@ import math
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 MAX_TRIALS = 200
 
 

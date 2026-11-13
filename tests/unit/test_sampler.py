@@ -31,13 +31,9 @@ def _variable(var_id: str, distribution: VariableDistribution) -> VariableDefini
 GOLDEN_SET = VariableSet(
     name="golden",
     variables=[
-        _variable(
-            "tri", VariableDistribution(type="triangular", min=24, mode=36, max=60)
-        ),
+        _variable("tri", VariableDistribution(type="triangular", min=24, mode=36, max=60)),
         _variable("nrm", VariableDistribution(type="normal", mean=12, std=3)),
-        _variable(
-            "pert", VariableDistribution(type="beta_pert", min=5, mode=12, max=25)
-        ),
+        _variable("pert", VariableDistribution(type="beta_pert", min=5, mode=12, max=25)),
         _variable("bern", VariableDistribution(type="bernoulli", p=0.35)),
         _variable("fix", VariableDistribution(type="fixed", value=42.5)),
     ],
@@ -83,12 +79,8 @@ def test_fixed_returns_its_value_exactly() -> None:
 def test_triangular_and_beta_pert_stay_within_bounds() -> None:
     bounded = VariableSet(
         variables=[
-            _variable(
-                "tri", VariableDistribution(type="triangular", min=10, mode=12, max=20)
-            ),
-            _variable(
-                "pert", VariableDistribution(type="beta_pert", min=10, mode=12, max=20)
-            ),
+            _variable("tri", VariableDistribution(type="triangular", min=10, mode=12, max=20)),
+            _variable("pert", VariableDistribution(type="beta_pert", min=10, mode=12, max=20)),
         ]
     )
     rng = rng_for_seed(99)
@@ -108,19 +100,13 @@ def test_normal_draws_center_near_mean_over_many_samples() -> None:
 
 
 def test_bernoulli_draws_are_zero_or_one_and_edges_are_exact() -> None:
-    middle = VariableSet(
-        variables=[_variable("b", VariableDistribution(type="bernoulli", p=0.5))]
-    )
+    middle = VariableSet(variables=[_variable("b", VariableDistribution(type="bernoulli", p=0.5))])
     rng = rng_for_seed(3)
     draws = {sample_variable_set(middle, rng)["b"] for _ in range(50)}
     assert draws <= {0.0, 1.0}
     assert draws == {0.0, 1.0}
-    never = VariableSet(
-        variables=[_variable("b", VariableDistribution(type="bernoulli", p=0.0))]
-    )
-    always = VariableSet(
-        variables=[_variable("b", VariableDistribution(type="bernoulli", p=1.0))]
-    )
+    never = VariableSet(variables=[_variable("b", VariableDistribution(type="bernoulli", p=0.0))])
+    always = VariableSet(variables=[_variable("b", VariableDistribution(type="bernoulli", p=1.0))])
     assert sample_variable_set(never, rng_for_seed(3)) == {"b": 0.0}
     assert sample_variable_set(always, rng_for_seed(3)) == {"b": 1.0}
 
@@ -150,16 +136,12 @@ def test_sampler_rejects_anything_the_validator_rejects() -> None:
         VariableSet(variables=[]),  # empty set
         VariableSet(
             variables=[
-                _variable(
-                    "t", VariableDistribution(type="triangular", min=20, mode=12, max=10)
-                )
+                _variable("t", VariableDistribution(type="triangular", min=20, mode=12, max=10))
             ]
         ),  # invalid bounds
         VariableSet(
             variables=[
-                _variable(
-                    "t", VariableDistribution(type="triangular", min=10, mode=10, max=10)
-                )
+                _variable("t", VariableDistribution(type="triangular", min=10, mode=10, max=10))
             ]
         ),  # degenerate bounds
         VariableSet(

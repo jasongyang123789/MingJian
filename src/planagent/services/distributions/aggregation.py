@@ -75,7 +75,9 @@ def summarize_samples(values: list[float], loss_threshold: float = 0.0) -> dict[
     }
 
 
-def paired_delta_stats(baseline_values: list[float], strategy_values: list[float]) -> dict[str, float]:
+def paired_delta_stats(
+    baseline_values: list[float], strategy_values: list[float]
+) -> dict[str, float]:
     """Paired comparison between baseline and strategy trial values.
 
     Trials are paired by index (same seed, shared draws); the delta

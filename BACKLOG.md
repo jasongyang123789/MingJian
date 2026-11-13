@@ -27,28 +27,27 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   bindings with merge and MECE scope cross-check + template CRUD/audit
   API + migration `0029_variable_templates`; tests 763 → 801 passed.
   Report: `SPRINT2.md` (branch `strategy-engine/sprint2-variables`).
+- **Sprint 3 — determinism + sampling (PRD deltas D4/D5).** Canonical
+  JSON + SHA-256 input/state hashes + hash-verified replay; seed → RNG
+  wiring (gap G6 closed) with golden-run byte-identity; seeded paired
+  Monte Carlo over the Sprint 2 variable tables (P10/P50/P90 + loss
+  probability + paired deltas, stored on the base run); branch-level
+  variable overrides with decomposition-branch scope ownership; tests
+  801 → 850 passed. Report: `SPRINT3.md` (branch
+  `strategy-engine/sprint3-distributions`).
 
-## Sprint 3 — determinism + sampling (next)
+## Sprint 4 — robustness evaluation (next, approved enrichment)
 
-- Determinism hardening (approved enrichment, per adadsws): canonical
-  JSON + SHA-256 state hash + replay; seed → RNG wiring (gap G6);
-  golden-run test (same seed → byte-identical snapshots).
-- Seeded paired Monte Carlo over the Sprint 2 variable tables (per
-  agilhaykal/strategic-simulation): sample the validated distributions,
-  run baseline-vs-strategy pairs on shared seeds, aggregate P10/P50/P90
-  per scenario. Formula graph (derived variables, no arbitrary code) if
-  it fits cleanly.
-- Branch-level bindings: per-branch variable overrides in
-  `create_scenario_run`, same gate; per-branch scope ownership.
-- Entry points: `SPRINT2.md` §7.
-
-## Sprint 4 — robustness evaluation (approved enrichment)
+## Sprint 4 — robustness evaluation (next, approved enrichment)
 
 - Expected shortfall / tornado sensitivity / threshold search /
   pre-registered decision gates (per taylanakgn) + bootstrap intervals
   (per jasonrkeen), grafted onto the Sprint 3 sampling runner.
 - Distribution layer (PRD deltas D4/D5): aggregate across sampled runs;
   scenario-lab ensemble statistics as the aggregation reference.
+- Formula graph (derived variables, no arbitrary code) if it fits
+  cleanly — lets non-state-field variables drive tick dynamics.
+- Entry points: `SPRINT3.md` §7.
 
 ## Sprint 5 — calibration + deliberation integrity (approved enrichment)
 
