@@ -18,9 +18,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def test_golden_example_case_byte_stable() -> None:
-    fixture = json.loads(
-        (FIXTURES / "mece_golden_case.json").read_text(encoding="utf-8")
-    )
+    fixture = json.loads((FIXTURES / "mece_golden_case.json").read_text(encoding="utf-8"))
     result = validate_decomposition(DecompositionTree.model_validate(fixture))
     serialized = (
         json.dumps(
@@ -36,9 +34,7 @@ def test_golden_example_case_byte_stable() -> None:
 
 
 def test_golden_example_case_summary() -> None:
-    fixture = json.loads(
-        (FIXTURES / "mece_golden_case.json").read_text(encoding="utf-8")
-    )
+    fixture = json.loads((FIXTURES / "mece_golden_case.json").read_text(encoding="utf-8"))
     result = validate_decomposition(DecompositionTree.model_validate(fixture))
     assert result.is_mece is True
     assert result.issues == []

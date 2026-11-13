@@ -393,6 +393,9 @@ class TestSimulationExecution:
             company_name=None,
             company_industry=None,
             force_name=None,
+            # Stand-in for SimulationRunCreate, which gained this optional
+            # field in Sprint 1 (MECE gate); absent = no decomposition.
+            decomposition=None,
         )
         with pytest.raises(ValueError, match="not implemented"):
             await engine_service.create_simulation_run(mock_session, payload)

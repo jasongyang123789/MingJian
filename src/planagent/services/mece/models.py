@@ -50,7 +50,7 @@ class DecompositionBranch(BaseModel):
 
     name: str = Field(min_length=1, max_length=_MAX_NAME_LENGTH)
     scope: list[str] = Field(default_factory=list)
-    children: list["DecompositionBranch"] = Field(default_factory=list)
+    children: list[DecompositionBranch] = Field(default_factory=list)
 
     @field_validator("name", mode="before")
     @classmethod

@@ -242,17 +242,13 @@ def test_nested_gap_fails_at_child_level() -> None:
 
 
 def test_single_branch_covering_full_scope_passes() -> None:
-    result = validate_decomposition(
-        tree(branch("root", ["a", "b"], [branch("Only", ["a", "b"])]))
-    )
+    result = validate_decomposition(tree(branch("root", ["a", "b"], [branch("Only", ["a", "b"])])))
     assert result.is_mece is True
     assert result.issues == []
 
 
 def test_single_branch_partial_scope_fails_with_gap() -> None:
-    result = validate_decomposition(
-        tree(branch("root", ["a", "b"], [branch("Only", ["a"])]))
-    )
+    result = validate_decomposition(tree(branch("root", ["a", "b"], [branch("Only", ["a"])])))
     assert result.is_mece is False
     assert issue_kinds(result) == ["gap"]
 

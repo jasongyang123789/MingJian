@@ -120,8 +120,7 @@ def _validate_node(
                 kind="duplicate_tag",
                 node=path,
                 detail=(
-                    f"branch '{node.name}' lists scope tag(s) more than once: "
-                    f"{own_duplicates}"
+                    f"branch '{node.name}' lists scope tag(s) more than once: {own_duplicates}"
                 ),
                 tags=own_duplicates,
                 branches=[node.name],
@@ -189,8 +188,7 @@ def _check_mutual_exclusion(
                         kind="overlap",
                         node=path,
                         detail=(
-                            f"scope tag '{tag}' appears in both "
-                            f"'{first_owner}' and '{child.name}'"
+                            f"scope tag '{tag}' appears in both '{first_owner}' and '{child.name}'"
                         ),
                         tags=[tag],
                         branches=[first_owner, child.name],
@@ -212,10 +210,7 @@ def _check_mutual_exclusion(
                 node=path,
                 check="mutual_exclusion",
                 status="PASS",
-                detail=(
-                    f"{len(node.children)} child branches have "
-                    "pairwise disjoint scope tags"
-                ),
+                detail=(f"{len(node.children)} child branches have pairwise disjoint scope tags"),
             )
         )
 
@@ -269,10 +264,7 @@ def _check_exhaustiveness(
                 node=path,
                 check="exhaustiveness",
                 status="PASS",
-                detail=(
-                    f"children union equals parent scope, "
-                    f"{len(parent_scope)} scope tags"
-                ),
+                detail=(f"children union equals parent scope, {len(parent_scope)} scope tags"),
             )
         )
 
@@ -299,8 +291,7 @@ def _check_structure(
                 check="structure",
                 status="FAIL",
                 detail=(
-                    "branch scope lists contain duplicates or a child "
-                    "branch covers no scope tags"
+                    "branch scope lists contain duplicates or a child branch covers no scope tags"
                 ),
             )
         )

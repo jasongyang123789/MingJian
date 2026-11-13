@@ -29,8 +29,8 @@ __all__ = [
     "MeceCheckRecord",
     "MeceIssue",
     "MeceRunRead",
-    "MeceValidationResult",
     "MeceValidationError",
+    "MeceValidationResult",
     "validate_decomposition",
     "validate_or_raise",
 ]

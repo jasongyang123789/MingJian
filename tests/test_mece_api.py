@@ -128,9 +128,7 @@ def test_gate_refuses_overlapping_decomposition_and_creates_no_run(
 ) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        response = client.post(
-            "/simulation/runs", json=simulation_payload(OVERLAP_TREE)
-        )
+        response = client.post("/simulation/runs", json=simulation_payload(OVERLAP_TREE))
         assert response.status_code == 400
         detail = response.json()["detail"]
         assert detail["code"] == "mece_validation_failed"
@@ -160,9 +158,7 @@ def test_gate_refuses_gap_decomposition(monkeypatch, tmp_path: Path) -> None:
 def test_gate_passes_and_persists_audit_trail(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        created = client.post(
-            "/simulation/runs", json=simulation_payload(PASSING_TREE)
-        )
+        created = client.post("/simulation/runs", json=simulation_payload(PASSING_TREE))
         assert created.status_code == 201
         run = created.json()
         assert run["status"] == "COMPLETED"
