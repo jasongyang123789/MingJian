@@ -140,14 +140,44 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   hardening, decision-direction narrative output, template deletion,
   ensemble/analysis launch buttons in the cockpit.
 
+## Sprint 9 — living-strategy loop: monitor → re-simulate (done)
+
+- Delivered on `strategy-engine/sprint9-living-loop` (see
+  SPRINT9.md): append-only loop record (3 tables + migration 0032)
+  linking baseline run → observations → pre-registered trigger
+  evaluations → re-simulation runs → comparisons → review decisions;
+  pure trigger evaluation (threshold / Sprint 4 gate statistics /
+  repeated deviation, fired/quiet/no-data all recorded) and pure
+  ensemble comparison (per-arm deltas, gate re-evaluation,
+  threshold drift, evidence caveat when cutoffs differ); re-simulation
+  through the existing creation path (MECE/variable/firewall gates
+  engage, refused runs write zero rows, cutoff advances honestly
+  with both cutoffs + both input hashes on the record); 11 loop
+  endpoints; cockpit UI (`/cockpit/loops`, timeline, trigger
+  builder, observation recording, iteration actions, comparison
+  histograms reusing the Sprint 8 components with an
+  ensemble-identity check). No scheduler, no worker hook, no LLM
+  calls: every action is explicit. Frontend 132 → 163 tests, lint
+  and build green; backend 1088 → 1125 tests (37 new: 25 pure-module
+  unit + 12 API), Sprint 0 smoke re-run PASS. Live backend
+  integration and real deliberation rendering against a live LLM
+  remain UNVERIFIED; real scheduled monitoring does not exist yet
+  (designed automation boundary, needs Ho's decision).
+- NOT built (deferred, not done): calibration hardening,
+  decision-direction narrative output, template deletion,
+  ensemble/analysis launch buttons, monitoring worker / scheduled
+  evaluation.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
   (Sprint 6 central open item: live deliberation quality unverified;
   Sprint 7 adds live backend integration as unverified).
-- Living-strategy loop: monitor → re-simulate from the cockpit.
 - Calibration hardening (persist current weights, intercept/centering,
   exclude/weight scenario children, fit-quality gates).
+- Monitoring worker / scheduled evaluation for the living loop
+  (evaluate + record only, never silent re-simulation — see
+  SPRINT9.md §10).
 - Docker Compose stack verification on a machine with a container
   runtime; GitHub-side fork (needs Ho's account).
 
