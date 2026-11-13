@@ -396,6 +396,10 @@ class TestSimulationExecution:
             # Stand-in for SimulationRunCreate, which gained this optional
             # field in Sprint 1 (MECE gate); absent = no decomposition.
             decomposition=None,
+            # Stand-in fields added in Sprint 2 (variable gate); absent =
+            # no template or inline variable set attached.
+            variable_template_id=None,
+            variable_set=None,
         )
         with pytest.raises(ValueError, match="not implemented"):
             await engine_service.create_simulation_run(mock_session, payload)
