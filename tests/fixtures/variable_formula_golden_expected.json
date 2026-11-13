@@ -1,0 +1,201 @@
+{
+  "validation": {
+    "checks": [
+      {
+        "check": "structure",
+        "detail": "4 variable(s)",
+        "status": "pass",
+        "variable": ""
+      },
+      {
+        "check": "distribution",
+        "detail": "type=triangular",
+        "status": "pass",
+        "variable": "研发投入(人月)"
+      },
+      {
+        "check": "distribution",
+        "detail": "type=triangular",
+        "status": "pass",
+        "variable": "获客成本 CAC"
+      },
+      {
+        "check": "distribution",
+        "detail": "type=triangular",
+        "status": "pass",
+        "variable": "AI 功能客单价 uplift"
+      },
+      {
+        "check": "distribution",
+        "detail": "type=triangular",
+        "status": "pass",
+        "variable": "12 个月客户流失率"
+      },
+      {
+        "check": "provenance",
+        "detail": "4 variable(s) checked",
+        "status": "pass",
+        "variable": ""
+      },
+      {
+        "check": "formulas",
+        "detail": "4 formula(s)",
+        "status": "pass",
+        "variable": ""
+      }
+    ],
+    "is_valid": true,
+    "issues": [],
+    "variable_count": 4
+  },
+  "variable_set": {
+    "formulas": [
+      {
+        "description": "获客成本换算为千元",
+        "expression": {
+          "args": [
+            {
+              "ref": "获客成本 CAC"
+            },
+            1000
+          ],
+          "op": "divide"
+        },
+        "output": "获客成本(千元)"
+      },
+      {
+        "description": "期初现金扣减获客与研发投入",
+        "expression": {
+          "args": [
+            140,
+            {
+              "args": [
+                {
+                  "ref": "获客成本(千元)"
+                },
+                {
+                  "ref": "研发投入(人月)"
+                }
+              ],
+              "op": "add"
+            }
+          ],
+          "op": "subtract"
+        },
+        "output": "cash"
+      },
+      {
+        "description": "客单价提升净流失",
+        "expression": {
+          "args": [
+            {
+              "ref": "AI 功能客单价 uplift"
+            },
+            {
+              "ref": "12 个月客户流失率"
+            }
+          ],
+          "op": "subtract"
+        },
+        "output": "净留存信号"
+      },
+      {
+        "description": "管线覆盖随净留存信号缩放,下限 0.5",
+        "expression": {
+          "args": [
+            0.5,
+            {
+              "args": [
+                {
+                  "ref": "净留存信号"
+                },
+                20
+              ],
+              "op": "divide"
+            }
+          ],
+          "op": "max"
+        },
+        "output": "pipeline"
+      }
+    ],
+    "internal": {
+      "决策者风格": "偏稳健,重视可验证的客户承诺甚于市场故事",
+      "团队": "20 人,其中可调配做新产品线的工程师 6 人",
+      "底线": "现有产品 SLA 不下降;单客户数据不出境",
+      "现金跑道": "18 个月,不接受裁员",
+      "风险承受度": "中等:可接受单季度亏损,但 12 个月净现金流不能为负"
+    },
+    "name": "AI 客服产品线（原型 case_example.json + 公式图）",
+    "variables": [
+      {
+        "description": "",
+        "distribution": {
+          "max": 60.0,
+          "mean": null,
+          "min": 24.0,
+          "mode": 36.0,
+          "p": null,
+          "std": null,
+          "type": "triangular",
+          "value": null
+        },
+        "evidence_ref": "estimate: prototype case_example.json",
+        "id": "研发投入(人月)",
+        "scope_tags": [],
+        "unit": "人月"
+      },
+      {
+        "description": "",
+        "distribution": {
+          "max": 20000.0,
+          "mean": null,
+          "min": 8000.0,
+          "mode": 12000.0,
+          "p": null,
+          "std": null,
+          "type": "triangular",
+          "value": null
+        },
+        "evidence_ref": "estimate: prototype case_example.json",
+        "id": "获客成本 CAC",
+        "scope_tags": [],
+        "unit": "元/客户"
+      },
+      {
+        "description": "",
+        "distribution": {
+          "max": 60.0,
+          "mean": null,
+          "min": 20.0,
+          "mode": 35.0,
+          "p": null,
+          "std": null,
+          "type": "triangular",
+          "value": null
+        },
+        "evidence_ref": "estimate: prototype case_example.json",
+        "id": "AI 功能客单价 uplift",
+        "scope_tags": [],
+        "unit": "%"
+      },
+      {
+        "description": "",
+        "distribution": {
+          "max": 25.0,
+          "mean": null,
+          "min": 5.0,
+          "mode": 12.0,
+          "p": null,
+          "std": null,
+          "type": "triangular",
+          "value": null
+        },
+        "evidence_ref": "estimate: prototype case_example.json",
+        "id": "12 个月客户流失率",
+        "scope_tags": [],
+        "unit": "%"
+      }
+    ]
+  }
+}
