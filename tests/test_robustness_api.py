@@ -201,9 +201,7 @@ def test_robustness_requires_ensemble(monkeypatch, tmp_path) -> None:
             assert response.status_code == 400, response.text
             assert response.json()["detail"]["code"] == "robustness_requires_ensemble"
 
-        missing = client.post(
-            "/runs/nope/robustness/bootstrap", json={"draws": 100}
-        )
+        missing = client.post("/runs/nope/robustness/bootstrap", json={"draws": 100})
         assert missing.status_code == 404
         assert client.get(f"/runs/{run['id']}/robustness").status_code == 404
 
@@ -247,9 +245,7 @@ def test_bootstrap_default_seed_is_ensemble_seed(monkeypatch, tmp_path) -> None:
     with TestClient(create_app()) as client:
         run = _create_bound_run(client)
         _run_ensemble(client, run["id"])
-        defaulted = client.post(
-            f"/runs/{run['id']}/robustness/bootstrap", json={"draws": 100}
-        )
+        defaulted = client.post(f"/runs/{run['id']}/robustness/bootstrap", json={"draws": 100})
         explicit = client.post(
             f"/runs/{run['id']}/robustness/bootstrap", json={"draws": 100, "seed": 42}
         )
@@ -261,9 +257,7 @@ def test_bootstrap_api_prefix(monkeypatch, tmp_path) -> None:
     with TestClient(create_app()) as client:
         run = _create_bound_run(client)
         _run_ensemble(client, run["id"])
-        response = client.post(
-            f"/api/runs/{run['id']}/robustness/bootstrap", json={"draws": 100}
-        )
+        response = client.post(f"/api/runs/{run['id']}/robustness/bootstrap", json={"draws": 100})
         assert response.status_code == 201, response.text
 
 
@@ -291,9 +285,7 @@ def test_tornado_ranks_cash_first_with_exact_probe_outcomes(monkeypatch, tmp_pat
         assert cash_row["outcome_low"] == pytest.approx(cash_row["low_value"])
         assert cash_row["outcome_high"] == pytest.approx(cash_row["high_value"])
         assert cash_row["outcome_base"] == pytest.approx(100.0)
-        assert cash_row["swing"] == pytest.approx(
-            cash_row["high_value"] - cash_row["low_value"]
-        )
+        assert cash_row["swing"] == pytest.approx(cash_row["high_value"] - cash_row["low_value"])
         # Pipeline and cac do not move cash in the evidence-free setup.
         assert rows[1]["swing"] == 0.0
         assert rows[2]["swing"] == 0.0
@@ -307,16 +299,12 @@ def test_tornado_subset_and_unknown_variable(monkeypatch, tmp_path) -> None:
     with TestClient(create_app()) as client:
         run = _create_bound_run(client)
         _run_ensemble(client, run["id"])
-        subset = client.post(
-            f"/runs/{run['id']}/robustness/tornado", json={"variables": ["cash"]}
-        )
+        subset = client.post(f"/runs/{run['id']}/robustness/tornado", json={"variables": ["cash"]})
         assert subset.status_code == 201, subset.text
         assert [row["variable"] for row in subset.json()["rows"]] == ["cash"]
         assert len(subset.json()["probe_run_ids"]) == 3
 
-        unknown = client.post(
-            f"/runs/{run['id']}/robustness/tornado", json={"variables": ["nope"]}
-        )
+        unknown = client.post(f"/runs/{run['id']}/robustness/tornado", json={"variables": ["nope"]})
         assert unknown.status_code == 400
         assert unknown.json()["detail"]["code"] == "robustness_unknown_variable"
 
@@ -475,9 +463,9 @@ def test_gates_pre_registration_supersession_and_evaluation(monkeypatch, tmp_pat
         assert outcomes["g1_value"]["passed"] is True
         assert outcomes["g2_tail"]["observed"] == _expected_shortfall(baseline, 0.1)
         assert outcomes["g2_tail"]["alpha"] == 0.1
-        assert outcomes["g3_confidence"]["observed"] == sum(
-            1 for v in baseline if v < 90.0
-        ) / len(baseline)
+        assert outcomes["g3_confidence"]["observed"] == sum(1 for v in baseline if v < 90.0) / len(
+            baseline
+        )
         deltas = [s - b for b, s in zip(baseline, strategy)]
         assert outcomes["g4_delta"]["observed"] == statistics.fmean(deltas)
         assert outcomes["g4_delta"]["passed"] is True
@@ -487,9 +475,7 @@ def test_gates_pre_registration_supersession_and_evaluation(monkeypatch, tmp_pat
         second = client.post(
             f"/runs/{run['id']}/decision-gates",
             json={
-                "gates": [
-                    {"name": "only", "metric": "mean", "operator": ">", "threshold": 0}
-                ],
+                "gates": [{"name": "only", "metric": "mean", "operator": ">", "threshold": 0}],
                 "supersedes": first["id"],
             },
         )
@@ -553,10 +539,7 @@ def test_gate_registration_refusals(monkeypatch, tmp_path) -> None:
         assert unknown_super.json()["detail"]["code"] == "robustness_unknown_registration"
 
         # Evaluating with no registrations is refused.
-        assert (
-            client.post(f"/runs/{run['id']}/decision-gates/evaluate", json={}).status_code
-            == 400
-        )
+        assert client.post(f"/runs/{run['id']}/decision-gates/evaluate", json={}).status_code == 400
 
         registered = client.post(
             f"/runs/{run['id']}/decision-gates",
@@ -585,9 +568,7 @@ def test_gate_registration_refusals(monkeypatch, tmp_path) -> None:
 
 # ------------------------------------------------------------------ formula graph
 def _golden_set() -> dict:
-    return json.loads(
-        (FIXTURES / "variable_formula_golden_case.json").read_text(encoding="utf-8")
-    )
+    return json.loads((FIXTURES / "variable_formula_golden_case.json").read_text(encoding="utf-8"))
 
 
 def test_formulas_drive_tick_zero_state_and_audit(monkeypatch, tmp_path) -> None:
@@ -635,9 +616,7 @@ def test_formula_gate_refusal_writes_no_rows(monkeypatch, tmp_path) -> None:
             ],
             "formulas": [{"output": "cash", "expression": {"ref": "missing"}}],
         }
-        refused = client.post(
-            "/simulation/runs", json=simulation_payload(variable_set=bad_set)
-        )
+        refused = client.post("/simulation/runs", json=simulation_payload(variable_set=bad_set))
         assert refused.status_code == 400, refused.text
         assert refused.json()["detail"]["code"] == "variable_validation_failed"
         issues = refused.json()["detail"]["validation"]["issues"]
@@ -669,9 +648,7 @@ def test_variables_validate_covers_formulas(monkeypatch, tmp_path) -> None:
         )
         assert bad.status_code == 200
         assert bad.json()["is_valid"] is False
-        assert any(
-            issue["kind"] == "formula_division_by_zero" for issue in bad.json()["issues"]
-        )
+        assert any(issue["kind"] == "formula_division_by_zero" for issue in bad.json()["issues"])
 
 
 def test_template_carried_formulas_apply_to_runs(monkeypatch, tmp_path) -> None:

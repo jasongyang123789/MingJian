@@ -40,14 +40,14 @@ def _triangular_quantile(low: float, mode: float, high: float, q: float) -> floa
     return high - math.sqrt((1.0 - q) * span * (high - mode))
 
 
-def _beta_pert_quantile(
-    low: float, mode: float, high: float, q: float, seed: int
-) -> float:
+def _beta_pert_quantile(low: float, mode: float, high: float, q: float, seed: int) -> float:
     ratio = (mode - low) / (high - low)
     alpha = 1.0 + 4.0 * ratio
     beta = 1.0 + 4.0 * (1.0 - ratio)
     rng = random.Random(seed)
-    draws = sorted(low + (high - low) * rng.betavariate(alpha, beta) for _ in range(BETA_PERT_QUANTILE_DRAWS))
+    draws = sorted(
+        low + (high - low) * rng.betavariate(alpha, beta) for _ in range(BETA_PERT_QUANTILE_DRAWS)
+    )
     return percentile(draws, q)
 
 

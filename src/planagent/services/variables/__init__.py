@@ -7,8 +7,8 @@ Import ``presets`` and ``store`` from their submodules directly.
 
 from .formulas import FormulaEvaluationError, evaluate_formulas, validate_formulas
 from .models import (
-    MAX_FORMULAS,
     MAX_FORMULA_DEPTH,
+    MAX_FORMULAS,
     MAX_VARIABLES,
     DistributionType,
     FormulaDefinition,

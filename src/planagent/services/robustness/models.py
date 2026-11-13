@@ -104,7 +104,7 @@ class GateDefinition(BaseModel):
         return _require_finite_number(value)
 
     @model_validator(mode="after")
-    def _check_metric_arm(self) -> "GateDefinition":
+    def _check_metric_arm(self) -> GateDefinition:
         paired = self.metric in _PAIRED_METRICS
         if paired and self.arm is not GateArm.PAIRED:
             raise ValueError(
@@ -256,7 +256,7 @@ class TornadoRequest(BaseModel):
     variables: list[str] | None = None
 
     @model_validator(mode="after")
-    def _check_quantiles(self) -> "TornadoRequest":
+    def _check_quantiles(self) -> TornadoRequest:
         if self.low_quantile >= self.high_quantile:
             raise ValueError("low_quantile must be below high_quantile.")
         return self
@@ -343,7 +343,7 @@ class ThresholdSearchRequest(BaseModel):
         return (_require_finite_number(value[0]), _require_finite_number(value[1]))
 
     @model_validator(mode="after")
-    def _check_target_and_bounds(self) -> "ThresholdSearchRequest":
+    def _check_target_and_bounds(self) -> ThresholdSearchRequest:
         if self.mode == "p_loss" and not 0.0 < self.target < 1.0:
             raise ValueError("p_loss mode requires a target probability in (0, 1).")
         if self.mode == "arm_flip" and self.target != 0.0:

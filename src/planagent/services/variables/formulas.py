@@ -99,8 +99,8 @@ def _expression_issues(
         return [
             _issue(
                 "formula_invalid_expression",
-                "An expression must be a number literal, a {\"ref\": ...} reference, "
-                "or a {\"op\": ..., \"args\": [...]} node.",
+                'An expression must be a number literal, a {"ref": ...} reference, '
+                'or a {"op": ..., "args": [...]} node.',
                 output,
             )
         ]
@@ -142,8 +142,7 @@ def _expression_issues(
             return [
                 _issue(
                     "formula_unknown_operator",
-                    f"Unknown operator {operator!r}; expected one of "
-                    f"{sorted(_FORMULA_OPERATORS)}.",
+                    f"Unknown operator {operator!r}; expected one of {sorted(_FORMULA_OPERATORS)}.",
                     output,
                 )
             ]
@@ -178,8 +177,8 @@ def _expression_issues(
     return [
         _issue(
             "formula_invalid_expression",
-            "An expression object must have exactly the keys {\"ref\"} or "
-            "{\"op\", \"args\"}; arbitrary code is forbidden.",
+            'An expression object must have exactly the keys {"ref"} or '
+            '{"op", "args"}; arbitrary code is forbidden.',
             output,
         )
     ]
@@ -315,9 +314,7 @@ def evaluate_formulas(
     for formula in formulas:
         result = _evaluate_expression(formula.expression, resolved, formula.output)
         if not math.isfinite(result):
-            raise FormulaEvaluationError(
-                formula.output, "Evaluation produced a non-finite value."
-            )
+            raise FormulaEvaluationError(formula.output, "Evaluation produced a non-finite value.")
         resolved[formula.output] = result
         derived[formula.output] = result
     return derived

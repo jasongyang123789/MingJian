@@ -20,9 +20,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _load_case() -> VariableSet:
-    case = json.loads(
-        (FIXTURES / "variable_formula_golden_case.json").read_text(encoding="utf-8")
-    )
+    case = json.loads((FIXTURES / "variable_formula_golden_case.json").read_text(encoding="utf-8"))
     return VariableSet.model_validate(case)
 
 

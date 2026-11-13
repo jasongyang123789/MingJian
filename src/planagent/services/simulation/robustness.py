@@ -253,9 +253,9 @@ class SimulationRobustnessMixin:
         if bindings is not None:
             variables_fragment = dict(configuration.get("variables") or {})
             variables_fragment["bindings"] = bindings.model_dump(mode="json")
-            variables_fragment["validation"] = validate_variable_set(
-                bindings
-            ).model_dump(mode="json")
+            variables_fragment["validation"] = validate_variable_set(bindings).model_dump(
+                mode="json"
+            )
             configuration["variables"] = variables_fragment
         if levers:
             monte_carlo = dict(configuration.get("monte_carlo") or {})
@@ -310,9 +310,7 @@ class SimulationRobustnessMixin:
         """Expected shortfall per arm plus the paired-delta tail."""
 
         run, ensemble = await self._stored_ensemble(session, run_id)
-        baseline_values, strategy_values = await self._trial_values_for_ensemble(
-            session, ensemble
-        )
+        baseline_values, strategy_values = await self._trial_values_for_ensemble(session, ensemble)
         deltas = [s - b for b, s in zip(baseline_values, strategy_values)]
         result = ExpectedShortfallResult(
             run_id=run.id,
@@ -344,9 +342,7 @@ class SimulationRobustnessMixin:
         """Seeded bootstrap percentile intervals per arm."""
 
         run, ensemble = await self._stored_ensemble(session, run_id)
-        baseline_values, strategy_values = await self._trial_values_for_ensemble(
-            session, ensemble
-        )
+        baseline_values, strategy_values = await self._trial_values_for_ensemble(session, ensemble)
         seed = request.seed if request.seed is not None else ensemble.seed
         baseline_seed = derive_sub_seed(seed, "bootstrap", "baseline")
         strategy_seed = derive_sub_seed(seed, "bootstrap", "strategy")
@@ -562,9 +558,7 @@ class SimulationRobustnessMixin:
             strategy_values: list[float] = []
             frozen = frozen_bindings(value)
             strategy_levers = {
-                key: item
-                for key, item in ensemble.strategy_levers.items()
-                if key != variable.id
+                key: item for key, item in ensemble.strategy_levers.items() if key != variable.id
             }
             for trial_index in range(request.trials_per_evaluation):
                 trial_seed = derive_sub_seed(seed, "threshold-search", str(trial_index))
@@ -606,14 +600,12 @@ class SimulationRobustnessMixin:
                     )
             if request.mode == "arm_flip":
                 statistic = float(
-                    statistics.fmean(
-                        [s - b for b, s in zip(baseline_values, strategy_values)]
-                    )
+                    statistics.fmean([s - b for b, s in zip(baseline_values, strategy_values)])
                 )
             else:
-                statistic = sum(
-                    1 for item in baseline_values if item < loss_threshold
-                ) / len(baseline_values)
+                statistic = sum(1 for item in baseline_values if item < loss_threshold) / len(
+                    baseline_values
+                )
             return statistic, probe_ids
 
         evaluations: list[ThresholdEvaluation] = []
@@ -678,7 +670,9 @@ class SimulationRobustnessMixin:
         return RobustnessRead(
             run_id=run.id,
             ensemble_id=ensemble.ensemble_id if ensemble is not None else None,
-            expected_shortfall=ExpectedShortfallResult.model_validate(fragment["expected_shortfall"])
+            expected_shortfall=ExpectedShortfallResult.model_validate(
+                fragment["expected_shortfall"]
+            )
             if isinstance(fragment.get("expected_shortfall"), dict)
             else None,
             tornado=TornadoResult.model_validate(fragment["tornado"])
@@ -752,9 +746,7 @@ class SimulationRobustnessMixin:
                 f"Run {run_id} has no registered decision gates.",
             )
         if request.registration_id is not None:
-            matches = [
-                item for item in registrations if item.get("id") == request.registration_id
-            ]
+            matches = [item for item in registrations if item.get("id") == request.registration_id]
             if not matches:
                 raise RobustnessError(
                     "robustness_unknown_registration",
@@ -766,9 +758,7 @@ class SimulationRobustnessMixin:
             active = [item for item in registrations if item.get("status") == "active"]
             stored = active[-1] if active else registrations[-1]
         registration = GateRegistration.model_validate(stored)
-        baseline_values, strategy_values = await self._trial_values_for_ensemble(
-            session, ensemble
-        )
+        baseline_values, strategy_values = await self._trial_values_for_ensemble(session, ensemble)
         outcomes: list[GateOutcome] = []
         for gate in registration.gates:
             observed = gate_observed_value(
@@ -822,8 +812,7 @@ class SimulationRobustnessMixin:
         return DecisionGatesRead(
             run_id=run.id,
             registrations=[
-                GateRegistration.model_validate(item)
-                for item in fragment.get("registrations", [])
+                GateRegistration.model_validate(item) for item in fragment.get("registrations", [])
             ],
             evaluations=[
                 GateEvaluation.model_validate(item) for item in fragment.get("evaluations", [])

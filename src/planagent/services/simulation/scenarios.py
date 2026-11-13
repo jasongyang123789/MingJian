@@ -25,6 +25,7 @@ from planagent.services.simulation_branching import (
     score_branch_delta,
     summarize_branch_trajectory,
 )
+from planagent.services.variables.formulas import validate_formulas
 from planagent.services.variables.models import (
     VariableSet,
     VariableTemplate,
@@ -35,7 +36,6 @@ from planagent.services.variables.presets import (
     variables_configuration_fragment,
 )
 from planagent.services.variables.store import get_variable_template
-from planagent.services.variables.formulas import validate_formulas
 from planagent.services.variables.validator import (
     VariableTemplateError,
     VariableValidationError,

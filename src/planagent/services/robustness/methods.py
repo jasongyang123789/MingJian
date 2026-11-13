@@ -45,6 +45,7 @@ class ThresholdSearchOutcome(TypedDict):
     iterations: int
     evaluations: list[dict[str, float]]
 
+
 _OPERATORS: Mapping[GateOperator, Callable[[float, float], bool]] = {
     GateOperator.GT: lambda value, threshold: value > threshold,
     GateOperator.GTE: lambda value, threshold: value >= threshold,

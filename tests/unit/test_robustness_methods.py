@@ -19,7 +19,7 @@ from planagent.services.robustness import (
     expected_shortfall,
     gate_observed_value,
 )
-from planagent.services.robustness.models import GateArm, GateDefinition, GateMetric, GateOperator
+from planagent.services.robustness.models import GateDefinition, GateOperator
 from planagent.services.variables.models import VariableDistribution
 
 
@@ -64,11 +64,19 @@ def test_expected_shortfall_rejects_empty_and_bad_alpha() -> None:
 def test_bootstrap_seed_reproducible_and_sane() -> None:
     values = [float(i) for i in range(1, 51)]
     first = bootstrap_intervals(
-        values, ["mean", "median", "p_loss"], draws=200, seed=42, level=0.90,
+        values,
+        ["mean", "median", "p_loss"],
+        draws=200,
+        seed=42,
+        level=0.90,
         loss_threshold=25.0,
     )
     second = bootstrap_intervals(
-        values, ["mean", "median", "p_loss"], draws=200, seed=42, level=0.90,
+        values,
+        ["mean", "median", "p_loss"],
+        draws=200,
+        seed=42,
+        level=0.90,
         loss_threshold=25.0,
     )
     assert first == second
@@ -168,14 +176,32 @@ def test_bisection_respects_iteration_cap() -> None:
 
 def test_bisection_rejects_bad_inputs() -> None:
     with pytest.raises(ValueError, match="direction"):
-        bisect_threshold(lambda x: x, target=1, bounds=(0, 1), direction="sideways",
-                         tolerance=0.1, max_iterations=5)
+        bisect_threshold(
+            lambda x: x,
+            target=1,
+            bounds=(0, 1),
+            direction="sideways",
+            tolerance=0.1,
+            max_iterations=5,
+        )
     with pytest.raises(ValueError, match="bounds"):
-        bisect_threshold(lambda x: x, target=1, bounds=(1, 1), direction="increasing",
-                         tolerance=0.1, max_iterations=5)
+        bisect_threshold(
+            lambda x: x,
+            target=1,
+            bounds=(1, 1),
+            direction="increasing",
+            tolerance=0.1,
+            max_iterations=5,
+        )
     with pytest.raises(ValueError, match="tolerance"):
-        bisect_threshold(lambda x: x, target=1, bounds=(0, 1), direction="increasing",
-                         tolerance=0, max_iterations=5)
+        bisect_threshold(
+            lambda x: x,
+            target=1,
+            bounds=(0, 1),
+            direction="increasing",
+            tolerance=0,
+            max_iterations=5,
+        )
 
 
 # ---------------------------------------------------------------- gates
@@ -205,12 +231,13 @@ def test_gate_arm_metrics_on_known_values() -> None:
     assert gate_observed_value(_gate(metric="min"), baseline, strategy, 0.0) == 10.0
     assert gate_observed_value(_gate(metric="max"), baseline, strategy, 0.0) == 40.0
     assert gate_observed_value(_gate(metric="p_loss"), baseline, strategy, 25.0) == 0.5
-    assert gate_observed_value(
-        _gate(metric="mean", arm="strategy"), baseline, strategy, 0.0
-    ) == 30.0
-    assert gate_observed_value(
-        _gate(metric="expected_shortfall", alpha=0.25), baseline, strategy, 0.0
-    ) == 10.0
+    assert (
+        gate_observed_value(_gate(metric="mean", arm="strategy"), baseline, strategy, 0.0) == 30.0
+    )
+    assert (
+        gate_observed_value(_gate(metric="expected_shortfall", alpha=0.25), baseline, strategy, 0.0)
+        == 10.0
+    )
 
 
 def test_gate_paired_metrics() -> None:

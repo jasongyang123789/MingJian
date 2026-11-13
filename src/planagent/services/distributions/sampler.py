@@ -190,9 +190,7 @@ def resolve_run_values(
     sampled: dict[str, float] = {}
     if variable_set.variables:
         sampled = sample_variable_set(variable_set, rng_for_seed(seed), levers)
-    derived = (
-        evaluate_formulas(variable_set.formulas, sampled) if variable_set.formulas else {}
-    )
+    derived = evaluate_formulas(variable_set.formulas, sampled) if variable_set.formulas else {}
     combined = {**sampled, **derived}
     applied = {key: value for key, value in combined.items() if key in state_keys}
     return sampled, derived, applied
