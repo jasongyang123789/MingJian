@@ -16,6 +16,7 @@ from planagent.domain.models import (
     StateSnapshotRecord,
     generate_id,
 )
+from planagent.services.distributions import determinism_input_fragment
 from planagent.services.simulation_branching import (
     build_branch_trajectory,
     build_scenario_compare_summary,
@@ -103,6 +104,37 @@ class SimulationScenariosMixin:
             else ExecutionMode.INLINE.value
         )
         remaining_ticks = max(1, parent_run.tick_count - fork_step)
+        child_tick_count = payload.tick_count or remaining_ticks
+        child_configuration = {
+            **parent_run.configuration,
+            "initial_state": {
+                **source_snapshot.state,
+                **{key: float(value) for key, value in payload.state_overrides.items()},
+            },
+            "scenario": {
+                "id": scenario_id,
+                "fork_step": fork_step,
+                "assumptions": payload.assumptions,
+                "decision_deltas": payload.decision_deltas,
+                "state_overrides": payload.state_overrides,
+                "probability_band": payload.probability_band,
+            },
+            "military_use_mode": parent_run.military_use_mode,
+        }
+        # Sprint 3: hash the child run's inputs at creation. The parent's
+        # stored determinism fragment is excluded from the hashed payload,
+        # so the child hash covers the child's own inputs.
+        child_configuration["determinism"] = determinism_input_fragment(
+            domain_id=parent_run.domain_id,
+            actor_template=parent_run.actor_template,
+            tick_count=child_tick_count,
+            seed=parent_run.seed,
+            company_id=parent_run.company_id,
+            force_id=parent_run.force_id,
+            tenant_id=parent_run.tenant_id,
+            preset_id=parent_run.preset_id,
+            configuration=child_configuration,
+        )
         run = SimulationRun(
             company_id=parent_run.company_id,
             force_id=parent_run.force_id,
@@ -114,24 +146,9 @@ class SimulationScenariosMixin:
             parent_run_id=parent_run.id,
             execution_mode=execution_mode,
             status=SimulationRunStatus.PENDING.value,
-            tick_count=payload.tick_count or remaining_ticks,
+            tick_count=child_tick_count,
             seed=parent_run.seed,
-            configuration={
-                **parent_run.configuration,
-                "initial_state": {
-                    **source_snapshot.state,
-                    **{key: float(value) for key, value in payload.state_overrides.items()},
-                },
-                "scenario": {
-                    "id": scenario_id,
-                    "fork_step": fork_step,
-                    "assumptions": payload.assumptions,
-                    "decision_deltas": payload.decision_deltas,
-                    "state_overrides": payload.state_overrides,
-                    "probability_band": payload.probability_band,
-                },
-                "military_use_mode": parent_run.military_use_mode,
-            },
+            configuration=child_configuration,
             summary={"scenario_id": scenario_id},
         )
         session.add(run)

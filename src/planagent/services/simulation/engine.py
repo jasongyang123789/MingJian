@@ -21,6 +21,11 @@ from planagent.domain.models import (
     StateSnapshotRecord,
     utc_now,
 )
+from planagent.services.distributions import (
+    determinism_input_fragment,
+    resolve_run_samples,
+    state_hash,
+)
 from planagent.services.mece import MeceValidationResult, validate_or_raise
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
 from planagent.services.variables.models import VariableSet, VariableValidationResult
@@ -224,6 +229,26 @@ class SimulationEngineMixin:
         variables_fragment: dict[str, Any] | None = None,
     ) -> SimulationRun:
         company = await self._upsert_company(session, payload)
+        tick_count = payload.tick_count or self.settings.default_corporate_ticks
+        configuration = {
+            "initial_state": payload.initial_state,
+            "market": payload.market,
+            **startup_preset_config(payload.tenant_id, payload.preset_id),
+            **_mece_configuration_fragment(payload, mece_result),
+            **(variables_fragment or {}),
+        }
+        # Sprint 3: hash the run inputs at creation (determinism audit trail).
+        configuration["determinism"] = determinism_input_fragment(
+            domain_id="corporate",
+            actor_template=payload.actor_template,
+            tick_count=tick_count,
+            seed=payload.seed,
+            company_id=company.id,
+            force_id=None,
+            tenant_id=normalize_tenant_id(payload.tenant_id),
+            preset_id=payload.preset_id,
+            configuration=configuration,
+        )
         run = SimulationRun(
             company_id=company.id,
             force_id=None,
@@ -234,15 +259,9 @@ class SimulationEngineMixin:
             military_use_mode=None,
             execution_mode=execution_mode.value,
             status=SimulationRunStatus.PENDING.value,
-            tick_count=payload.tick_count or self.settings.default_corporate_ticks,
+            tick_count=tick_count,
             seed=payload.seed,
-            configuration={
-                "initial_state": payload.initial_state,
-                "market": payload.market,
-                **startup_preset_config(payload.tenant_id, payload.preset_id),
-                **_mece_configuration_fragment(payload, mece_result),
-                **(variables_fragment or {}),
-            },
+            configuration=configuration,
             summary={},
         )
         session.add(run)
@@ -259,6 +278,28 @@ class SimulationEngineMixin:
     ) -> SimulationRun:
         force = await self._upsert_force(session, payload)
         military_use_mode = payload.military_use_mode or "full_domain"
+        tick_count = payload.tick_count or self.settings.default_military_ticks
+        configuration = {
+            "initial_state": payload.initial_state,
+            "theater": payload.theater or force.theater,
+            "military_use_mode": military_use_mode,
+            "simulation_only": True,
+            **startup_preset_config(payload.tenant_id, payload.preset_id),
+            **_mece_configuration_fragment(payload, mece_result),
+            **(variables_fragment or {}),
+        }
+        # Sprint 3: hash the run inputs at creation (determinism audit trail).
+        configuration["determinism"] = determinism_input_fragment(
+            domain_id="military",
+            actor_template=payload.actor_template,
+            tick_count=tick_count,
+            seed=payload.seed,
+            company_id=None,
+            force_id=force.id,
+            tenant_id=normalize_tenant_id(payload.tenant_id),
+            preset_id=payload.preset_id,
+            configuration=configuration,
+        )
         run = SimulationRun(
             company_id=None,
             force_id=force.id,
@@ -269,17 +310,9 @@ class SimulationEngineMixin:
             military_use_mode=military_use_mode,
             execution_mode=execution_mode.value,
             status=SimulationRunStatus.PENDING.value,
-            tick_count=payload.tick_count or self.settings.default_military_ticks,
+            tick_count=tick_count,
             seed=payload.seed,
-            configuration={
-                "initial_state": payload.initial_state,
-                "theater": payload.theater or force.theater,
-                "military_use_mode": military_use_mode,
-                "simulation_only": True,
-                **startup_preset_config(payload.tenant_id, payload.preset_id),
-                **_mece_configuration_fragment(payload, mece_result),
-                **(variables_fragment or {}),
-            },
+            configuration=configuration,
             summary={},
         )
         session.add(run)
@@ -311,6 +344,15 @@ class SimulationEngineMixin:
         initial_state = self._resolve_initial_state(
             pack, run.actor_template, state_defaults=template_defaults
         )
+        # Sprint 3: sample the run's bound variables once, from the run
+        # seed. Sampled values whose variable id matches a state field
+        # override that field's initial value; the explicit initial_state
+        # overlay below keeps precedence over sampled values. Runs without
+        # bindings sample nothing and behave exactly as before.
+        sampled_values, applied_samples = resolve_run_samples(
+            run.configuration, run.seed, set(initial_state)
+        )
+        initial_state.update(applied_samples)
         initial_state.update(
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
@@ -336,6 +378,8 @@ class SimulationEngineMixin:
                 run_id=run.id, tick=0, actor_id=actor_id, state=deepcopy(current_state)
             )
         )
+        # Sprint 3: per-tick state hashes for replay verification.
+        state_hashes: dict[str, str] = {"0": state_hash(current_state)}
 
         for tick in range(1, run.tick_count + 1):
             active_claim = claims[(tick - 1) % len(claims)] if claims else None
@@ -430,6 +474,7 @@ class SimulationEngineMixin:
                     state=deepcopy(current_state),
                 )
             )
+            state_hashes[str(tick)] = state_hash(current_state)
 
         run.status = SimulationRunStatus.COMPLETED.value
         run.completed_at = utc_now()
@@ -478,6 +523,15 @@ class SimulationEngineMixin:
             "evidence_audit": evidence_audit,
             "matched_rules": sorted(set(matched_rules)),
             "final_state": deepcopy(current_state),
+            # Sprint 3: determinism audit trail — the input hash recorded
+            # at creation, the per-tick state hashes, and the sampled
+            # variable values (with the subset applied to the state).
+            "determinism": {
+                "input_hash": (run.configuration.get("determinism") or {}).get("input_hash"),
+                "state_hashes": state_hashes,
+                "sampled_values": sampled_values,
+                "sampled_applied": list(applied_samples),
+            },
             "military_tick_summaries": military_tick_summaries
             if run.domain_id == "military"
             else [],
