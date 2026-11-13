@@ -116,4 +116,4 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
 - Docker Compose stack verification needs a machine with a container
   runtime; LLM-backed paths (debate, LLM-assisted simulation, reports)
   need a real key. Both unverified since Sprint 0.
-- Frontend vitest suite never run (Node 24 vs required 22).
+- Frontend baseline verified on Node v24.22.1 (2026-11-13): vitest 5 files / 13 tests pass, production build (`tsc -b && vite build`) passes, `npm run lint` (eslint) clean — the SPRINT0 "needs Node 22" note no longer holds for test, build, or lint.

@@ -11,7 +11,7 @@
       "step": "POST /ingest/runs",
       "status": 201,
       "body": {
-        "id": "e86bb25b-a94f-4afc-aa65-b3c514f3104e",
+        "id": "fe090e28-1b67-4b0b-83e0-adfdaf637c7f",
         "requested_by": "agent-startup-playbook",
         "execution_mode": "INLINE",
         "status": "COMPLETED",
@@ -67,8 +67,8 @@
           "archived_claims": 0,
           "failed_items": 0
         },
-        "created_at": "2026-11-13T02:51:35.507843Z",
-        "updated_at": "2026-11-13T02:51:35.617866Z",
+        "created_at": "2026-11-13T08:39:57.862402Z",
+        "updated_at": "2026-11-13T08:39:57.955895Z",
         "tenant_id": null,
         "preset_id": null
       }
@@ -77,7 +77,7 @@
       "step": "POST /simulation/runs",
       "status": 201,
       "body": {
-        "id": "545b056c-1893-4bf5-bb11-ed759519fcc4",
+        "id": "fb9e345f-3c75-4d7a-9f80-3b5e89890196",
         "company_id": "agent-founder-baseline",
         "force_id": null,
         "domain_id": "corporate",
@@ -92,7 +92,7 @@
           "evidence_count": 2,
           "shock_count": 4,
           "evidence_ids": [
-            "cde4b2da-55cb-4ee7-bab7-ecffd265250f"
+            "9bdcd61f-184d-41a7-a704-5307bc38fc3a"
           ],
           "evidence_statements": [
             "Latency, reliability, and accuracy issues still block broader deployment.",
@@ -103,12 +103,12 @@
             "accepted_evidence_count": 0,
             "provisional_claim_count": 2,
             "provisional_claim_ids": [
-              "14919a95-5971-424d-bf48-0e80170d5cfb",
-              "57be2e79-cafb-49f5-af63-5d1e473ab607"
+              "7019627b-f800-4c21-ba9e-24672e9396ac",
+              "ea4408ce-34f5-46a0-a76f-77241aeed53b"
             ],
             "provisional_evidence_count": 1,
             "provisional_evidence_ids": [
-              "cde4b2da-55cb-4ee7-bab7-ecffd265250f"
+              "9bdcd61f-184d-41a7-a704-5307bc38fc3a"
             ],
             "provisional_confidence_floor": 0.62,
             "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
@@ -133,15 +133,32 @@
             "nrr": 0.9425,
             "churn_risk": 0.1225
           },
+          "determinism": {
+            "input_hash": "sha256:fefc607c7378fd6d8918d0783dd37f6afdff0da6188cedde289ac39e74002d66",
+            "state_hashes": {
+              "0": "sha256:ede0ce29dfbe90710af95f66f1e71d9786e9c2f1c1de314871e147a7f0d1b348",
+              "1": "sha256:47744cfeaa5bd99498341a11f4870e5114ec596dab561e879019a788e29696f6",
+              "2": "sha256:2c28f59497b888af445d03e1edf986ea2e7b04d39a327ec370295124ede00ceb",
+              "3": "sha256:7fa850d54a523c5bb744a2d14addaf8d9dfacc2aa9e2d26e05491bdb5011e714",
+              "4": "sha256:e7ab9d5171412411cac162a1e02690949249440d4e68d16de61580b7c91651ad"
+            },
+            "sampled_values": {},
+            "sampled_applied": [],
+            "derived_values": {},
+            "derived_applied": [],
+            "decision_time": "2026-11-13T08:39:58.005152Z",
+            "cutoff_source": "creation_time",
+            "firewall_active": true
+          },
           "military_tick_summaries": [],
           "objective_network": {},
           "enemy_posture": {},
           "enemy_order_of_battle": [],
-          "report_id": "e949dfea-9a69-42f4-a967-c955251bc371"
+          "report_id": "538b5ff8-b90c-434e-be3b-fa3ef8dc5088"
         },
-        "created_at": "2026-11-13T02:51:35.660631",
-        "updated_at": "2026-11-13T02:51:35.844227",
-        "completed_at": "2026-11-13T02:51:35.734732",
+        "created_at": "2026-11-13T08:39:58.007773",
+        "updated_at": "2026-11-13T08:39:58.111108",
+        "completed_at": "2026-11-13T08:39:58.056171",
         "tenant_id": null,
         "preset_id": null,
         "military_use_mode": null
@@ -193,8 +210,8 @@
     }
   ],
   "summary": {
-    "ingest_run_id": "e86bb25b-a94f-4afc-aa65-b3c514f3104e",
-    "simulation_run_id": "545b056c-1893-4bf5-bb11-ed759519fcc4",
+    "ingest_run_id": "fe090e28-1b67-4b0b-83e0-adfdaf637c7f",
+    "simulation_run_id": "fb9e345f-3c75-4d7a-9f80-3b5e89890196",
     "simulation_status": "COMPLETED",
     "llm_boundary": "POST /debates/trigger NOT exercised: requires a real LLM key (LLMDebateAdapter in services/debate/workflow.py).",
     "failures": []
