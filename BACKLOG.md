@@ -91,23 +91,44 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   (no key). Report: `SPRINT6.md` (branch
   `strategy-engine/sprint6-skills`).
 
-## Sprint 7 — cockpit UI (next)
+## Sprint 7 — cockpit UI (done)
 
-- Cockpit UI: MECE authoring (proposal + inline validation issues +
-  re-propose revision path), variable-table editing, distribution
-  visualization, deliberation launcher + results views (shortlist /
-  Pyramid / panel tally / decision contract, veto banners),
-  living-strategy loop (monitor → re-simulate); fit history +
-  template provenance views and the firewall audit's
-  excluded-claims view need no new backend work (see SPRINT5.md §7
-  and SPRINT6.md §7). Surface the 503 unconfigured-LLM state
-  honestly.
+- Cockpit UI delivered on `strategy-engine/sprint7-cockpit` (see
+  SPRINT7.md): typed API clients + types for all Sprint 1–6
+  endpoints; run cockpit (`/cockpit`) with MECE verdict, variable
+  bindings, ensemble, determinism, robustness, decision gates,
+  firewall audit, and domain-scoped calibration history; deliberation
+  launcher + results (`/cockpit/deliberations`, `?run=` URL param,
+  history newest-first, veto banners, stage provenance); MECE
+  authoring (`/cockpit/mece`, propose + inline issues + single
+  re-propose via `existing_tree`, manual validate panel); static
+  17-template provenance inventory (`/cockpit/templates`); honest
+  503-vs-502 LLM banners, tested both. Frontend 13 → 73 tests, lint
+  and build green. No backend changes; Sprint 0 smoke re-run PASS.
+  Live backend integration and real deliberation rendering against a
+  live LLM remain UNVERIFIED.
+- NOT built (deferred, not done): variable-template editing,
+  distribution visualization/charts, living-strategy loop
+  (monitor → re-simulate). These were named in the pre-sprint sketch
+  but outside the Sprint 7 task scope; they are next-step candidates.
 - Decision-direction narrative output (pre-mortems, 48-hour first
   steps, LLM narrative/red-team layer): still deferred; consumes the
   Sprint 4 robustness outputs + Sprint 5 fitted templates, needs LLM
   access + presentation design.
 - Product decisions still open: making decomposition/bindings mandatory,
   LLM-assisted decomposition authoring (must pass the same gates).
+
+## Next steps (candidates, need Ho's decision)
+
+- Configure an LLM key and run one real deliberation end-to-end
+  (Sprint 6 central open item: live deliberation quality unverified;
+  Sprint 7 adds live backend integration as unverified).
+- Variable-template editing + distribution charts in the cockpit.
+- Living-strategy loop: monitor → re-simulate from the cockpit.
+- Calibration hardening (persist current weights, intercept/centering,
+  exclude/weight scenario children, fit-quality gates).
+- Docker Compose stack verification on a machine with a container
+  runtime; GitHub-side fork (needs Ho's account).
 
 ## Standing open items
 

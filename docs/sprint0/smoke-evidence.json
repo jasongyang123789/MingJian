@@ -11,7 +11,7 @@
       "step": "POST /ingest/runs",
       "status": 201,
       "body": {
-        "id": "fe090e28-1b67-4b0b-83e0-adfdaf637c7f",
+        "id": "e8d76efc-500a-4303-bd80-52c5b84a11e0",
         "requested_by": "agent-startup-playbook",
         "execution_mode": "INLINE",
         "status": "COMPLETED",
@@ -67,8 +67,8 @@
           "archived_claims": 0,
           "failed_items": 0
         },
-        "created_at": "2026-11-13T08:39:57.862402Z",
-        "updated_at": "2026-11-13T08:39:57.955895Z",
+        "created_at": "2026-11-13T12:12:33.395635Z",
+        "updated_at": "2026-11-13T12:12:33.512191Z",
         "tenant_id": null,
         "preset_id": null
       }
@@ -77,7 +77,7 @@
       "step": "POST /simulation/runs",
       "status": 201,
       "body": {
-        "id": "fb9e345f-3c75-4d7a-9f80-3b5e89890196",
+        "id": "85b1263d-1a8b-4f40-b400-a69607dd90d0",
         "company_id": "agent-founder-baseline",
         "force_id": null,
         "domain_id": "corporate",
@@ -92,7 +92,7 @@
           "evidence_count": 2,
           "shock_count": 4,
           "evidence_ids": [
-            "9bdcd61f-184d-41a7-a704-5307bc38fc3a"
+            "58acb8d6-0582-4a33-9ab7-e66829651727"
           ],
           "evidence_statements": [
             "Latency, reliability, and accuracy issues still block broader deployment.",
@@ -103,12 +103,12 @@
             "accepted_evidence_count": 0,
             "provisional_claim_count": 2,
             "provisional_claim_ids": [
-              "7019627b-f800-4c21-ba9e-24672e9396ac",
-              "ea4408ce-34f5-46a0-a76f-77241aeed53b"
+              "68766ef9-0e75-425c-87de-ba8bce39b295",
+              "b1f78280-9e9d-4cfc-b2fc-d7d74bf590d7"
             ],
             "provisional_evidence_count": 1,
             "provisional_evidence_ids": [
-              "9bdcd61f-184d-41a7-a704-5307bc38fc3a"
+              "58acb8d6-0582-4a33-9ab7-e66829651727"
             ],
             "provisional_confidence_floor": 0.62,
             "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
@@ -134,7 +134,7 @@
             "churn_risk": 0.1225
           },
           "determinism": {
-            "input_hash": "sha256:fefc607c7378fd6d8918d0783dd37f6afdff0da6188cedde289ac39e74002d66",
+            "input_hash": "sha256:83ef60f189d525e7d50924802d168936197a57e01ebfaba692b5a446e76165b6",
             "state_hashes": {
               "0": "sha256:ede0ce29dfbe90710af95f66f1e71d9786e9c2f1c1de314871e147a7f0d1b348",
               "1": "sha256:47744cfeaa5bd99498341a11f4870e5114ec596dab561e879019a788e29696f6",
@@ -146,7 +146,7 @@
             "sampled_applied": [],
             "derived_values": {},
             "derived_applied": [],
-            "decision_time": "2026-11-13T08:39:58.005152Z",
+            "decision_time": "2026-11-13T12:12:33.559693Z",
             "cutoff_source": "creation_time",
             "firewall_active": true
           },
@@ -154,11 +154,11 @@
           "objective_network": {},
           "enemy_posture": {},
           "enemy_order_of_battle": [],
-          "report_id": "538b5ff8-b90c-434e-be3b-fa3ef8dc5088"
+          "report_id": "5eb80524-b55c-4e09-9caa-a4931f511149"
         },
-        "created_at": "2026-11-13T08:39:58.007773",
-        "updated_at": "2026-11-13T08:39:58.111108",
-        "completed_at": "2026-11-13T08:39:58.056171",
+        "created_at": "2026-11-13T12:12:33.563070",
+        "updated_at": "2026-11-13T12:12:33.695366",
+        "completed_at": "2026-11-13T12:12:33.620542",
         "tenant_id": null,
         "preset_id": null,
         "military_use_mode": null
@@ -210,8 +210,8 @@
     }
   ],
   "summary": {
-    "ingest_run_id": "fe090e28-1b67-4b0b-83e0-adfdaf637c7f",
-    "simulation_run_id": "fb9e345f-3c75-4d7a-9f80-3b5e89890196",
+    "ingest_run_id": "e8d76efc-500a-4303-bd80-52c5b84a11e0",
+    "simulation_run_id": "85b1263d-1a8b-4f40-b400-a69607dd90d0",
     "simulation_status": "COMPLETED",
     "llm_boundary": "POST /debates/trigger NOT exercised: requires a real LLM key (LLMDebateAdapter in services/debate/workflow.py).",
     "failures": []
