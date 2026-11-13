@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -20,6 +20,13 @@ from planagent.domain.models import (
     SimulationRun,
     StateSnapshotRecord,
     utc_now,
+)
+from planagent.services.calibration import (
+    CUTOFF_SOURCE_CREATION_TIME,
+    CUTOFF_SOURCE_EXPLICIT,
+    firewall_configuration_fragment,
+    firewall_cutoff_from_configuration,
+    format_cutoff,
 )
 from planagent.services.distributions import (
     determinism_input_fragment,
@@ -68,6 +75,20 @@ def _mece_configuration_fragment(
             "validation": mece_result.model_dump(mode="json"),
         }
     }
+
+
+def _firewall_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
+    """Hindsight-firewall fragment for a run under creation (Sprint 5).
+
+    An explicit ``decision_time`` is recorded as supplied; otherwise the
+    cutoff defaults to the run's creation time — evidence available
+    when the decision was made. The fragment is part of the run
+    configuration, so the Sprint 3 input hash covers it and replays
+    reproduce the same evidence set.
+    """
+    if payload.decision_time is not None:
+        return firewall_configuration_fragment(payload.decision_time, CUTOFF_SOURCE_EXPLICIT)
+    return firewall_configuration_fragment(utc_now(), CUTOFF_SOURCE_CREATION_TIME)
 
 
 class SimulationEngineMixin:
@@ -259,6 +280,7 @@ class SimulationEngineMixin:
             **startup_preset_config(payload.tenant_id, payload.preset_id),
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
+            **_firewall_configuration_fragment(payload),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -310,6 +332,7 @@ class SimulationEngineMixin:
             **startup_preset_config(payload.tenant_id, payload.preset_id),
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
+            **_firewall_configuration_fragment(payload),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -381,7 +404,16 @@ class SimulationEngineMixin:
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
         effective_policies = resolve_policies(run.domain_id, run.configuration)
-        claims = await self._fetch_relevant_claims(session, run)
+        # Sprint 5: hindsight firewall — resolve the decision-time cutoff
+        # from the run's stored configuration and filter claim reads to
+        # evidence ingested at or before it. Runs without a fragment
+        # (pre-Sprint-5 rows, direct construction) keep the legacy
+        # unfiltered reads; a malformed fragment fails loudly rather
+        # than silently leaking hindsight.
+        firewall_cutoff, firewall_source = firewall_cutoff_from_configuration(
+            run.configuration
+        )
+        claims = await self._fetch_relevant_claims(session, run, cutoff=firewall_cutoff)
         rules = self.rule_registry.get_rules(run.domain_id)
         matched_rules: list[str] = []
         shock_count = 0
@@ -551,6 +583,7 @@ class SimulationEngineMixin:
             # at creation, the per-tick state hashes, and the sampled
             # variable values (with the subset applied to the state).
             # Sprint 4: derived formula values, recorded alongside.
+            # Sprint 5: the hindsight-firewall cutoff in effect.
             "determinism": {
                 "input_hash": (run.configuration.get("determinism") or {}).get("input_hash"),
                 "state_hashes": state_hashes,
@@ -558,6 +591,11 @@ class SimulationEngineMixin:
                 "sampled_applied": [key for key in applied_values if key in sampled_values],
                 "derived_values": derived_values,
                 "derived_applied": [key for key in applied_values if key in derived_values],
+                "decision_time": (
+                    format_cutoff(firewall_cutoff) if firewall_cutoff is not None else None
+                ),
+                "cutoff_source": firewall_source,
+                "firewall_active": firewall_cutoff is not None,
             },
             "military_tick_summaries": military_tick_summaries
             if run.domain_id == "military"
@@ -852,7 +890,17 @@ class SimulationEngineMixin:
         self,
         session: AsyncSession,
         run: SimulationRun,
+        cutoff: datetime | None = None,
     ) -> list[Claim]:
+        """Fetch the claims visible to a run.
+
+        ``cutoff`` is the Sprint 5 hindsight-firewall decision time:
+        when given, every query below is restricted to claims ingested
+        at or before it (the predicate lives in ``scoped``, which all
+        four queries pass through, so no query can bypass the
+        firewall). ``None`` keeps the legacy unfiltered reads for runs
+        without a firewall fragment.
+        """
         tenant_id = normalize_tenant_id(run.tenant_id or run.configuration.get("tenant_id"))
         preset_id = run.preset_id or run.configuration.get("preset_id")
         scope_predicates = []
@@ -875,7 +923,14 @@ class SimulationEngineMixin:
                 )
 
         def scoped(query: Any) -> Any:
-            return query.where(*scope_predicates) if scope_predicates else query
+            if scope_predicates:
+                query = query.where(*scope_predicates)
+            if cutoff is not None:
+                # Hindsight firewall (Sprint 5): every claim query passes
+                # through here, so the cutoff cannot be bypassed by any
+                # of the fallback fetches below.
+                query = query.where(Claim.created_at <= cutoff)
+            return query
 
         def subject_scoped(query: Any) -> Any:
             return query.where(or_(*subject_predicates)) if subject_predicates else query

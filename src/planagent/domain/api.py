@@ -161,6 +161,14 @@ class SimulationRunCreate(APIModel):
     # exactly as before.
     variable_template_id: str | None = None
     variable_set: VariableSet | None = None
+    # Optional hindsight-firewall cutoff (Sprint 5, PRD delta D8). When
+    # supplied, only claims ingested at or before decision_time are
+    # visible to the run; later evidence cannot influence it. When
+    # absent, the cutoff defaults to the run's creation time. Naive
+    # datetimes are assumed UTC. The cutoff is stored in the run
+    # configuration, so it enters the Sprint 3 input hash and replays
+    # reproduce the same evidence set.
+    decision_time: datetime | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":
