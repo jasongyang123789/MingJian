@@ -1473,6 +1473,43 @@ class PredictionCalibrationContext(Base):
     )
 
 
+class CalibrationFitRecord(Base):
+    """Stored ridge-to-prior calibration fit (Sprint 5, PRD delta D8).
+
+    One row per fit run, append-only: the fit's inputs (source runs,
+    observations, parameters) are pinned by ``inputs_hash``, the fitted
+    values live in ``changes``, and a policy fit's new template version
+    is linked by ``calibrated_template_id`` — the source template is
+    never modified. Distinct from ``CalibrationRecord`` (the worker's
+    hypothesis-verification aggregates): this table records estimator
+    fits over stored run outcomes, not verification counts. The only
+    mutation after creation is the ``application`` log, which appends
+    rule-weight apply events; fit inputs and results are immutable.
+    """
+
+    __tablename__ = "calibration_fits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    domain_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_template_id: Mapped[str | None] = mapped_column(String(200), index=True)
+    calibrated_template_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    metric: Mapped[str | None] = mapped_column(String(120))
+    ridge_strength: Mapped[float] = mapped_column(Float, nullable=False)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    bootstrap_draws: Mapped[int] = mapped_column(Integer, nullable=False)
+    level: Mapped[float] = mapped_column(Float, nullable=False)
+    source_run_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    n_observations: Mapped[int] = mapped_column(Integer, nullable=False)
+    changes: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    inputs_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    loo_rmse: Mapped[float | None] = mapped_column(Float)
+    application: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class VariableTemplateRecord(Base):
     """Stored variable template (Sprint 2, PRD deltas D2/D3).
 
