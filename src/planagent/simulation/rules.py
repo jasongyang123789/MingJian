@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import importlib.util
+import math
 import os
 from pathlib import Path
 from typing import Any, Callable
@@ -85,6 +86,32 @@ class RuleRegistry:
             else:
                 target = 1.0
             self._calibration_weights[rule_id] = round(current * 0.4 + target * 0.6, 4)
+
+    def apply_fitted_weights(self, fitted_weights: dict[str, float]) -> dict[str, float]:
+        """Apply ridge-calibrated rule weights (Sprint 5, PRD delta D8).
+
+        Unlike :meth:`apply_calibration` (the calibration worker's
+        periodic accuracy blend), this is an explicit, audited
+        override: the caller supplies fitted weights from a stored
+        calibration fit, and they replace the current weights outright.
+        Weights are validated finite and clipped to [0.0, 2.0] — the
+        same range the worker's ``weight_multiplier`` uses — and the
+        applied (post-clip) mapping is returned so the caller can
+        record exactly what took effect. Weights live in memory only:
+        ``reload()`` resets them, and the worker's next
+        ``apply_calibration`` blends from these values toward its
+        accuracy targets. The durable record of a fitted-weights
+        application is the calibration fit row, not this registry.
+        """
+        applied: dict[str, float] = {}
+        for rule_id, weight in fitted_weights.items():
+            value = float(weight)
+            if not math.isfinite(value):
+                raise ValueError(f"Fitted weight for rule {rule_id!r} must be finite.")
+            clipped = round(min(2.0, max(0.0, value)), 4)
+            self._calibration_weights[rule_id] = clipped
+            applied[rule_id] = clipped
+        return applied
 
     def get_rules(self, domain_id: str) -> list[RuleSpec]:
         if domain_id not in self._cache:

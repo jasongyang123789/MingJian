@@ -89,6 +89,25 @@ def expected_shortfall(
     }
 
 
+def bootstrap_index_draws(count: int, draws: int, seed: int) -> list[list[int]]:
+    """Seeded bootstrap index draws: the shared resampling primitive.
+
+    Each draw is a list of ``count`` indices sampled with replacement
+    from ``range(count)`` by one ``random.Random(seed)`` stream.
+    :func:`bootstrap_intervals` and the Sprint 5 calibration estimator
+    both resample through this function, so there is exactly one
+    seeded-resampling implementation: index draws here, values or row
+    refits at the call site. Deterministic given (count, draws, seed).
+    """
+
+    if count < 1:
+        raise ValueError(f"Bootstrap resampling requires at least 1 item; got {count}.")
+    if draws < 1:
+        raise ValueError(f"Bootstrap draws must be >= 1; got {draws}.")
+    rng = random.Random(seed)
+    return [rng.choices(range(count), k=count) for _ in range(draws)]
+
+
 def _statistic_value(statistic: str, values: list[float], loss_threshold: float) -> float:
     if statistic == "mean":
         return float(statistics.fmean(values))
@@ -125,9 +144,8 @@ def bootstrap_intervals(
         raise ValueError(f"Bootstrap level must lie in (0, 1); got {level}.")
     ordered = sorted(float(value) for value in values)
     estimates: dict[str, list[float]] = {name: [] for name in statistics}
-    rng = random.Random(seed)
-    for _ in range(draws):
-        resample = rng.choices(ordered, k=len(ordered))
+    for indices in bootstrap_index_draws(len(ordered), draws, seed):
+        resample = [ordered[index] for index in indices]
         for name in statistics:
             estimates[name].append(_statistic_value(name, resample, loss_threshold))
     tail = (1.0 - level) / 2.0
