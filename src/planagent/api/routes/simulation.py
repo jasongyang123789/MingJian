@@ -48,6 +48,7 @@ from planagent.api.routes._deps import (
     get_workbench_service,
 )
 from planagent.services.debate._legacy import _command_from_legacy_request
+from planagent.services.mece import MeceValidationError
 from planagent.services.startup import (
     build_startup_kpi_pack,
 )
@@ -79,6 +80,18 @@ async def create_simulation_run(
     service = get_simulation_service(request)
     try:
         run = await service.create_simulation_run(session, payload)
+    except MeceValidationError as exc:
+        # MECE gate refusal: structured detail (repo's dict-detail shape,
+        # see api/edition.py) carrying the full validation result so the
+        # caller can fix the decomposition and resubmit.
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "mece_validation_failed",
+                "message": "Decomposition failed MECE validation; simulation refused.",
+                "validation": exc.result.model_dump(mode="json"),
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SimulationRunRead.model_validate(run)

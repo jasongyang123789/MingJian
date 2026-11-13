@@ -14,6 +14,7 @@ from planagent.domain.enums import (
     SimulationRunStatus,
 )
 from planagent.domain.types import GeneratedReportModel
+from planagent.services.mece.models import DecompositionTree
 
 
 class APIModel(BaseModel):
@@ -147,6 +148,10 @@ class SimulationRunCreate(APIModel):
     preset_id: str | None = None
     initial_state: dict[str, float] = Field(default_factory=dict)
     military_use_mode: Literal["osint", "training", "full_domain"] = "full_domain"
+    # Optional MECE decomposition (Sprint 1, PRD delta D1). When attached,
+    # run creation validates it and REFUSES to run on FAIL — there is no
+    # bypass. When absent, runs behave exactly as before.
+    decomposition: DecompositionTree | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":

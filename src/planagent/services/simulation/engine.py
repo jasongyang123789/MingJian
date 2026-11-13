@@ -24,12 +24,33 @@ from planagent.domain.models import (
 from planagent.services.simulation_branching import (
     _STATE_POLICIES,
 )
+from planagent.services.mece import MeceValidationResult, validate_or_raise
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
 from planagent.simulation.domain_packs import registry
 from .impact import _DECISION_EVIDENCE_WINDOW
 
 _SIMULATION_PUBLIC_ERROR = "Simulation execution failed"
 _logger = logging.getLogger(__name__)
+
+
+def _mece_configuration_fragment(
+    payload: SimulationRunCreate,
+    mece_result: MeceValidationResult | None,
+) -> dict[str, Any]:
+    """Audit-trail fragment for a validated decomposition.
+
+    Stored inside ``SimulationRun.configuration`` (existing JSON column),
+    so no schema migration is needed. Returns {} when no decomposition
+    was attached.
+    """
+    if mece_result is None or payload.decomposition is None:
+        return {}
+    return {
+        "mece": {
+            "decomposition": payload.decomposition.model_dump(mode="json"),
+            "validation": mece_result.model_dump(mode="json"),
+        }
+    }
 
 
 class SimulationEngineMixin:
@@ -44,15 +65,21 @@ class SimulationEngineMixin:
         session: AsyncSession,
         payload: SimulationRunCreate,
     ) -> SimulationRun:
+        # MECE gate (Sprint 1, PRD delta D1): an attached decomposition
+        # that fails validation refuses run creation entirely — no run
+        # row is written, no ticks execute, no bypass exists.
+        mece_result: MeceValidationResult | None = None
+        if payload.decomposition is not None:
+            mece_result = validate_or_raise(payload.decomposition)
         execution_mode = payload.execution_mode or (
             ExecutionMode.INLINE
             if self.settings.inline_simulation_default
             else ExecutionMode.QUEUED
         )
         if payload.domain_id == "corporate":
-            run = await self._create_corporate_run(session, payload, execution_mode)
+            run = await self._create_corporate_run(session, payload, execution_mode, mece_result)
         elif payload.domain_id == "military":
-            run = await self._create_military_run(session, payload, execution_mode)
+            run = await self._create_military_run(session, payload, execution_mode, mece_result)
         else:
             raise ValueError(f"Domain {payload.domain_id} is not implemented yet.")
 
@@ -110,6 +137,7 @@ class SimulationEngineMixin:
         session: AsyncSession,
         payload: SimulationRunCreate,
         execution_mode: ExecutionMode,
+        mece_result: MeceValidationResult | None = None,
     ) -> SimulationRun:
         company = await self._upsert_company(session, payload)
         run = SimulationRun(
@@ -128,6 +156,7 @@ class SimulationEngineMixin:
                 "initial_state": payload.initial_state,
                 "market": payload.market,
                 **startup_preset_config(payload.tenant_id, payload.preset_id),
+                **_mece_configuration_fragment(payload, mece_result),
             },
             summary={},
         )
@@ -140,6 +169,7 @@ class SimulationEngineMixin:
         session: AsyncSession,
         payload: SimulationRunCreate,
         execution_mode: ExecutionMode,
+        mece_result: MeceValidationResult | None = None,
     ) -> SimulationRun:
         force = await self._upsert_force(session, payload)
         military_use_mode = payload.military_use_mode or "full_domain"
@@ -161,6 +191,7 @@ class SimulationEngineMixin:
                 "military_use_mode": military_use_mode,
                 "simulation_only": True,
                 **startup_preset_config(payload.tenant_id, payload.preset_id),
+                **_mece_configuration_fragment(payload, mece_result),
             },
             summary={},
         )
