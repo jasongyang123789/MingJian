@@ -12,6 +12,10 @@ import Sources from './pages/Sources'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Monitoring from './pages/Monitoring'
+import Cockpit from './pages/Cockpit'
+import Deliberation from './pages/Deliberation'
+import MeceAuthoring from './pages/MeceAuthoring'
+import TemplateProvenance from './pages/TemplateProvenance'
 import { AuthGate } from './auth/AuthGate'
 
 export default function App() {
@@ -33,6 +37,10 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/predictions" element={<Navigate to="/reports" replace />} />
             <Route path="/monitoring" element={<Monitoring />} />
+            <Route path="/cockpit" element={<Cockpit />} />
+            <Route path="/cockpit/deliberations" element={<Deliberation />} />
+            <Route path="/cockpit/mece" element={<MeceAuthoring />} />
+            <Route path="/cockpit/templates" element={<TemplateProvenance />} />
           </Route>
         </Routes>
       </AuthGate>

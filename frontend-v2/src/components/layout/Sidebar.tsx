@@ -34,6 +34,7 @@ const MENU_ITEMS: MenuItem[] = [
   { label: '智能体管理', icon: Users, path: '/agents' },
   { label: '辩论中心', icon: MessageSquare, path: '/debate' },
   { label: '场景模拟', icon: FlaskConical, path: '/simulation' },
+  { label: '决策驾驶舱', icon: Gauge, path: '/cockpit' },
   { label: '证据库', icon: Library, path: '/evidence' },
   { label: '24小时监控', icon: Activity, path: '/monitoring' },
   { label: '数据源', icon: Database, path: '/sources' },
