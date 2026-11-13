@@ -18,8 +18,8 @@ import {
   FirewallView,
   RobustnessView,
   VariableBindingsView,
-  distributionSummary,
 } from './RunArtifacts'
+import { distributionSummary } from './format'
 
 describe('distributionSummary', () => {
   it('summarizes each distribution type from its own parameters', () => {

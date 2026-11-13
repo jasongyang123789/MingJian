@@ -8,10 +8,9 @@ import type {
   RobustnessRead,
   RuleWeightChange,
   ThresholdChange,
-  VariableDefinition,
   VariableRunRead,
 } from '../../api/engineTypes'
-import { formatHash, formatNumber, formatShare } from './format'
+import { distributionSummary, formatHash, formatNumber, formatShare } from './format'
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -31,22 +30,6 @@ function KeyValue({ label, value }: { label: string; value: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 // Sprint 2 — variable bindings
 // ---------------------------------------------------------------------------
-
-export function distributionSummary(variable: VariableDefinition): string {
-  const d = variable.distribution
-  switch (d.type) {
-    case 'fixed':
-      return `fixed = ${formatNumber(d.value ?? 0)}`
-    case 'normal':
-      return `normal(μ=${formatNumber(d.mean ?? 0)}, σ=${formatNumber(d.std ?? 0)})`
-    case 'triangular':
-      return `triangular(${formatNumber(d.min ?? 0)}, ${formatNumber(d.mode ?? 0)}, ${formatNumber(d.max ?? 0)})`
-    case 'beta_pert':
-      return `beta_pert(${formatNumber(d.min ?? 0)}, ${formatNumber(d.mode ?? 0)}, ${formatNumber(d.max ?? 0)})`
-    case 'bernoulli':
-      return `bernoulli(p=${formatNumber(d.p ?? 0)})`
-  }
-}
 
 export function VariableBindingsView({ data }: { data: VariableRunRead }) {
   const { template, bindings, validation } = data
