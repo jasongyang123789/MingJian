@@ -13,6 +13,7 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Monitoring from './pages/Monitoring'
 import Cockpit from './pages/Cockpit'
+import Charts from './pages/Charts'
 import Deliberation from './pages/Deliberation'
 import MeceAuthoring from './pages/MeceAuthoring'
 import TemplateProvenance from './pages/TemplateProvenance'
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/cockpit/deliberations" element={<Deliberation />} />
             <Route path="/cockpit/mece" element={<MeceAuthoring />} />
             <Route path="/cockpit/variable-templates" element={<VariableTemplates />} />
+            <Route path="/cockpit/charts" element={<Charts />} />
             <Route path="/cockpit/templates" element={<TemplateProvenance />} />
           </Route>
         </Routes>

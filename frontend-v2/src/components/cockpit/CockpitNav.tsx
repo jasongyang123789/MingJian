@@ -5,6 +5,7 @@ const TABS = [
   { label: 'Deliberation', path: '/cockpit/deliberations' },
   { label: 'MECE 编写', path: '/cockpit/mece' },
   { label: '变量模板', path: '/cockpit/variable-templates' },
+  { label: '分布图表', path: '/cockpit/charts' },
   { label: '模板出处', path: '/cockpit/templates' },
 ]
 

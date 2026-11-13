@@ -1,0 +1,176 @@
+// Distribution charts page: ensemble histograms from stored trial
+// values plus tornado / bootstrap / threshold-search charts over the
+// stored Sprint 4 results. Every chart degrades honestly — no
+// ensemble, no trial values, or no stored analysis each renders an
+// empty state explaining what to run, and nothing is ever synthesized
+// from summary statistics.
+
+import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+
+import { simulationApi } from '../api/endpoints'
+import { distributionsApi, nullOn404, robustnessApi } from '../api/engine'
+import type { MonteCarloResult } from '../api/engineTypes'
+import { CockpitNav } from '../components/cockpit/CockpitNav'
+import { EnsembleHistograms } from '../components/cockpit/DistributionCharts'
+import { BootstrapChart, ThresholdSearchChart, TornadoChart } from '../components/cockpit/RobustnessCharts'
+import { RunPicker } from '../components/cockpit/RunPicker'
+import type { CockpitRun } from '../components/cockpit/RunPicker'
+import { Card, CardBody, CardHeader } from '../components/ui/Card'
+import { EmptyState } from '../components/ui/EmptyState'
+import { ErrorBanner } from '../components/ui/ErrorBanner'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { useApi } from '../hooks/useApi'
+
+function EnsembleSection({ runId, result }: { runId: string; result: MonteCarloResult }) {
+  const { data: trialValues, loading, error, reload } = useApi(
+    () => nullOn404(distributionsApi.getTrialValues(runId)),
+    runId,
+  )
+  if (loading) return <LoadingSpinner />
+  if (error) return <ErrorBanner message={error} onRetry={reload} />
+  if (trialValues === null) {
+    return (
+      <EmptyState
+        title="Trial 值不可用"
+        description="该 ensemble 存在，但 trial 行缺失或不完整，无法画出分布直方图。此处不会用摘要统计量伪造分布。"
+      />
+    )
+  }
+  return <EnsembleHistograms result={result} trialValues={trialValues} />
+}
+
+function RobustnessSection({ runId }: { runId: string }) {
+  const { data, loading, error, reload } = useApi(
+    () => nullOn404(robustnessApi.getAll(runId)),
+    runId,
+  )
+  if (loading) return <LoadingSpinner />
+  if (error) return <ErrorBanner message={error} onRetry={reload} />
+  if (data === null) {
+    return (
+      <EmptyState
+        title="暂无稳健性分析"
+        description="该 Run 尚未存储任何稳健性分析结果。先运行一次蒙特卡洛 ensemble，再运行龙卷风、bootstrap 或阈值搜索分析。"
+      />
+    )
+  }
+  return (
+    <div className="space-y-8">
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">龙卷风图（敏感性）</h4>
+        {data.tornado ? (
+          <TornadoChart tornado={data.tornado} />
+        ) : (
+          <EmptyState
+            title="尚未运行龙卷风分析"
+            description="对该 Run 的 ensemble 运行一次龙卷风分析（POST /runs/{id}/robustness/tornado），图表会在此出现。"
+          />
+        )}
+      </div>
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">Bootstrap 区间</h4>
+        {data.bootstrap ? (
+          <BootstrapChart bootstrap={data.bootstrap} />
+        ) : (
+          <EmptyState
+            title="尚未运行 Bootstrap 分析"
+            description="对该 Run 的 ensemble 运行一次 bootstrap 分析（POST /runs/{id}/robustness/bootstrap），图表会在此出现。"
+          />
+        )}
+      </div>
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">阈值搜索</h4>
+        {data.threshold_search ? (
+          <ThresholdSearchChart search={data.threshold_search} />
+        ) : (
+          <EmptyState
+            title="尚未运行阈值搜索"
+            description="对该 Run 的 ensemble 运行一次阈值搜索（POST /runs/{id}/robustness/threshold-search），图表会在此出现。"
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function Charts() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { data: runs, loading, error, reload } = useApi(() => simulationApi.listRuns())
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(searchParams.get('run'))
+
+  const {
+    data: ensemble,
+    loading: ensembleLoading,
+    error: ensembleError,
+    reload: reloadEnsemble,
+  } = useApi(
+    () =>
+      selectedRunId
+        ? nullOn404(distributionsApi.getMonteCarlo(selectedRunId))
+        : Promise.resolve(null),
+    selectedRunId,
+  )
+
+  function selectRun(runId: string) {
+    setSelectedRunId(runId)
+    setSearchParams({ run: runId })
+  }
+
+  const selectedRun = (runs as CockpitRun[] | null)?.find((run) => run.id === selectedRunId) ?? null
+
+  return (
+    <div className="space-y-6">
+      <CockpitNav />
+      <div>
+        <h2 className="text-2xl font-bold text-slate-100">分布图表</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          只画真实存储的数据：ensemble 直方图来自 trial 值，龙卷风、bootstrap 与阈值搜索图来自存储的稳健性分析结果。没有数据时如实显示空状态。
+        </p>
+      </div>
+
+      {loading && <LoadingSpinner />}
+      {error && <ErrorBanner message={error} onRetry={reload} />}
+      {runs && (
+        <RunPicker
+          runs={runs as CockpitRun[]}
+          selectedId={selectedRunId}
+          onSelect={selectRun}
+          label="选择模拟 Run"
+        />
+      )}
+
+      {!selectedRunId && (
+        <EmptyState title="请选择一个 Run" description="图表展示该 Run 已存储的 ensemble 与稳健性分析结果" />
+      )}
+
+      {selectedRunId && (
+        <Card>
+          <CardHeader title={`Ensemble 分布（${selectedRun?.id ?? selectedRunId}）`} />
+          <CardBody>
+            {ensembleLoading && <LoadingSpinner />}
+            {ensembleError && <ErrorBanner message={ensembleError} onRetry={reloadEnsemble} />}
+            {!ensembleLoading && !ensembleError && ensemble === null && (
+              <EmptyState
+                title="暂无 Ensemble 结果"
+                description="该 Run 尚未存储蒙特卡洛 ensemble 结果。先对该 Run 运行一次 ensemble（POST /runs/{id}/monte-carlo），分布图会在此出现。"
+              />
+            )}
+            {!ensembleLoading && !ensembleError && ensemble !== null && (
+              <EnsembleSection runId={selectedRunId} result={ensemble} />
+            )}
+          </CardBody>
+        </Card>
+      )}
+
+      {selectedRunId && (
+        <Card>
+          <CardHeader title="稳健性图表" />
+          <CardBody>
+            <RobustnessSection runId={selectedRunId} />
+          </CardBody>
+        </Card>
+      )}
+    </div>
+  )
+}

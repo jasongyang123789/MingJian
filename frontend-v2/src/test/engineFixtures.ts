@@ -19,6 +19,7 @@ import type {
   SkillDeliberationRecord,
   StageRecord,
   StrategyTeamResult,
+  ThresholdSearchResult,
   VariableRunRead,
   VariableTemplateRead,
   VariableValidationResult,
@@ -1013,4 +1014,24 @@ export const trialValues: MonteCarloTrialValues = {
   strategy: [140, 140, 140, 140, 140],
   trial_values_hash: 'sha256:aaaa',
   protocol: 'sprint3-v1',
+}
+
+export const reachableThresholdSearch: ThresholdSearchResult = {
+  ...(robustnessRead.threshold_search as ThresholdSearchResult),
+  threshold: 105,
+  achieved_statistic: 0.29,
+  reachable: true,
+  iterations: 6,
+  evaluations: [
+    { value: 60, statistic: 0.9, trials: 20, probe_run_ids: ['p-1'] },
+    { value: 80, statistic: 0.6, trials: 20, probe_run_ids: ['p-2'] },
+    { value: 100, statistic: 0.35, trials: 20, probe_run_ids: ['p-3'] },
+    { value: 110, statistic: 0.25, trials: 20, probe_run_ids: ['p-4'] },
+    { value: 105, statistic: 0.29, trials: 20, probe_run_ids: ['p-5'] },
+  ],
+}
+
+export const robustnessReadReachable: RobustnessRead = {
+  ...robustnessRead,
+  threshold_search: reachableThresholdSearch,
 }
