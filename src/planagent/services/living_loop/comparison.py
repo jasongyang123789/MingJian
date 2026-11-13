@@ -147,8 +147,7 @@ def compare_ensembles(
 
     if old.metric != new.metric:
         raise ValueError(
-            f"Cannot compare ensembles with different metrics: "
-            f"{old.metric!r} vs {new.metric!r}."
+            f"Cannot compare ensembles with different metrics: {old.metric!r} vs {new.metric!r}."
         )
     if old.loss_threshold != new.loss_threshold:
         raise ValueError(

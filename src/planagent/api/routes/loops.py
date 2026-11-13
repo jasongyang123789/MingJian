@@ -27,8 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.api.routes._deps import get_simulation_service
 from planagent.db import get_session
-from planagent.services.mece import MeceValidationError
-from planagent.services.simulation.living_loop import LoopError
 from planagent.services.living_loop.models import (
     DecideRequest,
     LoopIterationRead,
@@ -42,6 +40,8 @@ from planagent.services.living_loop.models import (
     TriggerRegistration,
     TriggerRegistrationRequest,
 )
+from planagent.services.mece import MeceValidationError
+from planagent.services.simulation.living_loop import LoopError
 from planagent.services.variables import VariableTemplateError, VariableValidationError
 
 router = APIRouter()

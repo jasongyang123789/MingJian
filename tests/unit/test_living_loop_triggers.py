@@ -25,9 +25,7 @@ from planagent.services.living_loop.triggers import evaluate_triggers, select_wi
 from planagent.services.robustness.models import GateDefinition
 
 
-def _observation(
-    obs_id: str, field: str, value: float, observed_at: str
-) -> LoopObservationRead:
+def _observation(obs_id: str, field: str, value: float, observed_at: str) -> LoopObservationRead:
     return LoopObservationRead(
         id=obs_id,
         loop_id="loop-1",
@@ -190,7 +188,9 @@ def test_gate_trigger_refuses_non_baseline_arm() -> None:
         GateTrigger(
             name="strategy mean",
             field="cash",
-            gate=GateDefinition(name="g", metric="mean", operator=">", threshold=0.0, arm="strategy"),
+            gate=GateDefinition(
+                name="g", metric="mean", operator=">", threshold=0.0, arm="strategy"
+            ),
         )
 
 

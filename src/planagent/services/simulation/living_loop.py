@@ -173,7 +173,9 @@ def _read_iteration(row: LoopIterationRecord) -> LoopIterationRead:
             else None
         ),
         comparison=(
-            EnsembleComparison.model_validate(row.comparison) if row.comparison is not None else None
+            EnsembleComparison.model_validate(row.comparison)
+            if row.comparison is not None
+            else None
         ),
         decision=(
             ReviewDecisionRecord.model_validate(row.decision) if row.decision is not None else None
@@ -258,9 +260,7 @@ class SimulationLivingLoopMixin:
         )
         return [_read_loop(row) for row in rows]
 
-    async def get_loop_timeline(
-        self, session: AsyncSession, loop_id: str
-    ) -> LoopTimelineRead:
+    async def get_loop_timeline(self, session: AsyncSession, loop_id: str) -> LoopTimelineRead:
         row = await self._require_loop(session, loop_id)
         observations = list(
             (
@@ -299,8 +299,7 @@ class SimulationLivingLoopMixin:
         if request.field not in _state_fields(row.domain_id):
             raise LoopError(
                 "loop_unknown_field",
-                f"Field {request.field!r} is not a state field of domain "
-                f"{row.domain_id!r}.",
+                f"Field {request.field!r} is not a state field of domain {row.domain_id!r}.",
             )
         if request.source_claim_id is not None:
             claim = await session.get(Claim, request.source_claim_id)
@@ -337,8 +336,7 @@ class SimulationLivingLoopMixin:
         ):
             raise LoopError(
                 "loop_unknown_registration",
-                f"Trigger registration {request.supersedes!r} does not exist "
-                f"on loop {loop_id}.",
+                f"Trigger registration {request.supersedes!r} does not exist on loop {loop_id}.",
             )
         fields = _state_fields(row.domain_id)
         for trigger in request.triggers:
@@ -455,9 +453,7 @@ class SimulationLivingLoopMixin:
         row = await self._require_loop(session, loop_id)
         record = await self._require_iteration(session, loop_id, iteration_id)
         self._require_state(record, ("open",), "evaluate triggers")
-        registrations = [
-            TriggerRegistration.model_validate(item) for item in (row.triggers or [])
-        ]
+        registrations = [TriggerRegistration.model_validate(item) for item in (row.triggers or [])]
         if not registrations:
             raise LoopError(
                 "loop_no_triggers",
@@ -468,9 +464,7 @@ class SimulationLivingLoopMixin:
         registration = active[-1] if active else registrations[-1]
         decision_time = normalize_cutoff(record.decision_time)
         previous_cutoff = (
-            normalize_cutoff(record.previous_cutoff)
-            if record.previous_cutoff is not None
-            else None
+            normalize_cutoff(record.previous_cutoff) if record.previous_cutoff is not None else None
         )
         observations = list(
             (
@@ -539,14 +533,14 @@ class SimulationLivingLoopMixin:
         resimulation = ResimulationRecord(
             run_id=new_run.id,
             previous_cutoff=(
-                format_cutoff(record.previous_cutoff) if record.previous_cutoff is not None else None
+                format_cutoff(record.previous_cutoff)
+                if record.previous_cutoff is not None
+                else None
             ),
             new_cutoff=format_cutoff(decision_time),
             previous_input_hash=_input_hash(baseline.configuration),
             new_input_hash=_input_hash(new_run.configuration),
-            template_id=(baseline.configuration or {})
-            .get("variables", {})
-            .get("template_id")
+            template_id=(baseline.configuration or {}).get("variables", {}).get("template_id")
             if isinstance((baseline.configuration or {}).get("variables"), dict)
             else None,
             template_snapshot_hash=(
@@ -681,9 +675,7 @@ class SimulationLivingLoopMixin:
     ) -> LoopIterationRecord:
         record = await session.get(LoopIterationRecord, iteration_id)
         if record is None or record.loop_id != loop_id:
-            raise LookupError(
-                f"Loop iteration {iteration_id} was not found on loop {loop_id}."
-            )
+            raise LookupError(f"Loop iteration {iteration_id} was not found on loop {loop_id}.")
         return record
 
     async def _latest_iteration(
@@ -699,9 +691,7 @@ class SimulationLivingLoopMixin:
         ).first()
 
     @staticmethod
-    def _require_state(
-        record: LoopIterationRecord, allowed: tuple[str, ...], action: str
-    ) -> None:
+    def _require_state(record: LoopIterationRecord, allowed: tuple[str, ...], action: str) -> None:
         if record.state not in allowed:
             raise LoopError(
                 "loop_invalid_state",
@@ -773,7 +763,10 @@ class SimulationLivingLoopMixin:
                 variable_set = VariableSet.model_validate(bindings)
 
         if request.variable_template_id is not None:
-            changes["variable_template_id"] = {"from": template_id, "to": request.variable_template_id}
+            changes["variable_template_id"] = {
+                "from": template_id,
+                "to": request.variable_template_id,
+            }
             template_id = request.variable_template_id
         if request.variable_set is not None:
             changes["variable_set"] = "override supplied"
@@ -792,8 +785,7 @@ class SimulationLivingLoopMixin:
         if not isinstance(initial_state, dict):
             raise LoopError(
                 "loop_corrupt_baseline_fragment",
-                "Baseline run carries a malformed initial_state; refusing "
-                "to re-simulate.",
+                "Baseline run carries a malformed initial_state; refusing to re-simulate.",
             )
 
         payload_kwargs: dict[str, Any] = {
@@ -811,7 +803,11 @@ class SimulationLivingLoopMixin:
             "decision_time": decision_time,
         }
         if baseline.domain_id == "corporate":
-            company = await session.get(CompanyProfile, baseline.company_id) if baseline.company_id else None
+            company = (
+                await session.get(CompanyProfile, baseline.company_id)
+                if baseline.company_id
+                else None
+            )
             if company is None:
                 raise LoopError(
                     "loop_missing_subject",
@@ -822,7 +818,9 @@ class SimulationLivingLoopMixin:
             payload_kwargs["company_name"] = company.name
             payload_kwargs["market"] = configuration.get("market", "ai")
         elif baseline.domain_id == "military":
-            force = await session.get(ForceProfile, baseline.force_id) if baseline.force_id else None
+            force = (
+                await session.get(ForceProfile, baseline.force_id) if baseline.force_id else None
+            )
             if force is None:
                 raise LoopError(
                     "loop_missing_subject",

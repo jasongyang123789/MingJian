@@ -9,8 +9,10 @@ from planagent.services.living_loop.comparison import (
 )
 from planagent.services.living_loop.models import (
     DecideRequest,
+    DeviationTrigger,
     EnsembleComparison,
     GateReevaluation,
+    GateTrigger,
     LoopIterationRead,
     LoopObservationCreate,
     LoopObservationRead,
@@ -23,8 +25,6 @@ from planagent.services.living_loop.models import (
     StrategyLoopCreate,
     StrategyLoopRead,
     ThresholdTrigger,
-    GateTrigger,
-    DeviationTrigger,
     TriggerEvaluationOutcome,
     TriggerRegistration,
     TriggerRegistrationRequest,

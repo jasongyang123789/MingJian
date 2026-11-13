@@ -28,8 +28,15 @@ from planagent.services.robustness.models import (
 
 def _summary(mean: float, p10: float, p50: float, p90: float, p_loss: float) -> DistributionSummary:
     return DistributionSummary(
-        n=10, mean=mean, min=p10 - 5.0, max=p90 + 5.0, p10=p10, p50=p50, p90=p90,
-        stddev=10.0, p_loss=p_loss,
+        n=10,
+        mean=mean,
+        min=p10 - 5.0,
+        max=p90 + 5.0,
+        p10=p10,
+        p50=p50,
+        p90=p90,
+        stddev=10.0,
+        p_loss=p_loss,
     )
 
 
@@ -69,7 +76,9 @@ def _ensemble(
 def test_arm_deltas_are_new_minus_old() -> None:
     old = _ensemble("ens-old", "run-old", 42, 10, baseline_mean=100.0)
     new = _ensemble("ens-new", "run-new", 42, 10, baseline_mean=90.0, strategy_mean=130.0)
-    comparison = compare_ensembles(old, new, compared_at="2026-04-01T00:00:00.000000Z", cutoffs_differ=False)
+    comparison = compare_ensembles(
+        old, new, compared_at="2026-04-01T00:00:00.000000Z", cutoffs_differ=False
+    )
     assert comparison.baseline_arm.delta_mean == pytest.approx(-10.0)
     assert comparison.baseline_arm.delta_p_loss == pytest.approx(0.0)
     assert comparison.strategy_arm.delta_mean == pytest.approx(-10.0)
@@ -83,15 +92,15 @@ def test_seeds_paired_requires_same_seed_and_trials() -> None:
     same = _ensemble("ens-new", "run-new", 42, 10)
     different_seed = _ensemble("ens-new", "run-new", 7, 10)
     different_trials = _ensemble("ens-new", "run-new", 42, 20)
-    assert compare_ensembles(
-        old, same, compared_at="t", cutoffs_differ=False
-    ).seeds_paired is True
-    assert compare_ensembles(
-        old, different_seed, compared_at="t", cutoffs_differ=False
-    ).seeds_paired is False
-    assert compare_ensembles(
-        old, different_trials, compared_at="t", cutoffs_differ=False
-    ).seeds_paired is False
+    assert compare_ensembles(old, same, compared_at="t", cutoffs_differ=False).seeds_paired is True
+    assert (
+        compare_ensembles(old, different_seed, compared_at="t", cutoffs_differ=False).seeds_paired
+        is False
+    )
+    assert (
+        compare_ensembles(old, different_trials, compared_at="t", cutoffs_differ=False).seeds_paired
+        is False
+    )
 
 
 def test_evidence_caveat_present_only_when_cutoffs_differ() -> None:
@@ -148,7 +157,9 @@ def test_gate_reevaluation_uses_new_trial_values() -> None:
 
 
 def test_threshold_drift_matches_same_variable_and_mode() -> None:
-    def _search(variable: str, mode: str, threshold: float | None, reachable: bool) -> ThresholdSearchResult:
+    def _search(
+        variable: str, mode: str, threshold: float | None, reachable: bool
+    ) -> ThresholdSearchResult:
         return ThresholdSearchResult(
             run_id="r",
             ensemble_id="e",
@@ -176,7 +187,15 @@ def test_threshold_drift_matches_same_variable_and_mode() -> None:
     assert rows[0].new_threshold == pytest.approx(95.10)
 
     # Different variable or mode: no row, honestly absent.
-    assert threshold_drift(_search("cash", "p_loss", 89.84, True), _search("cac", "p_loss", 1.0, True)) == []
-    assert threshold_drift(_search("cash", "p_loss", 89.84, True), _search("cash", "arm_flip", 1.0, True)) == []
+    assert (
+        threshold_drift(_search("cash", "p_loss", 89.84, True), _search("cac", "p_loss", 1.0, True))
+        == []
+    )
+    assert (
+        threshold_drift(
+            _search("cash", "p_loss", 89.84, True), _search("cash", "arm_flip", 1.0, True)
+        )
+        == []
+    )
     assert threshold_drift(None, _search("cash", "p_loss", 1.0, True)) == []
     assert threshold_drift(_search("cash", "p_loss", 1.0, True), None) == []

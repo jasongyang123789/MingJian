@@ -79,7 +79,7 @@ def _same_instant(left: str, right: str) -> bool:
     microseconds; test constants do not)."""
 
     def parse(value: str) -> datetime:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
 
     return parse(left) == parse(right)
 
@@ -193,9 +193,7 @@ def test_full_loop_walkthrough(monkeypatch, tmp_path) -> None:
         assert _same_instant(iteration["previous_cutoff"], BASELINE_CUTOFF)
         assert _same_instant(iteration["decision_time"], REVIEW_TIME)
 
-        evaluated = client.post(
-            f"/loops/{loop['id']}/iterations/{iteration['id']}/evaluate"
-        )
+        evaluated = client.post(f"/loops/{loop['id']}/iterations/{iteration['id']}/evaluate")
         assert evaluated.status_code == 200, evaluated.text
         iteration = evaluated.json()
         assert iteration["state"] == "evaluated"
@@ -236,9 +234,7 @@ def test_full_loop_walkthrough(monkeypatch, tmp_path) -> None:
         assert audit.json()["cutoff_source"] == "explicit"
 
         new_ensemble = _run_ensemble(client, resim["run_id"])
-        compared = client.post(
-            f"/loops/{loop['id']}/iterations/{iteration['id']}/compare"
-        )
+        compared = client.post(f"/loops/{loop['id']}/iterations/{iteration['id']}/compare")
         assert compared.status_code == 200, compared.text
         iteration = compared.json()
         assert iteration["state"] == "compared"
@@ -301,9 +297,7 @@ def test_quiet_round_decided_without_resimulation(monkeypatch, tmp_path) -> None
         )
         iteration_id = started.json()["id"]
 
-        evaluated = client.post(
-            f"/loops/{loop['id']}/iterations/{iteration_id}/evaluate"
-        )
+        evaluated = client.post(f"/loops/{loop['id']}/iterations/{iteration_id}/evaluate")
         assert evaluated.status_code == 200, evaluated.text
         outcomes = evaluated.json()["trigger_evaluations"]
         assert len(outcomes) == 1
@@ -458,15 +452,11 @@ def test_iteration_state_machine_refusals(monkeypatch, tmp_path) -> None:
         assert second.json()["detail"]["code"] == "loop_iteration_in_progress"
 
         # Register triggers, evaluate, then evaluate again: refused.
-        registered = client.post(
-            f"/loops/{loop['id']}/triggers", json={"triggers": [TRIGGERS[0]]}
-        )
+        registered = client.post(f"/loops/{loop['id']}/triggers", json={"triggers": [TRIGGERS[0]]})
         assert registered.status_code == 201, registered.text
         evaluated = client.post(f"/loops/{loop['id']}/iterations/{iteration_id}/evaluate")
         assert evaluated.status_code == 200, evaluated.text
-        evaluated_again = client.post(
-            f"/loops/{loop['id']}/iterations/{iteration_id}/evaluate"
-        )
+        evaluated_again = client.post(f"/loops/{loop['id']}/iterations/{iteration_id}/evaluate")
         assert evaluated_again.status_code == 400
         assert evaluated_again.json()["detail"]["code"] == "loop_invalid_state"
 
@@ -574,9 +564,7 @@ def test_trigger_registration_append_only_with_supersede(monkeypatch, tmp_path) 
 def test_loop_creation_rejects_unknown_and_derived_runs(monkeypatch, tmp_path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        missing = client.post(
-            "/loops", json={"name": "x", "baseline_run_id": "run:missing"}
-        )
+        missing = client.post("/loops", json={"name": "x", "baseline_run_id": "run:missing"})
         assert missing.status_code == 404, missing.text
 
         baseline = _create_baseline_run(client)
@@ -601,10 +589,7 @@ def test_loop_endpoints_404_on_unknown_ids(monkeypatch, tmp_path) -> None:
         )
         baseline = _create_baseline_run(client)
         loop = _create_loop(client, baseline["id"], triggers=[])
-        assert (
-            client.get(f"/loops/{loop['id']}/iterations/iteration:missing").status_code
-            == 404
-        )
+        assert client.get(f"/loops/{loop['id']}/iterations/iteration:missing").status_code == 404
 
 
 def test_observations_and_triggers_validate_fields(monkeypatch, tmp_path) -> None:
