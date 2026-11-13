@@ -4,6 +4,7 @@ import type {
   BootstrapRequest,
   BootstrapResult,
   CalibrationFitRead,
+  DecideRequest,
   DecisionGatesRead,
   DecompositionTree,
   DeterminismRead,
@@ -14,6 +15,10 @@ import type {
   GateEvaluationRequest,
   GateRegistration,
   GateRegistrationRequest,
+  LoopIterationRead,
+  LoopObservationCreate,
+  LoopObservationRead,
+  LoopTimelineRead,
   MeceProposalRead,
   MeceProposeRequest,
   MeceRunRead,
@@ -23,15 +28,21 @@ import type {
   MonteCarloTrialValues,
   PolicyFitRequest,
   ReplayResult,
+  ResimulateRequest,
   RobustnessRead,
   RuleWeightFitRequest,
   SkillDeliberationListRead,
   SkillDeliberationRecord,
+  StartIterationRequest,
+  StrategyLoopCreate,
+  StrategyLoopRead,
   StrategyTeamRequest,
   ThresholdSearchRequest,
   ThresholdSearchResult,
   TornadoRequest,
   TornadoResult,
+  TriggerRegistration,
+  TriggerRegistrationRequest,
   VariableRunRead,
   VariableSet,
   VariableTemplateCreate,
@@ -250,6 +261,57 @@ export const calibrationApi = {
     api.get<CalibrationFitRead>(`/calibration/fits/${encodeURIComponent(fitId)}`),
   applyRuleWeights: (fitId: string) =>
     api.post<CalibrationFitRead>(`/calibration/fits/${encodeURIComponent(fitId)}/apply-rule-weights`),
+}
+
+// ==================== Sprint 9 — 活战略循环 ====================
+//
+// Every loop action is explicit: the UI never auto-evaluates,
+// auto-re-simulates, or auto-decides. Errors are the backend's
+// structured 400 codes (loop_invalid_state, loop_cutoff_must_advance,
+// ...) surfaced via parseApiError; a refused re-simulation surfaces
+// the same gate codes as a refused hand-created run.
+export const loopsApi = {
+  createLoop: (payload: StrategyLoopCreate) =>
+    api.post<StrategyLoopRead>('/loops', payload),
+  listLoops: (params?: { limit?: number; offset?: number }) => {
+    const search = new URLSearchParams()
+    if (params?.limit !== undefined) search.set('limit', String(params.limit))
+    if (params?.offset !== undefined) search.set('offset', String(params.offset))
+    const query = search.toString()
+    return api.get<StrategyLoopRead[]>(`/loops${query ? `?${query}` : ''}`)
+  },
+  getLoop: (loopId: string) =>
+    api.get<StrategyLoopRead>(`/loops/${encodeURIComponent(loopId)}`),
+  getTimeline: (loopId: string) =>
+    api.get<LoopTimelineRead>(`/loops/${encodeURIComponent(loopId)}/timeline`),
+  recordObservation: (loopId: string, payload: LoopObservationCreate) =>
+    api.post<LoopObservationRead>(`/loops/${encodeURIComponent(loopId)}/observations`, payload),
+  registerTriggers: (loopId: string, payload: TriggerRegistrationRequest) =>
+    api.post<TriggerRegistration>(`/loops/${encodeURIComponent(loopId)}/triggers`, payload),
+  startIteration: (loopId: string, payload: StartIterationRequest) =>
+    api.post<LoopIterationRead>(`/loops/${encodeURIComponent(loopId)}/iterations`, payload),
+  getIteration: (loopId: string, iterationId: string) =>
+    api.get<LoopIterationRead>(
+      `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}`,
+    ),
+  evaluateIteration: (loopId: string, iterationId: string) =>
+    api.post<LoopIterationRead>(
+      `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}/evaluate`,
+    ),
+  resimulateIteration: (loopId: string, iterationId: string, payload: Partial<ResimulateRequest>) =>
+    api.post<LoopIterationRead>(
+      `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}/resimulate`,
+      payload,
+    ),
+  compareIteration: (loopId: string, iterationId: string) =>
+    api.post<LoopIterationRead>(
+      `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}/compare`,
+    ),
+  decideIteration: (loopId: string, iterationId: string, payload: DecideRequest) =>
+    api.post<LoopIterationRead>(
+      `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}/decide`,
+      payload,
+    ),
 }
 
 // ==================== Sprint 6 — 技能 deliberation ====================

@@ -1,9 +1,9 @@
-// TypeScript mirrors of the Sprint 1–6 backend Pydantic shapes.
+// TypeScript mirrors of the Sprint 1–9 backend Pydantic shapes.
 //
 // Every interface below tracks its backend model field-for-field
 // (services/mece, services/variables, services/distributions,
-// services/robustness, services/calibration, services/skills). Field
-// names are copied from the backend code, not guessed: the API serves
+// services/robustness, services/calibration, services/skills,
+// services/living_loop). Field names are copied from the backend code, not guessed: the API serves
 // exactly these shapes, and the stored fragments re-validate into the
 // same models, so served and stored shapes cannot drift.
 //
@@ -912,4 +912,227 @@ export interface MeceProposalRead {
   proposal: DecompositionTree
   validation: MeceValidationResult
   stage: StageRecord
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 9 — Living-strategy loop (services/living_loop)
+// ---------------------------------------------------------------------------
+
+export type TriggerKind = 'threshold' | 'gate' | 'deviation'
+export type TriggerOperator = '>' | '>=' | '<' | '<='
+
+export interface ThresholdTrigger {
+  kind: 'threshold'
+  name: string
+  field: string
+  operator: TriggerOperator
+  threshold: number
+}
+
+export interface GateTrigger {
+  kind: 'gate'
+  name: string
+  field: string
+  gate: GateDefinition
+  loss_threshold: number | null
+}
+
+export interface DeviationTrigger {
+  kind: 'deviation'
+  name: string
+  field: string
+  tolerance: number
+  consecutive: number
+  reference_value: number | null
+}
+
+export type LoopTriggerDefinition = ThresholdTrigger | GateTrigger | DeviationTrigger
+
+export interface TriggerRegistrationRequest {
+  triggers: LoopTriggerDefinition[]
+  supersedes: string | null
+}
+
+export interface TriggerRegistration {
+  id: string
+  loop_id: string
+  triggers: LoopTriggerDefinition[]
+  supersedes: string | null
+  registered_at: string
+  observation_count_at_registration: number
+  status: 'active' | 'superseded'
+}
+
+export interface LoopObservationCreate {
+  field: string
+  value: number
+  observed_at: string
+  source_claim_id: string | null
+  source_note: string | null
+}
+
+export interface LoopObservationRead {
+  id: string
+  loop_id: string
+  field: string
+  value: number
+  observed_at: string
+  source_claim_id: string | null
+  source_note: string | null
+  recorded_at: string
+}
+
+export type TriggerEvaluationStatus = 'fired' | 'quiet' | 'no_data'
+
+export interface TriggerEvaluationOutcome {
+  name: string
+  kind: TriggerKind
+  field: string
+  fired: boolean
+  status: TriggerEvaluationStatus
+  observed_value: number | null
+  threshold: number | null
+  tolerance: number | null
+  reference_value: number | null
+  consecutive_breaches: number | null
+  observation_ids: string[]
+  observed_values: number[]
+  note: string
+}
+
+export interface StrategyLoopCreate {
+  baseline_run_id: string
+  name: string
+  triggers: LoopTriggerDefinition[]
+}
+
+export interface StrategyLoopRead {
+  id: string
+  name: string
+  baseline_run_id: string
+  domain_id: string
+  status: 'active'
+  triggers: TriggerRegistration[]
+  created_at: string
+  updated_at: string
+}
+
+export interface StartIterationRequest {
+  decision_time: string
+}
+
+export interface ResimulateRequest {
+  variable_template_id: string | null
+  variable_set: VariableSet | null
+  seed: number | null
+  tick_count: number | null
+  note: string | null
+}
+
+export interface ResimulationRecord {
+  run_id: string
+  previous_cutoff: string | null
+  new_cutoff: string
+  previous_input_hash: string | null
+  new_input_hash: string | null
+  template_id: string | null
+  template_snapshot_hash: string | null
+  resolved_template_snapshot_hash: string | null
+  seed: number
+  tick_count: number
+  changes: Record<string, unknown>
+  claims_visible: number
+  claims_excluded: number
+  created_at: string
+}
+
+export interface ArmDelta {
+  arm: 'baseline' | 'strategy'
+  old: DistributionSummary
+  new: DistributionSummary
+  delta_p10: number
+  delta_p50: number
+  delta_p90: number
+  delta_mean: number
+  delta_p_loss: number
+}
+
+export interface GateReevaluation {
+  registration_id: string
+  ensemble_id: string
+  outcomes: GateOutcome[]
+  all_passed: boolean
+  pre_registered: boolean
+}
+
+export interface ThresholdDriftRow {
+  variable: string
+  mode: 'p_loss' | 'arm_flip'
+  old_threshold: number | null
+  old_reachable: boolean
+  new_threshold: number | null
+  new_reachable: boolean
+}
+
+export interface EnsembleComparison {
+  baseline_run_id: string
+  baseline_ensemble_id: string
+  new_run_id: string
+  new_ensemble_id: string
+  metric: string
+  loss_threshold: number
+  baseline_arm: ArmDelta
+  strategy_arm: ArmDelta
+  paired_mean_delta_old: number
+  paired_mean_delta_new: number
+  paired_mean_delta_change: number
+  paired_p_strategy_better_old: number
+  paired_p_strategy_better_new: number
+  paired_p_strategy_better_change: number
+  same_seed: boolean
+  same_trials: boolean
+  seeds_paired: boolean
+  evidence_caveat: string | null
+  gate_reevaluation: GateReevaluation | null
+  threshold_drift: ThresholdDriftRow[]
+  compared_at: string
+}
+
+export type ReviewDecision = 'continue' | 'pivot' | 'pause' | 'stop'
+
+export interface ReviewDecisionRecord {
+  decision: ReviewDecision
+  rationale: string
+  decided_at: string
+}
+
+export interface DecideRequest {
+  decision: ReviewDecision
+  rationale: string
+}
+
+export type LoopIterationState = 'open' | 'evaluated' | 'resimulated' | 'compared' | 'decided'
+
+export interface LoopIterationRead {
+  id: string
+  loop_id: string
+  index: number
+  state: LoopIterationState
+  decision_time: string
+  previous_cutoff: string | null
+  window_from: string | null
+  window_to: string | null
+  observation_ids: string[]
+  trigger_evaluations: TriggerEvaluationOutcome[]
+  resimulation: ResimulationRecord | null
+  comparison: EnsembleComparison | null
+  decision: ReviewDecisionRecord | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LoopTimelineRead {
+  loop: StrategyLoopRead
+  observations: LoopObservationRead[]
+  iterations: LoopIterationRead[]
 }
