@@ -8,6 +8,7 @@ from planagent.api.routes.debate_votes import router as debate_votes_router
 from planagent.api.routes.debate_replay import router as debate_replay_router
 from planagent.api.routes.debate_interrupt import router as debate_interrupt_router
 from planagent.api.routes.decisions import router as decisions_router
+from planagent.api.routes.distributions import router as distributions_router
 from planagent.api.routes.evidence import router as evidence_router
 from planagent.api.routes.mece import router as mece_router
 from planagent.api.routes.simulation import router as simulation_router
@@ -30,6 +31,7 @@ router.include_router(debate_votes_router)
 router.include_router(debate_replay_router, tags=["Debate Replay"])
 router.include_router(debate_interrupt_router, tags=["Debate Interrupts"])
 router.include_router(decisions_router)
+router.include_router(distributions_router, tags=["Distributions"])
 router.include_router(evidence_router, tags=["Evidence & Review"])
 router.include_router(mece_router, tags=["MECE"])
 router.include_router(variables_router, tags=["Variables"])
