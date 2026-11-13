@@ -68,6 +68,15 @@ async def get_variable_template(session: AsyncSession, template_id: str) -> Vari
     return record_to_template(record)
 
 
+async def _stored_template_records(
+    session: AsyncSession, domain_id: str | None = None
+) -> list[VariableTemplateRecord]:
+    statement = select(VariableTemplateRecord).order_by(VariableTemplateRecord.created_at.asc())
+    if domain_id is not None:
+        statement = statement.where(VariableTemplateRecord.domain_id == domain_id)
+    return list((await session.scalars(statement)).all())
+
+
 async def list_variable_templates(
     session: AsyncSession, domain_id: str | None = None
 ) -> list[VariableTemplate]:
@@ -78,12 +87,41 @@ async def list_variable_templates(
         for domain in known_domain_ids()
         if domain_id is None or domain == domain_id
     ]
-    statement = select(VariableTemplateRecord).order_by(VariableTemplateRecord.created_at.asc())
-    if domain_id is not None:
-        statement = statement.where(VariableTemplateRecord.domain_id == domain_id)
-    records = list((await session.scalars(statement)).all())
+    records = await _stored_template_records(session, domain_id)
     templates.extend(record_to_template(record) for record in records)
     return templates
+
+
+async def get_variable_template_read(
+    session: AsyncSession, template_id: str
+) -> VariableTemplateRead | None:
+    """Resolve a template id to its API read shape (with timestamps)."""
+
+    if is_builtin_template_id(template_id):
+        domain_id = template_id[len("builtin:") :]
+        try:
+            return builtin_to_read(builtin_template(domain_id))
+        except ValueError:
+            return None
+    record = await session.get(VariableTemplateRecord, template_id)
+    if record is None:
+        return None
+    return record_to_read(record)
+
+
+async def list_variable_template_reads(
+    session: AsyncSession, domain_id: str | None = None
+) -> list[VariableTemplateRead]:
+    """Built-in presets first (registry order), then stored templates."""
+
+    reads = [
+        builtin_to_read(builtin_template(domain))
+        for domain in known_domain_ids()
+        if domain_id is None or domain == domain_id
+    ]
+    records = await _stored_template_records(session, domain_id)
+    reads.extend(record_to_read(record) for record in records)
+    return reads
 
 
 def _check_domain(domain_id: str) -> None:
