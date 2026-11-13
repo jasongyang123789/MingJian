@@ -80,11 +80,20 @@ def render_mece_block(fragment: dict[str, Any] | None) -> str:
         _render_branch(root, 0, lines)
     validation = _as_dict(fragment.get("validation"))
     if validation is not None:
-        verdict = validation.get("verdict", "?")
+        verdict = "PASS" if validation.get("is_mece") else "FAIL"
         lines.append(f"Validation verdict: {verdict}")
         for check in _as_list(validation.get("checks")):
             if isinstance(check, dict):
-                lines.append(f"  - {check.get('kind', '?')}: {check.get('status', '?')}")
+                lines.append(
+                    f"  - {check.get('node', '?')} "
+                    f"{check.get('check', '?')}: {check.get('status', '?')}"
+                )
+        for issue in _as_list(validation.get("issues")):
+            if isinstance(issue, dict):
+                lines.append(
+                    f"  - issue {issue.get('kind', '?')} at "
+                    f"{issue.get('node', '?')}: {issue.get('detail', '')}"
+                )
     return "\n".join(lines)
 
 
