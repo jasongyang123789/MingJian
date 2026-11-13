@@ -1,0 +1,263 @@
+........................................................................ [  9%]
+.............................F.......................................... [ 19%]
+........................................................................ [ 29%]
+........................................................................ [ 39%]
+........................................................................ [ 48%]
+........................................................................ [ 58%]
+...............................................F........................ [ 68%]
+........................................................................ [ 78%]
+........................................................................ [ 88%]
+........................................................................ [ 97%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+_____________ test_openai_status_reports_target_level_inheritance ______________
+
+port = ':1]', scheme = 'all'
+
+    def normalize_port(port: str | int | None, scheme: str) -> int | None:
+        # From https://tools.ietf.org/html/rfc3986#section-3.2.3
+        #
+        # "A scheme may define a default port.  For example, the "http" scheme
+        # defines a default port of "80", corresponding to its reserved TCP
+        # port number.  The type of port designated by the port number (e.g.,
+        # TCP, UDP, SCTP) is defined by the URI scheme.  URI producers and
+        # normalizers should omit the port component and its ":" delimiter if
+        # port is empty or if its value would be the same as that of the
+        # scheme's default."
+        if port is None or port == "":
+            return None
+    
+        try:
+>           port_as_int = int(port)
+                          ^^^^^^^^^
+E           ValueError: invalid literal for int() with base 10: ':1]'
+
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:409: ValueError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7370efa4f410>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_openai_status_reports_tar0')
+
+    def test_openai_status_reports_target_level_inheritance(monkeypatch, tmp_path: Path) -> None:
+        database_path = tmp_path / "planagent-openai-routing.db"
+        monkeypatch.setenv("PLANAGENT_DATABASE_URL", build_database_url(database_path))
+        monkeypatch.setenv("PLANAGENT_EVENT_BUS_BACKEND", "memory")
+        disable_openai(monkeypatch)
+        monkeypatch.setenv("PLANAGENT_OPENAI_EXTRACTION_API_KEY", "extract-key")
+        monkeypatch.setenv("PLANAGENT_OPENAI_EXTRACTION_BASE_URL", "https://extract.example/v1")
+        monkeypatch.setenv("PLANAGENT_OPENAI_EXTRACTION_MODEL", "gemini-3.1-pro-preview-search")
+        reset_settings_cache()
+        reset_database_cache()
+    
+        app = create_app()
+>       with TestClient(app) as client:
+
+tests/test_phase1_api.py:693: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.12/site-packages/starlette/testclient.py:572: in __enter__
+    portal.call(self.wait_startup)
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:347: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:272: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/testclient.py:608: in wait_startup
+    await receive()
+.venv/lib/python3.12/site-packages/starlette/testclient.py:599: in receive
+    self.task.result()
+/usr/lib/python3.12/concurrent/futures/_base.py:449: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+.venv/lib/python3.12/site-packages/anyio/from_thread.py:272: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/starlette/testclient.py:589: in lifespan
+    await self.app(scope, self.stream_receive.receive, self.stream_send.send)
+.venv/lib/python3.12/site-packages/fastapi/applications.py:1181: in __call__
+    await lifespan(
+.venv/lib/python3.12/site-packages/fastapi/telemetry/_runtime.py:238: in lifespan
+    await app(scope, wrapped_receive, wrapped_send)
+.venv/lib/python3.12/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/middleware/errors.py:151: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/middleware/cors.py:79: in __call__
+    await self.app(scope, receive, send)
+src/planagent/api/access.py:44: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py:49: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:683: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.12/site-packages/fastapi/routing.py:2798: in app
+    await self.lifespan(scope, receive, send)
+.venv/lib/python3.12/site-packages/starlette/routing.py:661: in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:248: in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:248: in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/fastapi/routing.py:248: in merged_lifespan
+    async with original_context(app) as maybe_original_state:
+/usr/lib/python3.12/contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+src/planagent/main.py:34: in lifespan
+    app.state.openai_service = OpenAIService(settings)
+                               ^^^^^^^^^^^^^^^^^^^^^^^
+src/planagent/services/openai_client.py:109: in __init__
+    "extraction": self._build_client(
+src/planagent/services/openai_client.py:141: in _build_client
+    return AsyncOpenAI(
+.venv/lib/python3.12/site-packages/openai/_client.py:871: in __init__
+    super().__init__(
+.venv/lib/python3.12/site-packages/openai/_base_client.py:1576: in __init__
+    self._client = http_client or AsyncHttpxClientWrapper(
+.venv/lib/python3.12/site-packages/openai/_base_client.py:1469: in __init__
+    super().__init__(**kwargs)
+.venv/lib/python3.12/site-packages/httpx/_client.py:1413: in __init__
+    URLPattern(key): None
+    ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_utils.py:172: in __init__
+    url = URL(pattern)
+          ^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_urls.py:117: in __init__
+    self._uri_reference = urlparse(url, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:321: in urlparse
+    parsed_port: int | None = normalize_port(port, scheme)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+port = ':1]', scheme = 'all'
+
+    def normalize_port(port: str | int | None, scheme: str) -> int | None:
+        # From https://tools.ietf.org/html/rfc3986#section-3.2.3
+        #
+        # "A scheme may define a default port.  For example, the "http" scheme
+        # defines a default port of "80", corresponding to its reserved TCP
+        # port number.  The type of port designated by the port number (e.g.,
+        # TCP, UDP, SCTP) is defined by the URI scheme.  URI producers and
+        # normalizers should omit the port component and its ":" delimiter if
+        # port is empty or if its value would be the same as that of the
+        # scheme's default."
+        if port is None or port == "":
+            return None
+    
+        try:
+            port_as_int = int(port)
+        except ValueError:
+>           raise InvalidURL(f"Invalid port: {port!r}")
+E           httpx.InvalidURL: Invalid port: ':1]'
+
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:411: InvalidURL
+______ test_openai_connection_diagnostics_do_not_echo_exception_messages _______
+
+port = ':1]', scheme = 'all'
+
+    def normalize_port(port: str | int | None, scheme: str) -> int | None:
+        # From https://tools.ietf.org/html/rfc3986#section-3.2.3
+        #
+        # "A scheme may define a default port.  For example, the "http" scheme
+        # defines a default port of "80", corresponding to its reserved TCP
+        # port number.  The type of port designated by the port number (e.g.,
+        # TCP, UDP, SCTP) is defined by the URI scheme.  URI producers and
+        # normalizers should omit the port component and its ":" delimiter if
+        # port is empty or if its value would be the same as that of the
+        # scheme's default."
+        if port is None or port == "":
+            return None
+    
+        try:
+>           port_as_int = int(port)
+                          ^^^^^^^^^
+E           ValueError: invalid literal for int() with base 10: ':1]'
+
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:409: ValueError
+
+During handling of the above exception, another exception occurred:
+
+    @pytest.mark.asyncio
+    async def test_openai_connection_diagnostics_do_not_echo_exception_messages() -> None:
+>       service = OpenAIService(
+            Settings(
+                _env_file=None,
+                openai_primary_api_key="configured-key",
+                openai_primary_model="test-model",
+            )
+        )
+
+tests/unit/test_interface_error_redaction.py:247: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/planagent/services/openai_client.py:105: in __init__
+    "primary": self._build_client(
+src/planagent/services/openai_client.py:141: in _build_client
+    return AsyncOpenAI(
+.venv/lib/python3.12/site-packages/openai/_client.py:871: in __init__
+    super().__init__(
+.venv/lib/python3.12/site-packages/openai/_base_client.py:1576: in __init__
+    self._client = http_client or AsyncHttpxClientWrapper(
+.venv/lib/python3.12/site-packages/openai/_base_client.py:1469: in __init__
+    super().__init__(**kwargs)
+.venv/lib/python3.12/site-packages/httpx/_client.py:1413: in __init__
+    URLPattern(key): None
+    ^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_utils.py:172: in __init__
+    url = URL(pattern)
+          ^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_urls.py:117: in __init__
+    self._uri_reference = urlparse(url, **kwargs)
+                          ^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:321: in urlparse
+    parsed_port: int | None = normalize_port(port, scheme)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+port = ':1]', scheme = 'all'
+
+    def normalize_port(port: str | int | None, scheme: str) -> int | None:
+        # From https://tools.ietf.org/html/rfc3986#section-3.2.3
+        #
+        # "A scheme may define a default port.  For example, the "http" scheme
+        # defines a default port of "80", corresponding to its reserved TCP
+        # port number.  The type of port designated by the port number (e.g.,
+        # TCP, UDP, SCTP) is defined by the URI scheme.  URI producers and
+        # normalizers should omit the port component and its ":" delimiter if
+        # port is empty or if its value would be the same as that of the
+        # scheme's default."
+        if port is None or port == "":
+            return None
+    
+        try:
+            port_as_int = int(port)
+        except ValueError:
+>           raise InvalidURL(f"Invalid port: {port!r}")
+E           httpx.InvalidURL: Invalid port: ':1]'
+
+.venv/lib/python3.12/site-packages/httpx/_urlparse.py:411: InvalidURL
+=========================== short test summary info ============================
+FAILED tests/test_phase1_api.py::test_openai_status_reports_target_level_inheritance
+FAILED tests/unit/test_interface_error_redaction.py::test_openai_connection_diagnostics_do_not_echo_exception_messages
+2 failed, 734 passed in 212.38s (0:03:32)
