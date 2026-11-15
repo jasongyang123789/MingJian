@@ -148,7 +148,11 @@ def test_firewall_excludes_post_decision_claims(monkeypatch, tmp_path: Path) -> 
                 [
                     ("early-1", "Calibration Test Co raised a seed round.", datetime(2026, 1, 10)),
                     ("early-2", "Calibration Test Co hired engineers.", datetime(2026, 2, 10)),
-                    ("late-1", "Calibration Test Co faced a GPU cost increase.", datetime(2026, 4, 10)),
+                    (
+                        "late-1",
+                        "Calibration Test Co faced a GPU cost increase.",
+                        datetime(2026, 4, 10),
+                    ),
                     ("late-2", "Calibration Test Co shipped a new release.", datetime(2026, 5, 10)),
                 ]
             )
@@ -175,9 +179,7 @@ def test_firewall_excludes_post_decision_claims(monkeypatch, tmp_path: Path) -> 
         assert body["excluded_claim_ids"] == ["claim-late-1", "claim-late-2"]
 
 
-def test_firewall_boundary_claim_at_decision_time_is_visible(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_firewall_boundary_claim_at_decision_time_is_visible(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         asyncio.run(
@@ -193,9 +195,7 @@ def test_firewall_boundary_claim_at_decision_time_is_visible(
         )
         run = create_run(client, decision_time="2026-03-01T00:00:00Z")
         assert run["summary"]["evidence_count"] == 1
-        assert run["summary"]["evidence_statements"] == [
-            "Calibration Test Co announced results."
-        ]
+        assert run["summary"]["evidence_statements"] == ["Calibration Test Co announced results."]
         audit = client.get(f"/runs/{run['id']}/firewall")
         assert audit.json()["included_claim_ids"] == ["claim-boundary"]
         assert audit.json()["excluded_claim_ids"] == []
@@ -411,9 +411,7 @@ def test_policy_fit_shrinkage_and_determinism(monkeypatch, tmp_path: Path) -> No
         assert first["inputs_hash"] == second["inputs_hash"]
 
 
-def test_policy_fit_insufficient_observations_keeps_priors(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_policy_fit_insufficient_observations_keeps_priors(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         template = create_template(client)
@@ -434,9 +432,7 @@ def test_policy_fit_insufficient_observations_keeps_priors(
 def test_policy_fit_errors(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        missing = client.post(
-            "/calibration/policy-fit", json={"template_id": "no-such-template"}
-        )
+        missing = client.post("/calibration/policy-fit", json={"template_id": "no-such-template"})
         assert missing.status_code == 404
 
         template = create_template(client)
@@ -507,6 +503,12 @@ def test_policy_fit_builtin_template_source(monkeypatch, tmp_path: Path) -> None
 def test_rule_weight_fit_and_apply(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
+        # Sprint 10: this test asserts the apply step starts from
+        # all-1.0 weights. The registry is a module-global singleton,
+        # so an apply from an earlier test in the same process would
+        # break that premise; establish it explicitly instead of
+        # relying on file order.
+        _reset_registry_weights(client)
         asyncio.run(
             seed_claims(
                 [
@@ -657,8 +659,601 @@ def test_apply_rule_weights_rejects_policy_fit(monkeypatch, tmp_path: Path) -> N
             json={"template_id": template["id"], "bootstrap_draws": 10},
         )
         assert fitted.status_code == 201
-        applied = client.post(
-            f"/calibration/fits/{fitted.json()['id']}/apply-rule-weights"
-        )
+        applied = client.post(f"/calibration/fits/{fitted.json()['id']}/apply-rule-weights")
         assert applied.status_code == 400
         assert applied.json()["detail"]["code"] == "wrong_fit_kind"
+
+
+# ---------------------------------------------------------------- Sprint 10: centering
+
+
+def _reset_registry_weights(client: TestClient) -> None:
+    """Reset the in-memory rule registry to pristine 1.0 weights.
+
+    The registry is a module-global singleton, so weights applied by
+    an earlier test in the same process leak into later tests' fit
+    priors. Reloading (the same endpoint the round-trip test
+    exercises) restores the default state each value-pinning test
+    assumes. Tests whose fixtures are prior-independent (all-zero
+    designs) do not need it.
+    """
+
+    reloaded = client.post("/admin/rules/reload")
+    assert reloaded.status_code == 200, reloaded.text
+
+
+def _demo_rule_fit_runs(client: TestClient) -> None:
+    """The Sprint 5 demo fixture: 3 runs, 2 claims, cash 100/110/120.
+
+    Decision records (verified by probe, deterministic): run 1
+    (cash 100) matches cost_pressure once + ship_momentum once; runs
+    2 and 3 (cash 110/120) match cost_pressure twice + ship_momentum
+    once. Totals: cost_pressure 5, ship_momentum 3.
+    """
+
+    asyncio.run(
+        seed_claims(
+            [
+                (
+                    "cost",
+                    "Calibration Test Co faced a GPU cost increase.",
+                    datetime(2026, 1, 10),
+                ),
+                (
+                    "ship",
+                    "Calibration Test Co will ship a launch release.",
+                    datetime(2026, 1, 11),
+                ),
+            ]
+        )
+    )
+    create_run(client, tick_count=2, initial_state={"cash": 100.0})
+    create_run(client, tick_count=3, initial_state={"cash": 110.0})
+    create_run(client, tick_count=4, initial_state={"cash": 120.0})
+
+
+def test_rule_weight_fit_centered_values_hand_verified(monkeypatch, tmp_path: Path) -> None:
+    # Hand verification (design X = [[1,1],[2,1],[2,1]], y =
+    # [100,110,120], priors [1,1], lambda 5; the other six rules never
+    # match): x_mean [5/3, 1], y_mean 110. The ship_momentum column
+    # is constant, so centering zeroes it and it keeps its prior
+    # exactly. Cost: centered X'X = 2/3, X'y = 10, so beta =
+    # (10 + 5) / (2/3 + 5) = 45/17. Intercept = 110 - (5/3)(45/17) -
+    # 1 = 1778/17. LOO fold errors are 14, 15/11, -155/11, so LOO =
+    # sqrt((196 + 225/121 + 24025/121) / 3) ~= 11.4951. Prior-only
+    # predictions are row sums [2, 3, 3]: RMSE = sqrt(34742/3) ~=
+    # 107.6135. The gate passes by a wide margin.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        _reset_registry_weights(client)
+        _demo_rule_fit_runs(client)
+        fitted = client.post(
+            "/calibration/rule-weight-fit",
+            json={
+                "domain_id": "corporate",
+                "metric": "cash",
+                "ridge_strength": 5.0,
+                "seed": 7,
+                "bootstrap_draws": 20,
+            },
+        )
+        assert fitted.status_code == 201, fitted.text
+        body = fitted.json()
+        rules = body["changes"]["rules"]
+        assert rules["corp.cost_pressure"]["fitted_weight"] == pytest.approx(45.0 / 17.0)
+        assert rules["corp.ship_momentum"]["fitted_weight"] == pytest.approx(1.0)
+        for change in rules.values():
+            if change["total_matches"] == 0:
+                assert change["fitted_weight"] == pytest.approx(1.0)
+        assert body["loo_rmse"] == pytest.approx(11.4951, abs=1e-3)
+        assert body["changes"]["intercept"] == pytest.approx(1778.0 / 17.0)
+        centering = body["changes"]["centering"]
+        assert centering["mode"] == "centered"
+        assert centering["center_target"] is True
+        assert centering["target_mean"] == pytest.approx(110.0)
+        assert centering["feature_means"][0] == pytest.approx(5.0 / 3.0)
+        gate = body["changes"]["quality_gate"]
+        assert gate["enabled"] is True
+        assert gate["evaluated"] is True
+        assert gate["passed"] is True
+        assert gate["prior_only_rmse"] == pytest.approx(107.6135, abs=1e-3)
+        scenario = body["changes"]["scenario_children"]
+        assert scenario["mode"] == "include"
+        assert scenario["excluded_run_ids"] == []
+        assert all(weight == 1.0 for weight in scenario["observation_weights"].values())
+
+
+def test_rule_weight_fit_through_origin_reproduces_sprint5(monkeypatch, tmp_path: Path) -> None:
+    # center_target=false must reproduce the Sprint 5 report numbers
+    # exactly: 32.70 / 21.44, LOO 45.31 (more precisely 32.7011 /
+    # 21.4368 / 45.3072). No existing test asserted those values —
+    # they lived only in SPRINT5.md — so this test pins the
+    # reproducibility contract the brief requires.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        _reset_registry_weights(client)
+        _demo_rule_fit_runs(client)
+        fitted = client.post(
+            "/calibration/rule-weight-fit",
+            json={
+                "domain_id": "corporate",
+                "metric": "cash",
+                "ridge_strength": 5.0,
+                "seed": 7,
+                "bootstrap_draws": 20,
+                "center_target": False,
+            },
+        )
+        assert fitted.status_code == 201, fitted.text
+        body = fitted.json()
+        rules = body["changes"]["rules"]
+        assert rules["corp.cost_pressure"]["fitted_weight"] == pytest.approx(32.7011, abs=1e-3)
+        assert rules["corp.ship_momentum"]["fitted_weight"] == pytest.approx(21.4368, abs=1e-3)
+        assert body["loo_rmse"] == pytest.approx(45.3072, abs=1e-3)
+        assert body["changes"]["intercept"] == 0.0
+        assert body["changes"]["centering"]["mode"] == "through_origin"
+        assert body["changes"]["quality_gate"]["passed"] is True
+
+
+# ---------------------------------------------------------------- Sprint 10: fit-quality gate
+
+
+def test_rule_weight_fit_quality_gate_refuses_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # No claims: the design is all zeros, so the centered fit is the
+    # mean predictor and the prior-only predictor is 0. Targets
+    # [1, 1, 11]: fitted LOO = sqrt(50) ~= 7.0711 (fold errors 10,
+    # 5, 5), prior-only RMSE = sqrt(41) ~= 6.4031. The fit is worse
+    # than doing nothing, so the gate refuses and writes no fit row.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        for cash in (1.0, 1.0, 11.0):
+            run = create_run(client, initial_state={"cash": cash})
+            assert run["summary"]["final_state"]["cash"] == pytest.approx(cash)
+        refused = client.post(
+            "/calibration/rule-weight-fit",
+            json={
+                "domain_id": "corporate",
+                "metric": "cash",
+                "ridge_strength": 5.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+            },
+        )
+        assert refused.status_code == 400
+        detail = refused.json()["detail"]
+        assert detail["code"] == "fit_quality_gate_failed"
+        assert "7.0711" in detail["message"]
+        assert "6.4031" in detail["message"]
+        listing = client.get("/calibration/fits")
+        assert listing.json() == []
+
+        # Explicit opt-out records the fit, with the gate verdict and
+        # both numbers on the record.
+        recorded = client.post(
+            "/calibration/rule-weight-fit",
+            json={
+                "domain_id": "corporate",
+                "metric": "cash",
+                "ridge_strength": 5.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+                "quality_gate": False,
+            },
+        )
+        assert recorded.status_code == 201, recorded.text
+        gate = recorded.json()["changes"]["quality_gate"]
+        assert gate["enabled"] is False
+        assert gate["evaluated"] is False
+        assert gate["passed"] is None
+        assert gate["fitted_loo_rmse"] == pytest.approx(7.0711, abs=1e-3)
+        assert gate["prior_only_rmse"] == pytest.approx(6.4031, abs=1e-3)
+        assert gate["reason"] == "quality_gate_disabled"
+
+
+def test_policy_fit_quality_gate_suppresses_version(monkeypatch, tmp_path: Path) -> None:
+    # churn_risk > 0.2 selects the improve_reliability fallback at
+    # -0.05/tick, so 2-tick runs land 0.1 below their initial values:
+    # finals [0.8, 0.9, 1.0, 1.2] against prior alert 1.05. Fitted
+    # LOO ~= 0.1858 (fold errors 0.2375/0.1125/0.0125/0.2625) vs
+    # prior-only ~= 0.1658: the gate keeps the priors, records the
+    # rejected fit, and creates NO template version.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        template = create_template(
+            client,
+            state_fields=[
+                {"name": "cash", "description": "Cash", "default": 100.0},
+                {"name": "churn_risk", "description": "Churn risk", "default": 0.12},
+            ],
+            policies={
+                "churn_risk": {
+                    "preferred_direction": "decrease",
+                    "alert_threshold": 1.05,
+                    "critical_threshold": 1.15,
+                }
+            },
+        )
+        for risk, expected in zip((0.9, 1.0, 1.1, 1.3), (0.8, 0.9, 1.0, 1.2)):
+            run = create_run(
+                client,
+                variable_template_id=template["id"],
+                initial_state={"churn_risk": risk},
+            )
+            assert run["summary"]["final_state"]["churn_risk"] == pytest.approx(expected)
+        fitted = client.post(
+            "/calibration/policy-fit",
+            json={
+                "template_id": template["id"],
+                "ridge_strength": 1.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+            },
+        )
+        assert fitted.status_code == 201, fitted.text
+        body = fitted.json()
+        assert body["calibrated_template_id"] is None
+        assert body["changes"]["version_created"] is False
+        assert "quality_gate" in body["changes"]["version_created_reason"]
+        change = body["changes"]["metrics"]["churn_risk"]
+        assert change["unchanged_reason"] == "quality_gate"
+        assert change["fitted_alert_threshold"] == 1.05
+        assert change["fitted_critical_threshold"] == 1.15
+        assert change["rejected_fit"]["alert_threshold"] == pytest.approx(0.99)
+        assert change["quality_gate_passed"] is False
+        assert change["fitted_loo_rmse"] == pytest.approx(0.1858, abs=1e-3)
+        assert change["prior_only_rmse"] == pytest.approx(0.1658, abs=1e-3)
+
+        # Opting the gate out creates the version with the fitted
+        # values: alert (3.9 + 1.05) / 5 = 0.99, critical over the
+        # tail [1.2]: (1.2 + 1.15) / 2 = 1.175.
+        opted_out = client.post(
+            "/calibration/policy-fit",
+            json={
+                "template_id": template["id"],
+                "ridge_strength": 1.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+                "quality_gate": False,
+            },
+        )
+        assert opted_out.status_code == 201, opted_out.text
+        assert opted_out.json()["calibrated_template_id"] is not None
+        assert opted_out.json()["changes"]["version_created"] is True
+        change = opted_out.json()["changes"]["metrics"]["churn_risk"]
+        assert change["unchanged_reason"] is None
+        assert change["quality_gate_passed"] is None
+        assert change["fitted_alert_threshold"] == pytest.approx(0.99)
+        assert change["fitted_critical_threshold"] == pytest.approx(1.175)
+
+
+# ---------------------------------------------------------------- Sprint 10: scenario children
+
+
+def _branch(client: TestClient, parent_id: str, cash: float) -> dict:
+    branched = client.post(
+        f"/scenario/runs/{parent_id}",
+        json={"fork_step": 2, "state_overrides": {"cash": cash}},
+    )
+    assert branched.status_code == 201, branched.text
+    return branched.json()
+
+
+def test_policy_fit_scenario_children_modes(monkeypatch, tmp_path: Path) -> None:
+    # Parent (cash 100) + 2 children (cash 80 each) + 2 lone runs
+    # (120, 110), lambda 1, prior alert 50. Include: (490 + 50) / 6
+    # = 90. Exclude: (330 + 50) / 4 = 95. Family (weights 1/3, 1/3,
+    # 1/3, 1, 1): ((260/3 + 230) + 50) / (3 + 1) = 275/3. Criticals:
+    # include tail [80, 80] -> 185/3; exclude tail [100] -> 62.5;
+    # family tail weights [1/3, 1/3] -> 47. All gates pass.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        template = create_template(client)
+        parent = create_run(
+            client,
+            variable_template_id=template["id"],
+            initial_state={"cash": 100.0},
+            tick_count=4,
+        )
+        child_branches = [_branch(client, parent["id"], 80.0), _branch(client, parent["id"], 80.0)]
+        child_ids = sorted(branch["run_id"] for branch in child_branches)
+        lone1 = create_run(
+            client, variable_template_id=template["id"], initial_state={"cash": 120.0}
+        )
+        lone2 = create_run(
+            client, variable_template_id=template["id"], initial_state={"cash": 110.0}
+        )
+
+        def fit(mode: str) -> dict:
+            response = client.post(
+                "/calibration/policy-fit",
+                json={
+                    "template_id": template["id"],
+                    "ridge_strength": 1.0,
+                    "seed": 7,
+                    "bootstrap_draws": 10,
+                    "scenario_children": mode,
+                },
+            )
+            assert response.status_code == 201, response.text
+            return response.json()
+
+        included = fit("include")
+        assert included["n_observations"] == 5
+        change = included["changes"]["metrics"]["cash"]
+        assert change["fitted_alert_threshold"] == pytest.approx(90.0)
+        assert change["fitted_critical_threshold"] == pytest.approx(185.0 / 3.0)
+        assert change["quality_gate_passed"] is True
+        scenario = included["changes"]["scenario_children"]
+        assert scenario["mode"] == "include"
+        assert scenario["excluded_run_ids"] == []
+
+        excluded = fit("exclude")
+        assert excluded["n_observations"] == 3
+        assert excluded["source_run_ids"] == [parent["id"], lone1["id"], lone2["id"]]
+        change = excluded["changes"]["metrics"]["cash"]
+        assert change["fitted_alert_threshold"] == pytest.approx(95.0)
+        assert change["fitted_critical_threshold"] == pytest.approx(62.5)
+        scenario = excluded["changes"]["scenario_children"]
+        assert scenario["mode"] == "exclude"
+        assert sorted(scenario["excluded_run_ids"]) == child_ids
+
+        family = fit("family")
+        assert family["n_observations"] == 5
+        change = family["changes"]["metrics"]["cash"]
+        assert change["fitted_alert_threshold"] == pytest.approx(275.0 / 3.0)
+        assert change["fitted_critical_threshold"] == pytest.approx(47.0)
+        weights = family["changes"]["scenario_children"]["observation_weights"]
+        assert weights[parent["id"]] == pytest.approx(1.0 / 3.0)
+        for child_id in child_ids:
+            assert weights[child_id] == pytest.approx(1.0 / 3.0)
+        assert weights[lone1["id"]] == 1.0
+        assert weights[lone2["id"]] == 1.0
+        family_total = weights[parent["id"]] + sum(weights[c] for c in child_ids)
+        assert family_total == pytest.approx(1.0)
+
+
+def test_rule_weight_fit_scenario_children_modes(monkeypatch, tmp_path: Path) -> None:
+    # No claims: the design is all zeros, so every fit keeps the
+    # priors and passes the gate; the test pins the selection and
+    # weighting records, not fitted values (exact weighting is
+    # proven at the estimator level and by the policy test above).
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        parent = create_run(client, initial_state={"cash": 100.0}, tick_count=4)
+        child = _branch(client, parent["id"], 100.0)
+        create_run(client, initial_state={"cash": 110.0})
+        create_run(client, initial_state={"cash": 120.0})
+
+        def fit(mode: str) -> dict:
+            response = client.post(
+                "/calibration/rule-weight-fit",
+                json={
+                    "domain_id": "corporate",
+                    "metric": "cash",
+                    "ridge_strength": 5.0,
+                    "seed": 7,
+                    "bootstrap_draws": 10,
+                    "scenario_children": mode,
+                },
+            )
+            assert response.status_code == 201, response.text
+            return response.json()
+
+        excluded = fit("exclude")
+        assert excluded["n_observations"] == 3
+        assert child["run_id"] not in excluded["source_run_ids"]
+        scenario = excluded["changes"]["scenario_children"]
+        assert scenario["excluded_run_ids"] == [child["run_id"]]
+
+        family = fit("family")
+        assert family["n_observations"] == 4
+        weights = family["changes"]["scenario_children"]["observation_weights"]
+        assert weights[parent["id"]] == pytest.approx(0.5)
+        assert weights[child["run_id"]] == pytest.approx(0.5)
+        assert weights[parent["id"]] + weights[child["run_id"]] == pytest.approx(1.0)
+
+        included = fit("include")
+        assert included["n_observations"] == 4
+        assert included["changes"]["scenario_children"]["excluded_run_ids"] == []
+
+
+def test_calibration_request_validation_rejects_unknown_modes(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        template = create_template(client)
+        bad_mode = client.post(
+            "/calibration/policy-fit",
+            json={"template_id": template["id"], "scenario_children": "bogus"},
+        )
+        assert bad_mode.status_code == 422
+        # Pydantic coerces "yes"/"no"/"on"/"off" to bool, so the
+        # invalid-bool probes use a string it cannot parse.
+        bad_center = client.post(
+            "/calibration/rule-weight-fit",
+            json={"domain_id": "corporate", "metric": "cash", "center_target": "not-a-bool"},
+        )
+        assert bad_center.status_code == 422
+        bad_gate = client.post(
+            "/calibration/rule-weight-fit",
+            json={"domain_id": "corporate", "metric": "cash", "quality_gate": "not-a-bool"},
+        )
+        assert bad_gate.status_code == 422
+
+
+# ---------------------------------------------------------------- Sprint 10: correlation diagnostics
+
+
+def test_policy_fit_correlation_diagnostics_recorded(monkeypatch, tmp_path: Path) -> None:
+    # pipeline finals are exactly cash/10 + 0.01 (the fallback path
+    # adds a constant 0.01 over 2 ticks), so the pair correlation is
+    # exactly 1.0 with n = 5 and the warning fires. Diagnostics do
+    # not move the fits: cash alert (500 + 50) / 6 = 550/6, pipeline
+    # alert (50.05 + 5) / 6 = 9.175.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        template = create_template(
+            client,
+            state_fields=[
+                {"name": "cash", "description": "Cash", "default": 100.0},
+                {"name": "pipeline", "description": "Pipeline", "default": 1.0},
+            ],
+            policies={
+                "cash": {
+                    "preferred_direction": "increase",
+                    "alert_threshold": 50.0,
+                    "critical_threshold": 25.0,
+                },
+                "pipeline": {
+                    "preferred_direction": "increase",
+                    "alert_threshold": 5.0,
+                    "critical_threshold": 2.5,
+                },
+            },
+        )
+        for cash in (80.0, 90.0, 100.0, 110.0, 120.0):
+            run = create_run(
+                client,
+                variable_template_id=template["id"],
+                initial_state={"cash": cash, "pipeline": cash / 10.0},
+            )
+            final = run["summary"]["final_state"]
+            assert final["cash"] == pytest.approx(cash)
+            assert final["pipeline"] == pytest.approx(cash / 10.0 + 0.01)
+        fitted = client.post(
+            "/calibration/policy-fit",
+            json={
+                "template_id": template["id"],
+                "ridge_strength": 1.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+            },
+        )
+        assert fitted.status_code == 201, fitted.text
+        body = fitted.json()
+        correlations = body["changes"]["correlations"]
+        assert correlations["method"] == "pearson_pairwise_complete"
+        assert correlations["pairs"] == [
+            {"metric_a": "cash", "metric_b": "pipeline", "n": 5, "r": pytest.approx(1.0)}
+        ]
+        assert correlations["warning"] is True
+        assert correlations["warned_pairs"] == ["cash/pipeline"]
+        metrics = body["changes"]["metrics"]
+        assert metrics["cash"]["fitted_alert_threshold"] == pytest.approx(550.0 / 6.0)
+        assert metrics["pipeline"]["fitted_alert_threshold"] == pytest.approx(9.175)
+        assert body["changes"]["version_created"] is True
+
+
+def test_policy_fit_single_metric_has_no_correlation_pairs(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        template = create_template(client)
+        _bound_runs(client, template["id"], [80.0, 90.0, 100.0, 110.0])
+        fitted = client.post(
+            "/calibration/policy-fit",
+            json={
+                "template_id": template["id"],
+                "ridge_strength": 1.0,
+                "seed": 7,
+                "bootstrap_draws": 10,
+            },
+        )
+        assert fitted.status_code == 201, fitted.text
+        correlations = fitted.json()["changes"]["correlations"]
+        assert correlations["pairs"] == []
+        assert correlations["warning"] is False
+
+
+# ---------------------------------------------------------------- Sprint 10: persistent weights
+
+
+def test_apply_persists_weights_and_restore_round_trip(monkeypatch, tmp_path: Path) -> None:
+    # Round-trip through the API only: the registry's current weights
+    # are observable as the next fit's priors. Apply (cost_pressure
+    # clips to 2.0) -> reload resets priors to 1.0 -> restore brings
+    # back 2.0. A second apply supersedes the first in the "current"
+    # read while history is preserved.
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        _reset_registry_weights(client)
+        missing_current = client.get(
+            "/calibration/current-weights", params={"domain_id": "corporate"}
+        )
+        assert missing_current.status_code == 404
+        missing_restore = client.post(
+            "/calibration/restore-weights", json={"domain_id": "corporate"}
+        )
+        assert missing_restore.status_code == 404
+        unknown_domain = client.get("/calibration/current-weights", params={"domain_id": "nope"})
+        assert unknown_domain.status_code == 400
+        assert unknown_domain.json()["detail"]["code"] == "unknown_domain"
+
+        _demo_rule_fit_runs(client)
+
+        def fit() -> dict:
+            response = client.post(
+                "/calibration/rule-weight-fit",
+                json={
+                    "domain_id": "corporate",
+                    "metric": "cash",
+                    "ridge_strength": 5.0,
+                    "seed": 7,
+                    "bootstrap_draws": 10,
+                },
+            )
+            assert response.status_code == 201, response.text
+            return response.json()
+
+        first = fit()
+        applied = client.post(f"/calibration/fits/{first['id']}/apply-rule-weights")
+        assert applied.status_code == 201, applied.text
+        current = client.get("/calibration/current-weights", params={"domain_id": "corporate"})
+        assert current.status_code == 200
+        current_body = current.json()
+        assert current_body["fit_id"] == first["id"]
+        assert current_body["supersedes_id"] is None
+        assert current_body["weights"]["corp.cost_pressure"] == pytest.approx(2.0)
+        assert current_body["previous_weights"]["corp.cost_pressure"] == pytest.approx(1.0)
+
+        # Registry now holds the applied weights: the next fit's
+        # priors show them.
+        second = fit()
+        assert second["changes"]["rules"]["corp.cost_pressure"]["prior_weight"] == pytest.approx(
+            2.0
+        )
+        applied_again = client.post(f"/calibration/fits/{second['id']}/apply-rule-weights")
+        assert applied_again.status_code == 201, applied_again.text
+        current = client.get("/calibration/current-weights", params={"domain_id": "corporate"})
+        current_body = current.json()
+        assert current_body["fit_id"] == second["id"]
+        assert current_body["supersedes_id"] is not None
+        history = client.get("/calibration/weight-applications", params={"domain_id": "corporate"})
+        assert history.status_code == 200
+        entries = history.json()
+        assert len(entries) == 2
+        assert entries[0]["id"] == current_body["id"]
+        assert entries[1]["id"] == current_body["supersedes_id"]
+        assert entries[1]["fit_id"] == first["id"]
+
+        # Reload resets the in-memory registry to 1.0; the durable
+        # record is untouched.
+        reloaded = client.post("/admin/rules/reload")
+        assert reloaded.status_code == 200, reloaded.text
+        after_reload = fit()
+        for change in after_reload["changes"]["rules"].values():
+            assert change["prior_weight"] == pytest.approx(1.0)
+        current = client.get("/calibration/current-weights", params={"domain_id": "corporate"})
+        assert current.json()["fit_id"] == second["id"]
+
+        # Explicit restore re-applies the latest persisted weights.
+        restored = client.post("/calibration/restore-weights", json={"domain_id": "corporate"})
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["id"] == current_body["id"]
+        after_restore = fit()
+        assert after_restore["changes"]["rules"]["corp.cost_pressure"][
+            "prior_weight"
+        ] == pytest.approx(2.0)
+        # Restore wrote no new application row.
+        history = client.get("/calibration/weight-applications", params={"domain_id": "corporate"})
+        assert len(history.json()) == 2
