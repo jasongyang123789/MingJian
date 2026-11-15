@@ -147,8 +147,10 @@ settings enter the inputs hash.
   untested — see §6). A fit in which the gate leaves ZERO metrics
   changed does NOT create a misleading "(calibrated)" template
   version: the fit is recorded with `calibrated_template_id` null,
-  `version_created: false`, and
-  `version_created_reason: quality_gate_left_no_metric_changed`.
+  `version_created: false`, and `version_created_reason` set to
+  the sentence 'quality_gate: all evaluated metrics failed the
+  fit-quality gate; no thresholds changed, so no calibrated
+  template version was created.'
   Metrics with insufficient observations keep Sprint 5 behavior (the
   version is still created); the suppression condition is exactly:
   gate enabled AND at least one metric evaluated AND all evaluated
@@ -342,6 +344,12 @@ FURB162 in `test_calibration_api.py`.
 Smoke: Sprint 0 smoke re-run PASS; the smoke evidence file was
 reverted afterward, per Sprints 2–9 convention.
 
+Verification note: the gate and scenario-children evidence
+paragraphs below were corrected after independent re-verification —
+the first draft cited fixtures and numbers that do not exist in the
+tests. Every number in this section is now an asserted test value;
+the code and tests were unchanged by the correction.
+
 ### Behavior evidence (centering)
 
 Demo fixture (3 runs, 2 claims, cash 100/110/120; decision records
@@ -361,41 +369,52 @@ verified deterministic): design matrix X = [[1,1],[2,1],[2,1]]
 
 ### Behavior evidence (gate)
 
-- Rule-weight refusal: an all-zero design (no claim matches) fits
-  LOO 4.0825 against a prior-only RMSE of 0.0, so the default gate
-  refuses with 400 `fit_quality_gate_failed`, the message carrying
-  both numbers, and the fits list stays empty (zero rows). With
-  `quality_gate: false` the same fit stores, recording
-  `quality_gate.enabled: false` and reason `quality_gate_disabled`.
-- Policy gate: a 3-metric fixture (cash / pipeline / sentiment)
-  passes cash (fitted LOO 4.0825 < prior-only 45.8258) and refuses
-  pipeline and sentiment (fitted 17.9412 > prior 0.15) with
-  `unchanged_reason: quality_gate`, rejected fits, and both RMSEs
-  recorded; the version is created because cash changed. A
-  single-metric all-fail fixture records `calibrated_template_id:
-  null`, `version_created: false`, reason
-  `quality_gate_left_no_metric_changed`, and no new template row.
+- Rule-weight refusal: targets [1, 1, 11] with an all-zero design
+  (no claim matches), so the centered fit is the mean predictor and
+  the prior-only predictor is 0. Fitted LOO RMSE √50 ≈ 7.0711 (fold
+  errors 10, 5, 5) against prior-only RMSE √41 ≈ 6.4031, so the
+  default gate refuses with 400 `fit_quality_gate_failed`, the
+  message carrying both numbers to 4 decimals, and the fits list
+  stays empty (zero rows). With `quality_gate: false` the same fit
+  stores, recording `quality_gate.enabled: false`,
+  `evaluated: false`, `passed: null`, both RMSEs, and reason
+  `quality_gate_disabled`. Asserted in
+  `test_rule_weight_fit_quality_gate_refuses_and_writes_nothing`.
+- Policy gate: a single-metric churn_risk fixture (finals [0.8,
+  0.9, 1.0, 1.2] against prior alert 1.05) fits LOO 0.1858 against
+  prior-only 0.1658, so the metric keeps its priors with
+  `unchanged_reason: quality_gate`, the rejected fit (alert 0.99)
+  and both RMSEs recorded, `calibrated_template_id: null`,
+  `version_created: false`, and the suppression reason sentence.
+  Opting the gate out creates the version with the fitted values
+  (alert (3.9 + 1.05) / 5 = 0.99, critical (1.2 + 1.15) / 2 =
+  1.175). Asserted in
+  `test_policy_fit_quality_gate_suppresses_version`; the
+  estimator-level refusal on the Sprint 5 tail fixture (fitted LOO
+  0.185 vs prior-only 0.15) is asserted in
+  `test_policy_gate_refuses_worse_than_prior`.
 
 ### Behavior evidence (scenario children)
 
-Family fixture: parent (cash 80) + 2 children (90, 100) + lone run
-(120), λ=1, prior 50. Hand-computed closed forms, asserted in
-`test_policy_fit_scenario_children_modes` and the matching
-rule-weight test:
+Fixture: parent run (cash 100) + 2 scenario children (cash 80 each)
++ 2 lone runs (120, 110), λ=1, prior alert 50, prior critical 25.
+Hand-computed closed forms, asserted in
+`test_policy_fit_scenario_children_modes`:
 
-- `include`: cash alert 100.0 (all four runs weight 1).
-- `exclude`: cash alert 103.3333 (parent + lone only).
-- `family`: cash alert exactly 100.0 — parent family weight 1/3 +
-  1/3 + 1/3, lone weight 1; the family contributes total weight 1,
-  as specified. The fit records all four source run ids and the
-  per-run weights [1/3, 1/3, 1/3, 1]. (The include/family equality
-  here is arithmetic coincidence: (80+90+100+120+50)/5 = 100 and
-  ((80+90+100)/3 + 120 + 50)/3 = 100. The exclude value
-  distinguishes the modes.)
-- Rule-weight `family` mode on the same structure passes its gate
-  and records the mode; `exclude` with a single remaining
-  observation is refused with a message naming the mode and the
-  exclusion count.
+- `include`: cash alert (490 + 50) / 6 = 90.0, critical over tail
+  [80, 80]: (160 + 25) / 3 = 185/3.
+- `exclude`: cash alert (330 + 50) / 4 = 95.0, critical over tail
+  [100]: (100 + 25) / 2 = 62.5; the two child ids are recorded as
+  excluded.
+- `family`: cash alert ((260/3 + 230) + 50) / (3 + 1) = 275/3,
+  critical 47.0; per-run weights [1/3, 1/3, 1/3, 1, 1] with the
+  parent family totaling exactly 1.0.
+
+The matching rule-weight test
+(`test_rule_weight_fit_scenario_children_modes`) pins the selection
+and weighting records, not fitted values (its design is all zeros,
+so every fit keeps the priors); exact weighting is proven at the
+estimator level and by the policy test above.
 
 ### Behavior evidence (correlations)
 
@@ -536,7 +555,9 @@ first.
   routes
 - `4b0117e` — Sprint 10: API tests for centering, gate, scenario
   modes, correlations, persistence
-- (this commit) — Sprint 10 report, backlog update, full-suite log
+- `b47e12a` — Sprint 10 report, backlog update, full-suite log
+- (this commit) — Sprint 10: correct report evidence (gate,
+  scenario children, suppression reason) to asserted test values
 
 ## 10. What was NOT verified
 
