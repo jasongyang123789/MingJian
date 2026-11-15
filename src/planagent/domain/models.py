@@ -1573,6 +1573,48 @@ class VariableTemplateRecord(Base):
     )
 
 
+class LoopEvaluationRecord(Base):
+    """One monitoring evaluation of a loop's triggers (Sprint 11).
+
+    Written ONLY by the monitoring worker (or the on-demand cycle
+    endpoint, which runs the same code): the worker evaluates the
+    loop's active trigger registration against ALL recorded
+    observations and records the outcome here. It never creates runs,
+    iterations, or decisions, and never mutates loop or iteration
+    rows — this table is the worker's only write target, and the
+    automation boundary (SPRINT9.md §10) is enforced by that
+    narrowness: evaluate + record, nothing else.
+
+    ``observation_fingerprint`` is the dedup key: a cycle skips
+    writing when the latest row for the loop carries the same
+    fingerprint (same observation set + same trigger registration),
+    so re-evaluating unchanged inputs writes no duplicate rows.
+    ``summary`` is fired/quiet/no_data/error; error rows carry the
+    failure code and message so a failed evaluation is visible
+    instead of silently absent. ``cycle_id`` groups the rows one
+    cycle run wrote, so a cycle's work is auditable as a unit.
+    """
+
+    __tablename__ = "loop_evaluations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    loop_id: Mapped[str] = mapped_column(
+        ForeignKey("strategy_loops.id"), nullable=False, index=True
+    )
+    cycle_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    observation_fingerprint: Mapped[str] = mapped_column(String(80), nullable=False)
+    registration_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    observation_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    outcomes: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    summary: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class StrategyLoopRecord(Base):
     """A living-strategy loop (Sprint 9).
 
