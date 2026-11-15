@@ -13,11 +13,14 @@ from planagent.services.living_loop.models import (
     EnsembleComparison,
     GateReevaluation,
     GateTrigger,
+    LoopEvaluationRead,
     LoopIterationRead,
     LoopObservationCreate,
     LoopObservationRead,
     LoopTimelineRead,
     LoopTriggerDefinition,
+    MonitoringCycleLoopResult,
+    MonitoringCycleResult,
     ResimulateRequest,
     ResimulationRecord,
     ReviewDecisionRecord,
@@ -29,6 +32,11 @@ from planagent.services.living_loop.models import (
     TriggerRegistration,
     TriggerRegistrationRequest,
 )
+from planagent.services.living_loop.monitoring import (
+    evaluation_fingerprint,
+    select_registration,
+    summarize_outcomes,
+)
 from planagent.services.living_loop.triggers import evaluate_triggers, select_window
 
 __all__ = [
@@ -37,11 +45,14 @@ __all__ = [
     "EnsembleComparison",
     "GateReevaluation",
     "GateTrigger",
+    "LoopEvaluationRead",
     "LoopIterationRead",
     "LoopObservationCreate",
     "LoopObservationRead",
     "LoopTimelineRead",
     "LoopTriggerDefinition",
+    "MonitoringCycleLoopResult",
+    "MonitoringCycleResult",
     "ResimulateRequest",
     "ResimulationRecord",
     "ReviewDecisionRecord",
@@ -54,7 +65,10 @@ __all__ = [
     "TriggerRegistrationRequest",
     "compare_ensembles",
     "evaluate_triggers",
+    "evaluation_fingerprint",
     "reevaluate_gates",
+    "select_registration",
     "select_window",
+    "summarize_outcomes",
     "threshold_drift",
 ]

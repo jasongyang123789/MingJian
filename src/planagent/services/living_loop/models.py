@@ -525,3 +525,80 @@ class LoopTimelineRead(BaseModel):
     loop: StrategyLoopRead
     observations: list[LoopObservationRead] = Field(default_factory=list)
     iterations: list[LoopIterationRead] = Field(default_factory=list)
+
+
+class LoopEvaluationRead(BaseModel):
+    """One recorded monitoring evaluation of a loop (Sprint 11).
+
+    Written only by a monitoring cycle (scheduled worker or the
+    on-demand endpoint, which runs the same code). ``summary`` is
+    the loop-level verdict: ``fired`` when any trigger fired,
+    ``quiet`` when at least one trigger was evaluated and none
+    fired, ``no_data`` when the loop had no triggers or no trigger
+    could be evaluated, ``error`` when the evaluation itself
+    failed — error rows carry the failure code and message so a
+    failed evaluation is visible instead of silently absent.
+    ``observation_fingerprint`` is the dedup key: a cycle writes no
+    new row when the loop's latest evaluation already carries the
+    same fingerprint. ``outcomes`` reuses the Sprint 9 per-trigger
+    outcome shape, so monitoring results and review results read
+    the same way.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    loop_id: str
+    cycle_id: str
+    evaluated_at: str
+    observation_fingerprint: str
+    registration_id: str | None = None
+    observation_ids: list[str] = Field(default_factory=list)
+    outcomes: list[TriggerEvaluationOutcome] = Field(default_factory=list)
+    summary: Literal["fired", "quiet", "no_data", "error"]
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: str
+
+
+class MonitoringCycleLoopResult(BaseModel):
+    """One loop's result within a monitoring cycle.
+
+    ``result`` is ``evaluated`` when the cycle wrote a new
+    evaluation row, or ``skipped_unchanged`` when the loop's
+    latest row already carried the current fingerprint and the
+    cycle wrote nothing. ``evaluation_id`` always names the row
+    that represents the loop's current state (newly written, or
+    the existing row when skipped), and ``summary`` is that row's
+    summary.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    loop_id: str
+    result: Literal["evaluated", "skipped_unchanged"]
+    evaluation_id: str
+    summary: Literal["fired", "quiet", "no_data", "error"]
+
+
+class MonitoringCycleResult(BaseModel):
+    """The auditable result of one monitoring cycle.
+
+    ``loops_evaluated`` / ``loops_skipped`` count rows written vs
+    dedup skips; ``loops_fired`` / ``loops_errored`` count loop
+    results by current summary (evaluated or skipped), so the
+    result says both what the cycle wrote and what the fleet's
+    trigger state is after it. ``loops`` is in deterministic loop
+    order (created_at, then id), the same order the cycle
+    evaluated in.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cycle_id: str
+    evaluated_at: str
+    loops_evaluated: int
+    loops_skipped: int
+    loops_fired: int
+    loops_errored: int
+    loops: list[MonitoringCycleLoopResult] = Field(default_factory=list)
