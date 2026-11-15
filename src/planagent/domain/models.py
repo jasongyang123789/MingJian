@@ -1711,3 +1711,56 @@ class LoopIterationRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class DecisionNarrativeRecord(Base):
+    """One versioned decision-direction narrative (Sprint 13).
+
+    Append-only: regenerating a narrative inserts a new row with the
+    next per-run ``version``, never overwriting. ``artifact`` is the
+    deterministic body (no id, version, or timestamp inside, so its
+    ``content_hash`` is a pure function of the inputs);
+    ``inputs_hash`` pins the request plus the source artifact
+    identities the body was composed from. The deterministic artifact
+    is the source of truth; any LLM polish lives in the separate
+    ``decision_narrative_polishes`` table and never mutates this row.
+    """
+
+    __tablename__ = "decision_narratives"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("simulation_runs.id"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    inputs_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    artifact: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class DecisionNarrativePolishRecord(Base):
+    """One LLM polish pass over a narrative (Sprint 13, item 3).
+
+    Append-only, strictly separated from the deterministic artifact:
+    a polish rewrites only the markdown for readability and stores
+    the rewritten text here, marked with the model that produced it.
+    The narrative row itself is never touched by a polish pass.
+    """
+
+    __tablename__ = "decision_narrative_polishes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    narrative_id: Mapped[str] = mapped_column(
+        ForeignKey("decision_narratives.id"), nullable=False, index=True
+    )
+    model: Mapped[str | None] = mapped_column(String(120))
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    polished_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )

@@ -15,6 +15,7 @@ from planagent.events.bus import build_event_bus
 from planagent.services.analysis import AutomatedAnalysisService
 from planagent.services.assistant import StrategicAssistantService
 from planagent.services.debate import DebateService, DebateWorkflow
+from planagent.services.narratives.service import NarrativeService
 from planagent.services.openai_client import OpenAIService
 from planagent.services.pipeline import PhaseOnePipelineService
 from planagent.services.platform_topology import PlatformTopologyService
@@ -36,6 +37,7 @@ _CACHED_SERVICE_ATTRS = (
     "platform_topology_service",
     "assistant_service",
     "skill_service",
+    "narrative_service",
 )
 _last_app_state = None
 _fallback_services_state = type("_FallbackServicesState", (), {})()
@@ -89,6 +91,8 @@ def _cache_business_services(state: object) -> None:
         )
     if not hasattr(state, "skill_service"):
         state.skill_service = SkillDeliberationService(settings, state.openai_service)
+    if not hasattr(state, "narrative_service"):
+        state.narrative_service = NarrativeService(settings, state.openai_service)
 
 
 def _get_state_or_fallback() -> object:
@@ -167,6 +171,15 @@ def get_skill_service(request: Request) -> SkillDeliberationService:
             get_settings(), request.app.state.openai_service
         )
     return request.app.state.skill_service  # type: ignore[no-any-return]  # app.state 动态属性
+
+
+def get_narrative_service(request: Request) -> NarrativeService:
+    ensure_app_services(request)
+    if not hasattr(request.app.state, "narrative_service"):
+        request.app.state.narrative_service = NarrativeService(
+            get_settings(), request.app.state.openai_service
+        )
+    return request.app.state.narrative_service  # type: ignore[no-any-return]  # app.state 动态属性
 
 
 def get_workbench_service() -> WorkbenchService:
