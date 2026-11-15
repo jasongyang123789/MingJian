@@ -3,7 +3,9 @@
 // stored Sprint 4 results. Every chart degrades honestly — no
 // ensemble, no trial values, or no stored analysis each renders an
 // empty state explaining what to run, and nothing is ever synthesized
-// from summary statistics.
+// from summary statistics. Each empty state that names a POST endpoint
+// also offers a launch button for it (Sprint 12); launching reloads
+// the stored fragment, so charts still only ever render stored data.
 
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -11,6 +13,12 @@ import { useSearchParams } from 'react-router-dom'
 import { simulationApi } from '../api/endpoints'
 import { distributionsApi, nullOn404, robustnessApi } from '../api/engine'
 import type { MonteCarloResult } from '../api/engineTypes'
+import {
+  BootstrapLauncher,
+  MonteCarloLauncher,
+  ThresholdSearchLauncher,
+  TornadoLauncher,
+} from '../components/cockpit/AnalysisLaunchers'
 import { CockpitNav } from '../components/cockpit/CockpitNav'
 import { EnsembleHistograms } from '../components/cockpit/DistributionCharts'
 import { BootstrapChart, ThresholdSearchChart, TornadoChart } from '../components/cockpit/RobustnessCharts'
@@ -40,10 +48,10 @@ function EnsembleSection({ runId, result }: { runId: string; result: MonteCarloR
   return <EnsembleHistograms result={result} trialValues={trialValues} />
 }
 
-function RobustnessSection({ runId }: { runId: string }) {
+function RobustnessSection({ runId, refreshSignal }: { runId: string; refreshSignal: number }) {
   const { data, loading, error, reload } = useApi(
     () => nullOn404(robustnessApi.getAll(runId)),
-    runId,
+    `${runId}:${refreshSignal}`,
   )
   if (loading) return <LoadingSpinner />
   if (error) return <ErrorBanner message={error} onRetry={reload} />
@@ -62,10 +70,13 @@ function RobustnessSection({ runId }: { runId: string }) {
         {data.tornado ? (
           <TornadoChart tornado={data.tornado} />
         ) : (
-          <EmptyState
-            title="尚未运行龙卷风分析"
-            description="对该 Run 的 ensemble 运行一次龙卷风分析（POST /runs/{id}/robustness/tornado），图表会在此出现。"
-          />
+          <>
+            <EmptyState
+              title="尚未运行龙卷风分析"
+              description="对该 Run 的 ensemble 运行一次龙卷风分析（POST /runs/{id}/robustness/tornado），图表会在此出现。"
+            />
+            <TornadoLauncher runId={runId} onLaunched={reload} />
+          </>
         )}
       </div>
       <div>
@@ -73,10 +84,13 @@ function RobustnessSection({ runId }: { runId: string }) {
         {data.bootstrap ? (
           <BootstrapChart bootstrap={data.bootstrap} />
         ) : (
-          <EmptyState
-            title="尚未运行 Bootstrap 分析"
-            description="对该 Run 的 ensemble 运行一次 bootstrap 分析（POST /runs/{id}/robustness/bootstrap），图表会在此出现。"
-          />
+          <>
+            <EmptyState
+              title="尚未运行 Bootstrap 分析"
+              description="对该 Run 的 ensemble 运行一次 bootstrap 分析（POST /runs/{id}/robustness/bootstrap），图表会在此出现。"
+            />
+            <BootstrapLauncher runId={runId} onLaunched={reload} />
+          </>
         )}
       </div>
       <div>
@@ -84,10 +98,13 @@ function RobustnessSection({ runId }: { runId: string }) {
         {data.threshold_search ? (
           <ThresholdSearchChart search={data.threshold_search} />
         ) : (
-          <EmptyState
-            title="尚未运行阈值搜索"
-            description="对该 Run 的 ensemble 运行一次阈值搜索（POST /runs/{id}/robustness/threshold-search），图表会在此出现。"
-          />
+          <>
+            <EmptyState
+              title="尚未运行阈值搜索"
+              description="对该 Run 的 ensemble 运行一次阈值搜索（POST /runs/{id}/robustness/threshold-search），图表会在此出现。"
+            />
+            <ThresholdSearchLauncher runId={runId} onLaunched={reload} />
+          </>
         )}
       </div>
     </div>
@@ -98,6 +115,9 @@ export default function Charts() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: runs, loading, error, reload } = useApi(() => simulationApi.listRuns())
   const [selectedRunId, setSelectedRunId] = useState<string | null>(searchParams.get('run'))
+  // Bumped after an ensemble launch: the robustness section refetches so
+  // its per-analysis launchers appear once the ensemble exists.
+  const [robustnessRefresh, setRobustnessRefresh] = useState(0)
 
   const {
     data: ensemble,
@@ -115,6 +135,11 @@ export default function Charts() {
   function selectRun(runId: string) {
     setSelectedRunId(runId)
     setSearchParams({ run: runId })
+  }
+
+  function handleEnsembleLaunched() {
+    reloadEnsemble()
+    setRobustnessRefresh((count) => count + 1)
   }
 
   const selectedRun = (runs as CockpitRun[] | null)?.find((run) => run.id === selectedRunId) ?? null
@@ -151,10 +176,13 @@ export default function Charts() {
             {ensembleLoading && <LoadingSpinner />}
             {ensembleError && <ErrorBanner message={ensembleError} onRetry={reloadEnsemble} />}
             {!ensembleLoading && !ensembleError && ensemble === null && (
-              <EmptyState
-                title="暂无 Ensemble 结果"
-                description="该 Run 尚未存储蒙特卡洛 ensemble 结果。先对该 Run 运行一次 ensemble（POST /runs/{id}/monte-carlo），分布图会在此出现。"
-              />
+              <>
+                <EmptyState
+                  title="暂无 Ensemble 结果"
+                  description="该 Run 尚未存储蒙特卡洛 ensemble 结果。先对该 Run 运行一次 ensemble（POST /runs/{id}/monte-carlo），分布图会在此出现。"
+                />
+                <MonteCarloLauncher runId={selectedRunId} onLaunched={handleEnsembleLaunched} />
+              </>
             )}
             {!ensembleLoading && !ensembleError && ensemble !== null && (
               <EnsembleSection runId={selectedRunId} result={ensemble} />
@@ -167,7 +195,7 @@ export default function Charts() {
         <Card>
           <CardHeader title="稳健性图表" />
           <CardBody>
-            <RobustnessSection runId={selectedRunId} />
+            <RobustnessSection runId={selectedRunId} refreshSignal={robustnessRefresh} />
           </CardBody>
         </Card>
       )}
