@@ -591,7 +591,8 @@ the Sprint 7/8/9 conventions: typed clients, type mirrors,
 - `b043b2b` — persistence, service, endpoints (migration 0035)
 - `fd19407` — narrative API tests
 - `e4c46f0` — cockpit directions view
-- (this commit) — Sprint 13 report, backlog update, verification log
+- `9dc03fa` — Sprint 13 report, backlog update, verification log
+- (this commit) — ruff format fix on narrative API tests, found during independent verification (format-only, tests re-run green)
 
 ## 10. What was NOT verified
 

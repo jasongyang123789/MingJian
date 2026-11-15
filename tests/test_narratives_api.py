@@ -98,9 +98,7 @@ def _create_run(client: TestClient, **overrides) -> dict:
 
 
 def _create_ensemble(client: TestClient, run_id: str, trials: int = 5) -> dict:
-    response = client.post(
-        f"/runs/{run_id}/monte-carlo", json={"trials": trials, "metric": "cash"}
-    )
+    response = client.post(f"/runs/{run_id}/monte-carlo", json={"trials": trials, "metric": "cash"})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -180,9 +178,7 @@ def test_generate_narrative_byte_identical_across_regenerations(
         assert first.json()["id"] != second.json()["id"]
 
 
-def test_generate_refuses_without_ensemble_and_writes_nothing(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_generate_refuses_without_ensemble_and_writes_nothing(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_run(client)
@@ -213,9 +209,7 @@ def test_generate_refuses_unknown_source_run(monkeypatch, tmp_path: Path) -> Non
 def test_generate_refuses_noncompleted_anchor(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        queued = client.post(
-            "/simulation/runs", json=simulation_payload(execution_mode="QUEUED")
-        )
+        queued = client.post("/simulation/runs", json=simulation_payload(execution_mode="QUEUED"))
         assert queued.status_code == 201
         response = _generate(client, queued.json()["id"])
         assert response.status_code == 400
@@ -252,9 +246,7 @@ def test_generate_unknown_run_404(monkeypatch, tmp_path: Path) -> None:
         assert response.status_code == 404
 
 
-def test_generate_with_loop_context_and_mismatch_refusal(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_generate_with_loop_context_and_mismatch_refusal(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_run(client)
@@ -345,18 +337,14 @@ def test_polish_success_stores_alongside_artifact(monkeypatch, tmp_path: Path) -
         port.assert_exhausted()
 
 
-def test_polish_unavailable_returns_503_and_writes_nothing(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_polish_unavailable_returns_503_and_writes_nothing(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_run(client)
         _create_ensemble(client, run["id"])
         created = _generate(client, run["id"])
         assert created.status_code == 201
-        response = client.post(
-            f"/runs/{run['id']}/narratives/{created.json()['id']}/polish"
-        )
+        response = client.post(f"/runs/{run['id']}/narratives/{created.json()['id']}/polish")
         assert response.status_code == 503
         assert response.json()["detail"]["code"] == "narrative_polish_unavailable"
         fetched = client.get(f"/runs/{run['id']}/narratives/{created.json()['id']}")
@@ -373,9 +361,7 @@ def test_polish_contract_failure_returns_502_and_writes_nothing(
         _create_ensemble(client, run["id"])
         created = _generate(client, run["id"])
         assert created.status_code == 201
-        response = client.post(
-            f"/runs/{run['id']}/narratives/{created.json()['id']}/polish"
-        )
+        response = client.post(f"/runs/{run['id']}/narratives/{created.json()['id']}/polish")
         assert response.status_code == 502
         assert response.json()["detail"]["code"] == "narrative_polish_contract_failed"
         fetched = client.get(f"/runs/{run['id']}/narratives/{created.json()['id']}")
