@@ -212,12 +212,20 @@ def test_policy_fit_ordering_guard_rejects_pair_wholesale() -> None:
 
 
 def test_policy_fit_decrease_direction_uses_upper_tail() -> None:
+    # Sprint 10: this fixture's fitted LOO RMSE (0.185) is worse than
+    # the prior-only baseline (0.15), so the default quality gate
+    # keeps the priors — see
+    # test_policy_fit_quality_gate_refuses_worse_than_prior in
+    # test_calibration_hardening.py, which asserts that refusal with
+    # both numbers. This test is about tail selection, so it opts
+    # the gate out explicitly rather than changing the fixture.
     result = calibrate_policy_thresholds(
         {"cost": _policy("decrease", 1.05, 1.15)},
         {"cost": [0.9, 1.0, 1.1, 1.3]},
         ridge_strength=1.0,
         seed=7,
         bootstrap_draws=10,
+        quality_gate=False,
     )
     policies = result["policies"]
     # Alert: (4.3 + 1.05) / 5 = 1.07. Tail above 1.05: [1.1, 1.3];

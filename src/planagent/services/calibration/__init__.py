@@ -9,6 +9,8 @@ imported from there.
 """
 
 from .estimator import (
+    CORRELATION_WARNING_MIN_N,
+    CORRELATION_WARNING_THRESHOLD,
     DEFAULT_BOOTSTRAP_DRAWS,
     DEFAULT_CALIBRATION_SEED,
     DEFAULT_RIDGE_STRENGTH,
@@ -16,8 +18,11 @@ from .estimator import (
     bootstrap_coefficient_intervals,
     calibrate_policy_thresholds,
     calibrate_rule_weights,
+    fit_centered_ridge_to_prior,
     fit_ridge_to_prior,
     leave_one_out_rmse,
+    pairwise_metric_correlations,
+    prior_only_rmse,
     ridge_location_fit,
 )
 from .firewall import (
@@ -44,6 +49,8 @@ from .models import (
 )
 
 __all__ = [
+    "CORRELATION_WARNING_MIN_N",
+    "CORRELATION_WARNING_THRESHOLD",
     "CUTOFF_SOURCE_CREATION_TIME",
     "CUTOFF_SOURCE_EXPLICIT",
     "DEFAULT_BOOTSTRAP_DRAWS",
@@ -66,10 +73,13 @@ __all__ = [
     "claim_visible_at",
     "firewall_configuration_fragment",
     "firewall_cutoff_from_configuration",
+    "fit_centered_ridge_to_prior",
     "fit_ridge_to_prior",
     "format_cutoff",
     "leave_one_out_rmse",
     "normalize_cutoff",
+    "pairwise_metric_correlations",
     "parse_cutoff",
+    "prior_only_rmse",
     "ridge_location_fit",
 ]
