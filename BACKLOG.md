@@ -252,6 +252,47 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   alerting on fired triggers, event-driven evaluation,
   retention policy for evaluation rows.
 
+## Sprint 13 — decision-direction narrative output (done)
+
+- Delivered on `strategy-engine/sprint13-decision-narrative`
+  (see SPRINT13.md): the last mile of the four-layer vision. A
+  pure deterministic composer assembles 1–4 directions from stored
+  artifacts only — ensembles, tornado/threshold/ES/bootstrap
+  results, decision gates, skill deliberations, the MECE tree,
+  calibration fits, loop triggers — each direction with an outcome
+  distribution (P10/P50/P90 + loss probability), key drivers,
+  tripwire signals, a pre-mortem, a 48-hour first step, and a MECE
+  trace. Every section carries a provenance mark
+  (computed/deliberated/template); absent deliberations yield
+  explicit template notices, never fabricated analysis. Directions
+  come only from explicit definitions in the generation request
+  (the codebase has no direction source: options lack ensemble
+  links, branches lack direction semantics). Ranking is P50
+  descending, ties by name. The artifact is a versioned,
+  append-only, hashed JSON body in a new `decision_narratives`
+  table (migration 0035, revises 0034) with `inputs_hash` +
+  `content_hash` (canonical JSON + SHA-256); same inputs compose
+  byte-identical bodies, asserted by test. Endpoints
+  `POST/GET /runs/{id}/narratives`, `GET` one, and an optional
+  `POST .../polish` (strictly separated: polished text lives in
+  `decision_narrative_polishes`, marked LLM-generated; 503/502
+  write nothing; fixture-driven tests only, live quality
+  UNVERIFIED). Refusals are loud and named (no ensemble, unknown
+  source run/branch/deliberation, loop mismatch, corrupt
+  fragments). Cockpit `/cockpit/directions`: generate form (name +
+  source run + arm + MECE checkboxes), version history, reading
+  view with provenance badges, polish section. Backend 1192 → 1231
+  tests (39 new), frontend 195 → 206 (11 new), lint 0, build
+  passes, mypy clean (203 files), migration upgrade → downgrade →
+  re-upgrade verified, Sprint 0 smoke re-run PASS. Docker stack,
+  live-LLM quality, and live backend integration remain UNVERIFIED.
+- NOT built (deferred, not done): direction auto-derivation,
+  polished-text verification, loop/deliberation-pin controls in
+  the cockpit form, narrative deletion/retention, alerting on
+  fired triggers, event-driven evaluation, retention policy for
+  evaluation rows, ordering-guard version suppression, joint
+  multivariate threshold fitting, automatic weight restore.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
