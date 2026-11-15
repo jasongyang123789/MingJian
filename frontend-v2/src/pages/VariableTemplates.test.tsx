@@ -29,6 +29,9 @@ describe('VariableTemplates', () => {
   let validateResult: unknown
   let saveStatus: number
   let saveBody: unknown
+  let liveTemplates: typeof templateList
+  let deleteStatus: number
+  let deleteBody: unknown
 
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -36,6 +39,9 @@ describe('VariableTemplates', () => {
     validateResult = validValidationResult
     saveStatus = 200
     saveBody = null
+    liveTemplates = [...templateList]
+    deleteStatus = 204
+    deleteBody = null
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
@@ -48,7 +54,7 @@ describe('VariableTemplates', () => {
         }
       }
       requests.push({ url, method, body })
-      if (url === '/api/variable-templates' && method === 'GET') return jsonResponse(templateList)
+      if (url === '/api/variable-templates' && method === 'GET') return jsonResponse(liveTemplates)
       if (url.startsWith('/api/calibration/fits')) return jsonResponse(calibrationFits)
       if (url === '/api/variables/validate') return jsonResponse(validateResult)
       if (url === '/api/variable-templates' && method === 'POST') {
@@ -61,6 +67,20 @@ describe('VariableTemplates', () => {
         const id = url.split('/').pop()
         const existing = templateList.find((template) => template.id === id) ?? customTemplate
         return jsonResponse({ ...existing, ...(body as object), id })
+      }
+      if (url.startsWith('/api/variable-templates/') && method === 'DELETE') {
+        if (deleteStatus !== 204) {
+          // A 404 means another client deleted the template first: the
+          // stored list no longer has it, so a reload converges.
+          if (deleteStatus === 404) {
+            const gone = url.split('/').pop()
+            liveTemplates = liveTemplates.filter((template) => template.id !== gone)
+          }
+          return jsonResponse(deleteBody, deleteStatus)
+        }
+        const id = url.split('/').pop()
+        liveTemplates = liveTemplates.filter((template) => template.id !== id)
+        return new Response(null, { status: 204 })
       }
       return jsonResponse({})
     })
@@ -226,5 +246,121 @@ describe('VariableTemplates', () => {
       expect(screen.getByText(/该版本由校准拟合生成/)).toBeInTheDocument()
     })
     expect(screen.getByText(/fit-1/)).toBeInTheDocument()
+  })
+
+  it('deletes a custom template only after inline confirmation and refreshes the list', async () => {
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('删除'))
+    expect(screen.getByText('确认删除「AI line case」？')).toBeInTheDocument()
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false)
+    fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => {
+      expect(
+        screen.getByText('已删除模板「AI line case」。已有 Run 带有该模板的快照，不受影响。'),
+      ).toBeInTheDocument()
+    })
+    const deleted = requests.find((request) => request.method === 'DELETE')
+    expect(deleted?.url).toBe('/api/variable-templates/tmpl-1')
+    expect(deleted?.body).toBeNull()
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole('table')).queryByText('AI line case'),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('cancelling the delete confirmation sends nothing', async () => {
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('删除'))
+    fireEvent.click(screen.getByText('取消'))
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false)
+    expect(screen.queryByText('确认删除「AI line case」？')).not.toBeInTheDocument()
+    expect(within(rowFor('AI line case')).getByText('删除')).toBeInTheDocument()
+  })
+
+  it('disables delete for built-in templates', async () => {
+    renderPage()
+    await waitForList()
+    const button = within(rowFor('Corporate (built-in)')).getByText('删除')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', '内置模板只读，不可删除')
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false)
+  })
+
+  it('surfaces a delete failure honestly and keeps the list', async () => {
+    deleteStatus = 400
+    deleteBody = { detail: 'Built-in template builtin:corporate is read-only; create a stored template instead.' }
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('删除'))
+    fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => {
+      expect(screen.getByText(/Built-in template builtin:corporate is read-only/)).toBeInTheDocument()
+    })
+    expect(within(rowFor('AI line case')).getByText('删除')).toBeInTheDocument()
+    expect(screen.queryByText(/已删除模板/)).not.toBeInTheDocument()
+  })
+
+  it('reloads the list when the backend says the template is already gone', async () => {
+    deleteStatus = 404
+    deleteBody = { detail: 'Variable template tmpl-1 was not found.' }
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('删除'))
+    fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => {
+      expect(screen.getByText(/Variable template tmpl-1 was not found/)).toBeInTheDocument()
+    })
+    // The list re-synced with the backend: the already-gone row is gone.
+    await waitFor(() => {
+      expect(
+        within(screen.getByRole('table')).queryByText('AI line case'),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('asks before discarding a dirty draft when deleting the open template', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('编辑'))
+    await waitFor(() => {
+      expect(screen.getByLabelText('变量 1 id')).toHaveValue('cash')
+    })
+    fireEvent.change(screen.getByDisplayValue('AI line case'), { target: { value: 'edited' } })
+    fireEvent.click(within(rowFor('AI line case')).getByText('删除'))
+    fireEvent.click(screen.getByText('确认删除'))
+    expect(confirm).toHaveBeenCalled()
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false)
+    expect(screen.getByDisplayValue('edited')).toBeInTheDocument()
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => {
+      expect(screen.getByText(/已删除模板「AI line case」/)).toBeInTheDocument()
+    })
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(true)
+    // The editor closed with its template.
+    expect(screen.getByText('未选中模板')).toBeInTheDocument()
+  })
+
+  it('deleting another template leaves a dirty draft untouched', async () => {
+    const confirm = vi.spyOn(window, 'confirm')
+    renderPage()
+    await waitForList()
+    fireEvent.click(within(rowFor('AI line case')).getByText('编辑'))
+    await waitFor(() => {
+      expect(screen.getByLabelText('变量 1 id')).toHaveValue('cash')
+    })
+    fireEvent.change(screen.getByDisplayValue('AI line case'), { target: { value: 'edited' } })
+    fireEvent.click(within(rowFor('Corporate (built-in) (calibrated)')).getByText('删除'))
+    fireEvent.click(screen.getByText('确认删除'))
+    await waitFor(() => {
+      expect(screen.getByText(/已删除模板「Corporate \(built-in\) \(calibrated\)」/)).toBeInTheDocument()
+    })
+    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.getByDisplayValue('edited')).toBeInTheDocument()
   })
 })

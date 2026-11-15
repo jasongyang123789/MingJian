@@ -62,6 +62,9 @@ export default function VariableTemplates() {
   const [saveValidation, setSaveValidation] = useState<VariableValidationResult | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     calibrationApi
@@ -116,6 +119,8 @@ export default function VariableTemplates() {
         setValidation(null)
         setSaveError(null)
         setSaveValidation(null)
+        setConfirmingDeleteId(null)
+        setDeleteError(null)
         if (template.is_builtin) {
           setMode({ kind: 'view', templateId: template.id })
           setDraft(null)
@@ -137,6 +142,8 @@ export default function VariableTemplates() {
         setValidation(null)
         setSaveError(null)
         setSaveValidation(null)
+        setConfirmingDeleteId(null)
+        setDeleteError(null)
         const next = seed
           ? { ...draftFromTemplate(seed), name: `${seed.name}（副本）` }
           : emptyDraft(domains[0] ?? 'corporate')
@@ -194,6 +201,50 @@ export default function VariableTemplates() {
     }
   }, [draft, mode, reload])
 
+  // Deletion is a two-step inline confirmation (no window.confirm): the
+  // first click arms the row, the second executes. The list is never
+  // updated optimistically — it reloads only after the backend answers.
+  // Deleting the template open in the editor goes through the same
+  // unsaved-changes guard as leaving the form; deleting any other
+  // template never touches the draft. A 404 means the list was stale,
+  // so the list reloads to the truth and the error still shows.
+  const handleDelete = useCallback(
+    async (template: VariableTemplateRead) => {
+      const execute = async () => {
+        setDeleting(true)
+        setDeleteError(null)
+        try {
+          await variablesApi.deleteTemplate(template.id)
+          reload()
+          if (mode.kind === 'edit' && mode.templateId === template.id) {
+            setMode({ kind: 'none' })
+            setDraft(null)
+            setBaseline('')
+            setValidation(null)
+            setSaveError(null)
+            setSaveValidation(null)
+          }
+          setNotice(`已删除模板「${template.name}」。已有 Run 带有该模板的快照，不受影响。`)
+        } catch (error: unknown) {
+          const info = parseApiError(error)
+          setDeleteError(info.code ? `${info.code}：${info.message}` : info.message)
+          if (info.status === 404) reload()
+        } finally {
+          setDeleting(false)
+          setConfirmingDeleteId(null)
+        }
+      }
+      if (mode.kind === 'edit' && mode.templateId === template.id) {
+        guardUnsaved(() => {
+          void execute()
+        })
+      } else {
+        await execute()
+      }
+    },
+    [guardUnsaved, mode, reload],
+  )
+
   return (
     <div className="space-y-6">
       <CockpitNav />
@@ -227,6 +278,7 @@ export default function VariableTemplates() {
         <CardBody>
           {loading && <LoadingSpinner />}
           {error && <ErrorBanner message={error} onRetry={reload} />}
+          {deleteError && <ErrorBanner message={deleteError} />}
           {templates && templates.length === 0 && (
             <EmptyState title="暂无模板" description="内置预设未返回——后端可能未正确注册领域包。" />
           )}
@@ -263,20 +315,59 @@ export default function VariableTemplates() {
                         </span>
                       </td>
                       <td className="py-2">
-                        <span className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => openTemplate(template)}
-                            className="text-xs text-blue-400 hover:text-blue-300"
-                          >
-                            {template.is_builtin ? '查看' : '编辑'}
-                          </button>
-                          <button
-                            onClick={() => startCreate(template)}
-                            className="text-xs text-blue-400 hover:text-blue-300"
-                          >
-                            复制为新模板
-                          </button>
-                        </span>
+                        {confirmingDeleteId === template.id ? (
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-amber-300">确认删除「{template.name}」？</span>
+                            <button
+                              onClick={() => void handleDelete(template)}
+                              disabled={deleting}
+                              className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                            >
+                              {deleting ? '删除中…' : '确认删除'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmingDeleteId(null)}
+                              disabled={deleting}
+                              className="text-xs text-slate-400 hover:text-slate-300 disabled:opacity-50"
+                            >
+                              取消
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => openTemplate(template)}
+                              className="text-xs text-blue-400 hover:text-blue-300"
+                            >
+                              {template.is_builtin ? '查看' : '编辑'}
+                            </button>
+                            <button
+                              onClick={() => startCreate(template)}
+                              className="text-xs text-blue-400 hover:text-blue-300"
+                            >
+                              复制为新模板
+                            </button>
+                            {template.is_builtin ? (
+                              <button
+                                disabled
+                                title="内置模板只读，不可删除"
+                                className="cursor-not-allowed text-xs text-slate-600"
+                              >
+                                删除
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setDeleteError(null)
+                                  setConfirmingDeleteId(template.id)
+                                }}
+                                className="text-xs text-red-400 hover:text-red-300"
+                              >
+                                删除
+                              </button>
+                            )}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )
