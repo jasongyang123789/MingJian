@@ -22,12 +22,22 @@ A rule-weight fit records fitted weights on the fit row; they take
 effect only through the explicit apply step, which sets the in-memory
 registry weights and appends an application event to the fit record.
 Fitted weights are an association signal, not a causal estimate.
+
+Sprint 10 hardening: rule-weight fits center by default (derived
+intercept, no prior semantics); fitted weights are durably recorded
+per application with explicit restore; scenario children can be
+excluded or family-weighted; both fit kinds carry a fit-quality gate
+against the prior-only baseline; policy fits record per-metric
+correlation diagnostics. The calibration worker is untouched: its
+periodic blend starts from whatever weights are current, including
+restored ones, exactly as Sprint 5 documented.
 """
 
 from __future__ import annotations
 
 import math
 from collections import Counter
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from planagent.domain.enums import SimulationRunStatus
 from planagent.domain.models import (
     CalibrationFitRecord,
+    CalibrationWeightApplicationRecord,
     DecisionRecordRecord,
     SimulationRun,
     VariableTemplateRecord,
@@ -46,13 +57,17 @@ from planagent.services.calibration import (
     calibrate_rule_weights,
     firewall_cutoff_from_configuration,
     format_cutoff,
+    pairwise_metric_correlations,
 )
 from planagent.services.calibration.models import (
     CalibrationFitRead,
     FirewallRead,
+    PersistedWeightsRead,
     PolicyFitRequest,
+    RestoreWeightsRequest,
     RuleWeightChange,
     RuleWeightFitRequest,
+    ScenarioChildrenMode,
     ThresholdChange,
 )
 from planagent.services.distributions import sha256_hash
@@ -152,6 +167,79 @@ def _fit_record_to_read(record: CalibrationFitRecord) -> CalibrationFitRead:
         application=dict(record.application or {}),
         created_at=record.created_at.isoformat(),
     )
+
+
+def _application_record_to_read(
+    record: CalibrationWeightApplicationRecord,
+) -> PersistedWeightsRead:
+    return PersistedWeightsRead(
+        id=record.id,
+        domain_id=record.domain_id,
+        fit_id=record.fit_id,
+        weights={str(key): float(value) for key, value in dict(record.weights or {}).items()},
+        previous_weights={
+            str(key): float(value) for key, value in dict(record.previous_weights or {}).items()
+        },
+        supersedes_id=record.supersedes_id,
+        applied_at=record.applied_at.isoformat(),
+    )
+
+
+async def _family_root_id(session: AsyncSession, run: SimulationRun, cache: dict[str, str]) -> str:
+    """The root ancestor of a run's scenario family.
+
+    Scenario children carry ``parent_run_id`` (only they do: MC
+    trials, probes, and replays set it to None explicitly), and a
+    child can itself be branched, so the family root is found by
+    walking the chain. A dangling parent or a cycle stops the walk
+    and treats the current run as its own root rather than failing
+    the fit. Results are cached per fit: the walk is over the
+    identity map for runs already loaded.
+    """
+
+    if run.id in cache:
+        return cache[run.id]
+    seen = {run.id}
+    current = run
+    while current.parent_run_id is not None:
+        parent = await session.get(SimulationRun, current.parent_run_id)
+        if parent is None or parent.id in seen:
+            break
+        seen.add(parent.id)
+        current = parent
+    for run_id in seen:
+        cache[run_id] = current.id
+    return current.id
+
+
+async def _scenario_selection(
+    session: AsyncSession,
+    runs: list[SimulationRun],
+    mode: ScenarioChildrenMode,
+) -> tuple[list[SimulationRun], list[str], dict[str, float]]:
+    """Apply the scenario-children mode to an observation set.
+
+    Returns (kept runs in input order, excluded run ids, per-run
+    weights keyed by run id). ``include`` keeps everything at weight
+    1; ``exclude`` drops runs with a ``parent_run_id``; ``family``
+    weights each root-ancestor family to total weight 1
+    (1/family-size per member, families counted within this
+    observation set). Weights are exact fractions of family sizes;
+    the estimator consumes them as row weights.
+    """
+
+    if mode == "include":
+        return runs, [], {run.id: 1.0 for run in runs}
+    if mode == "exclude":
+        kept = [run for run in runs if run.parent_run_id is None]
+        excluded = [run.id for run in runs if run.parent_run_id is not None]
+        return kept, excluded, {run.id: 1.0 for run in kept}
+    cache: dict[str, str] = {}
+    families: dict[str, list[SimulationRun]] = {}
+    for run in runs:
+        families.setdefault(await _family_root_id(session, run, cache), []).append(run)
+    weights = {run.id: 1.0 / len(members) for members in families.values() for run in members}
+    return runs, [], weights
 
 
 class SimulationCalibrationMixin:
@@ -276,23 +364,42 @@ class SimulationCalibrationMixin:
             for run in await self._eligible_runs(session, domain_id, request.source_run_ids)
             if _carried_template(run, template_id, builtin=builtin)
         ]
-        observations: dict[str, list[float]] = {}
-        contributing: list[str] = []
+        contributing: list[tuple[SimulationRun, dict[str, float]]] = []
         for run in runs:
-            contributed = False
+            values = {}
             for metric in template.policies:
                 value = _final_state_value(run, metric)
                 if value is not None:
-                    observations.setdefault(metric, []).append(value)
-                    contributed = True
-            if contributed:
-                contributing.append(run.id)
+                    values[metric] = value
+            if values:
+                contributing.append((run, values))
         if not contributing:
             raise CalibrationError(
                 "insufficient_observations",
                 "No eligible run carried this template with usable final-state "
                 "values for its policy metrics.",
             )
+        kept_runs, excluded_ids, weights = await _scenario_selection(
+            session, [run for run, _ in contributing], request.scenario_children
+        )
+        kept_ids = {run.id for run in kept_runs}
+        kept_values = [(run, values) for run, values in contributing if run.id in kept_ids]
+        if not kept_values:
+            raise CalibrationError(
+                "insufficient_observations",
+                "No eligible run remains after scenario-children handling "
+                f"(mode {request.scenario_children!r} excluded "
+                f"{len(excluded_ids)} run(s)).",
+            )
+        observations: dict[str, list[float]] = {}
+        observation_weights: dict[str, list[float]] = {}
+        aligned: dict[str, dict[str, float]] = {}
+        for run, values in kept_values:
+            for metric, value in values.items():
+                observations.setdefault(metric, []).append(value)
+                observation_weights.setdefault(metric, []).append(weights[run.id])
+                aligned.setdefault(metric, {})[run.id] = value
+        contributing_ids = [run.id for run, _ in kept_values]
 
         priors = {
             metric: {
@@ -309,6 +416,8 @@ class SimulationCalibrationMixin:
             seed=request.seed,
             bootstrap_draws=request.bootstrap_draws,
             level=request.level,
+            observation_weights=observation_weights,
+            quality_gate=request.quality_gate,
         )
         fitted_policies = fitted["policies"]
         changes = {
@@ -325,70 +434,116 @@ class SimulationCalibrationMixin:
                 n_tail=change["n_tail"],
                 unchanged_reason=change["unchanged_reason"],
                 rejected_fit=change.get("rejected_fit"),
+                fitted_loo_rmse=change["fitted_loo_rmse"],
+                prior_only_rmse=change["prior_only_rmse"],
+                quality_gate_passed=change["quality_gate_passed"],
             ).model_dump(mode="json")
             for metric, change in fitted["changes"].items()
         }
+        correlations = pairwise_metric_correlations(aligned)
+        # The gate suppresses version creation only when it is the
+        # reason nothing changed: enabled, every evaluated metric
+        # failed, and no metric changed. Insufficient-observation
+        # metrics keep Sprint 5 behavior (a version is still created).
+        gate_verdicts = [
+            change["quality_gate_passed"]
+            for change in fitted["changes"].values()
+            if change["quality_gate_passed"] is not None
+        ]
+        any_changed = any(
+            change["unchanged_reason"] is None for change in fitted["changes"].values()
+        )
+        gate_suppresses_version = bool(
+            request.quality_gate and gate_verdicts and not any(gate_verdicts) and not any_changed
+        )
+        version_created_reason = (
+            "quality_gate: all evaluated metrics failed the fit-quality gate; "
+            "no thresholds changed, so no calibrated template version was created."
+            if gate_suppresses_version
+            else None
+        )
         inputs_hash = sha256_hash(
             {
                 "kind": "policy_thresholds",
                 "domain_id": domain_id,
                 "source_template_id": template_id,
-                "source_run_ids": contributing,
+                "source_run_ids": contributing_ids,
                 "observations": observations,
                 "priors": priors,
                 "ridge_strength": request.ridge_strength,
                 "seed": request.seed,
                 "bootstrap_draws": request.bootstrap_draws,
                 "level": request.level,
+                "scenario_children": request.scenario_children,
+                "observation_weights": {run_id: weights[run_id] for run_id in contributing_ids},
+                "excluded_run_ids": excluded_ids,
+                "quality_gate": request.quality_gate,
             }
         )
 
         # New template version: same state fields, variables, formulas,
         # and internal entries; fitted policies; provenance in the
-        # description. The source row is never touched.
-        calibrated_policies = {
-            metric: MetricPolicySpec(
-                preferred_direction=spec["preferred_direction"],
-                alert_threshold=spec["alert_threshold"],
-                critical_threshold=spec["critical_threshold"],
+        # description. The source row is never touched. When the gate
+        # leaves zero metrics changed, no version is created: a
+        # "(calibrated)" template identical to its source would
+        # mislead, and the cockpit already treats a null
+        # calibrated_template_id as "no new version".
+        calibrated_template_id: str | None = None
+        if not gate_suppresses_version:
+            calibrated_policies = {
+                metric: MetricPolicySpec(
+                    preferred_direction=spec["preferred_direction"],
+                    alert_threshold=spec["alert_threshold"],
+                    critical_threshold=spec["critical_threshold"],
+                )
+                for metric, spec in fitted_policies.items()
+            }
+            calibrated_name = f"{template.name} (calibrated)"[:200]
+            calibrated = await create_variable_template(
+                session,
+                VariableTemplateCreate(
+                    name=calibrated_name,
+                    domain_id=domain_id,
+                    description=(
+                        f"Calibrated from template {template_id} by ridge-to-prior "
+                        f"fit (ridge_strength={request.ridge_strength}, "
+                        f"seed={request.seed}) over {len(contributing_ids)} run(s). "
+                        f"Source description: {template.description}"
+                    )[:2000],
+                    state_fields=list(template.state_fields),
+                    policies=calibrated_policies,
+                    variables=list(template.variables),
+                    formulas=list(template.formulas),
+                    internal=dict(template.internal),
+                ),
+                tenant_id=source_record.tenant_id if source_record is not None else None,
+                preset_id=source_record.preset_id if source_record is not None else None,
             )
-            for metric, spec in fitted_policies.items()
-        }
-        calibrated_name = f"{template.name} (calibrated)"[:200]
-        calibrated = await create_variable_template(
-            session,
-            VariableTemplateCreate(
-                name=calibrated_name,
-                domain_id=domain_id,
-                description=(
-                    f"Calibrated from template {template_id} by ridge-to-prior "
-                    f"fit (ridge_strength={request.ridge_strength}, "
-                    f"seed={request.seed}) over {len(contributing)} run(s). "
-                    f"Source description: {template.description}"
-                )[:2000],
-                state_fields=list(template.state_fields),
-                policies=calibrated_policies,
-                variables=list(template.variables),
-                formulas=list(template.formulas),
-                internal=dict(template.internal),
-            ),
-            tenant_id=source_record.tenant_id if source_record is not None else None,
-            preset_id=source_record.preset_id if source_record is not None else None,
-        )
+            calibrated_template_id = calibrated.id
         record = CalibrationFitRecord(
             id=generate_id(),
             kind="policy_thresholds",
             domain_id=domain_id,
             source_template_id=template_id,
-            calibrated_template_id=calibrated.id,
+            calibrated_template_id=calibrated_template_id,
             metric=None,
             ridge_strength=request.ridge_strength,
             seed=request.seed,
             bootstrap_draws=request.bootstrap_draws,
             level=request.level,
-            source_run_ids=contributing,
-            n_observations=len(contributing),
-            changes={"metrics": changes},
+            source_run_ids=contributing_ids,
+            n_observations=len(contributing_ids),
+            changes={
+                "metrics": changes,
+                "version_created": not gate_suppresses_version,
+                "version_created_reason": version_created_reason,
+                "correlations": correlations,
+                "scenario_children": {
+                    "mode": request.scenario_children,
+                    "excluded_run_ids": excluded_ids,
+                    "observation_weights": {run_id: weights[run_id] for run_id in contributing_ids},
+                },
+            },
             inputs_hash=inputs_hash,
             loo_rmse=None,
             application={},
@@ -435,7 +590,21 @@ class SimulationCalibrationMixin:
                 "Rule-weight calibration needs at least 2 completed runs "
                 f"with a final {request.metric!r} value; found {len(observed)}.",
             )
+        kept_runs, excluded_ids, weights = await _scenario_selection(
+            session, [run for run, _ in observed], request.scenario_children
+        )
+        kept_ids = {run.id for run in kept_runs}
+        observed = [(run, value) for run, value in observed if run.id in kept_ids]
+        if len(observed) < 2:
+            raise CalibrationError(
+                "insufficient_observations",
+                "Rule-weight calibration needs at least 2 completed runs "
+                f"with a final {request.metric!r} value after scenario-children "
+                f"handling (mode {request.scenario_children!r} excluded "
+                f"{len(excluded_ids)} run(s)); found {len(observed)}.",
+            )
         run_ids = [run.id for run, _ in observed]
+        sample_weights = [weights[run_id] for run_id in run_ids]
         result = await session.execute(
             select(DecisionRecordRecord)
             .where(DecisionRecordRecord.run_id.in_(run_ids))
@@ -475,7 +644,40 @@ class SimulationCalibrationMixin:
             bootstrap_draws=request.bootstrap_draws,
             level=request.level,
             min_observations=2,
+            center_target=request.center_target,
+            sample_weights=sample_weights,
         )
+        loo_rmse = fitted["loo_rmse"]
+        prior_only_rmse = fitted["prior_only_rmse"]
+        gate_evaluated = bool(request.quality_gate and loo_rmse is not None)
+        gate_passed = (loo_rmse <= prior_only_rmse) if gate_evaluated else None
+        if gate_passed is False:
+            # Whole-fit gate, house discipline: refuse before any row
+            # is written, with both numbers in the message.
+            raise CalibrationError(
+                "fit_quality_gate_failed",
+                "Rule-weight fit refused by the fit-quality gate: fitted "
+                f"LOO RMSE {loo_rmse:.4f} is worse than the prior-only "
+                f"baseline RMSE {prior_only_rmse:.4f} on the same "
+                f"{len(observed)} observation(s). No fit was recorded; "
+                "re-run with quality_gate=false to record the fit anyway.",
+            )
+        gate_record: dict[str, Any] = {
+            "enabled": request.quality_gate,
+            "evaluated": gate_evaluated,
+            "passed": gate_passed,
+            "fitted_loo_rmse": loo_rmse,
+            "prior_only_rmse": prior_only_rmse,
+            "reason": (
+                None
+                if gate_evaluated
+                else (
+                    "quality_gate_disabled"
+                    if not request.quality_gate
+                    else "loo_undefined_below_3_observations"
+                )
+            ),
+        }
         changes = {
             rule_id: RuleWeightChange(
                 rule_id=rule_id,
@@ -506,6 +708,14 @@ class SimulationCalibrationMixin:
                     "match counts and the target metric, not a causal "
                     "estimate of rule effects."
                 ),
+                "centering": fitted["centering"],
+                "intercept": fitted["intercept"],
+                "quality_gate": gate_record,
+                "scenario_children": {
+                    "mode": request.scenario_children,
+                    "excluded_run_ids": excluded_ids,
+                    "observation_weights": {run_id: weights[run_id] for run_id in run_ids},
+                },
             },
             inputs_hash=sha256_hash(
                 {
@@ -520,9 +730,14 @@ class SimulationCalibrationMixin:
                     "seed": request.seed,
                     "bootstrap_draws": request.bootstrap_draws,
                     "level": request.level,
+                    "center_target": request.center_target,
+                    "scenario_children": request.scenario_children,
+                    "observation_weights": {run_id: weights[run_id] for run_id in run_ids},
+                    "excluded_run_ids": excluded_ids,
+                    "quality_gate": request.quality_gate,
                 }
             ),
-            loo_rmse=fitted["loo_rmse"],
+            loo_rmse=loo_rmse,
             application={},
         )
         session.add(fit_record)
@@ -532,11 +747,16 @@ class SimulationCalibrationMixin:
     async def apply_rule_weights(self, session: AsyncSession, fit_id: str) -> CalibrationFitRead:
         """Apply a stored rule-weight fit to the in-memory registry.
 
-        The fit row is the durable record: the application event
-        (previous weights, applied weights, timestamp) is appended to
-        it. Registry weights are in-memory only — ``reload()`` resets
-        them, and the calibration worker's periodic blend starts from
-        the applied values.
+        The fit row is the durable record of the fit: the application
+        event (previous weights, applied weights, timestamp) is
+        appended to it. Sprint 10 adds the persistent current-weights
+        record: the same application is written as a
+        ``CalibrationWeightApplicationRecord`` in the same transaction,
+        chained to the previous application for the domain. Registry
+        weights are still in-memory only — ``reload()`` resets them,
+        and the calibration worker's periodic blend starts from the
+        applied values — but the durable record now survives a
+        restart and can be explicitly restored.
         """
 
         record = await session.get(CalibrationFitRecord, fit_id)
@@ -553,6 +773,18 @@ class SimulationCalibrationMixin:
         current = self.rule_registry.calibration_weights
         previous = {rule_id: float(current.get(rule_id, 1.0)) for rule_id in fitted}
         applied = self.rule_registry.apply_fitted_weights(fitted)
+        previous_application = await self._latest_weight_application(session, record.domain_id)
+        session.add(
+            CalibrationWeightApplicationRecord(
+                id=generate_id(),
+                domain_id=record.domain_id,
+                fit_id=record.id,
+                weights=dict(applied),
+                previous_weights=dict(previous),
+                supersedes_id=previous_application.id if previous_application is not None else None,
+                applied_at=utc_now(),
+            )
+        )
         application = dict(record.application or {})
         events = list(application.get("events") or [])
         events.append(
@@ -566,6 +798,79 @@ class SimulationCalibrationMixin:
         record.application = application
         await session.commit()
         return _fit_record_to_read(record)
+
+    async def _latest_weight_application(
+        self, session: AsyncSession, domain_id: str
+    ) -> CalibrationWeightApplicationRecord | None:
+        result = await session.execute(
+            select(CalibrationWeightApplicationRecord)
+            .where(CalibrationWeightApplicationRecord.domain_id == domain_id)
+            .order_by(
+                CalibrationWeightApplicationRecord.applied_at.desc(),
+                CalibrationWeightApplicationRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return result.scalars().first()
+
+    async def get_current_weights(
+        self, session: AsyncSession, domain_id: str
+    ) -> PersistedWeightsRead:
+        """The latest persisted rule weights for a domain, if any."""
+
+        if domain_id not in known_domain_ids():
+            raise CalibrationError("unknown_domain", f"Unknown domain_id: {domain_id}")
+        record = await self._latest_weight_application(session, domain_id)
+        if record is None:
+            raise LookupError(f"No persisted rule weights found for domain {domain_id!r}.")
+        return _application_record_to_read(record)
+
+    async def list_weight_applications(
+        self,
+        session: AsyncSession,
+        domain_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[PersistedWeightsRead]:
+        """The append-only application history for a domain, newest first."""
+
+        if domain_id not in known_domain_ids():
+            raise CalibrationError("unknown_domain", f"Unknown domain_id: {domain_id}")
+        result = await session.execute(
+            select(CalibrationWeightApplicationRecord)
+            .where(CalibrationWeightApplicationRecord.domain_id == domain_id)
+            .order_by(
+                CalibrationWeightApplicationRecord.applied_at.desc(),
+                CalibrationWeightApplicationRecord.id.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        return [_application_record_to_read(record) for record in result.scalars().all()]
+
+    async def restore_weights(
+        self, session: AsyncSession, request: RestoreWeightsRequest
+    ) -> PersistedWeightsRead:
+        """Explicitly re-apply the latest persisted weights to the registry.
+
+        Restore is always explicit: nothing restores weights on
+        startup or ``reload()``, so a restart never silently changes
+        registry behavior. Restore writes no row — the application
+        record it re-asserts is already the durable trace — it only
+        changes in-memory registry state, and returns the record that
+        was re-applied so the caller can verify exactly what took
+        effect. The calibration worker's next blend starts from the
+        restored values, as it does after any apply.
+        """
+
+        if request.domain_id not in known_domain_ids():
+            raise CalibrationError("unknown_domain", f"Unknown domain_id: {request.domain_id}")
+        record = await self._latest_weight_application(session, request.domain_id)
+        if record is None:
+            raise LookupError(f"No persisted rule weights found for domain {request.domain_id!r}.")
+        weights = {str(key): float(value) for key, value in dict(record.weights or {}).items()}
+        self.rule_registry.apply_fitted_weights(weights)
+        return _application_record_to_read(record)
 
     async def get_calibration_fit(
         self, session: AsyncSession, fit_id: str

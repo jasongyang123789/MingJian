@@ -14,6 +14,11 @@
 - ``POST /calibration/fits/{fit_id}/apply-rule-weights`` applies a
   rule-weight fit to the in-memory rule registry and records the
   application event on the fit.
+- ``GET /calibration/current-weights`` / ``GET
+  /calibration/weight-applications`` read the persistent
+  current-weights record (Sprint 10); ``POST
+  /calibration/restore-weights`` explicitly re-applies the latest
+  persisted weights to the registry.
 """
 
 from __future__ import annotations
@@ -26,7 +31,9 @@ from planagent.db import get_session
 from planagent.services.calibration.models import (
     CalibrationFitRead,
     FirewallRead,
+    PersistedWeightsRead,
     PolicyFitRequest,
+    RestoreWeightsRequest,
     RuleWeightFitRequest,
 )
 from planagent.services.simulation.calibration import CalibrationError
@@ -130,6 +137,64 @@ async def apply_rule_weights(
     service = get_simulation_service(request)
     try:
         return await service.apply_rule_weights(session, fit_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CalibrationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/calibration/current-weights", response_model=PersistedWeightsRead)
+async def get_current_weights(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    domain_id: str = Query(max_length=64),
+) -> PersistedWeightsRead:
+    service = get_simulation_service(request)
+    try:
+        return await service.get_current_weights(session, domain_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CalibrationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
+@router.get("/calibration/weight-applications", response_model=list[PersistedWeightsRead])
+async def list_weight_applications(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    domain_id: str = Query(max_length=64),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[PersistedWeightsRead]:
+    service = get_simulation_service(request)
+    try:
+        return await service.list_weight_applications(
+            session, domain_id, limit=limit, offset=offset
+        )
+    except CalibrationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
+@router.post("/calibration/restore-weights", response_model=PersistedWeightsRead)
+async def restore_weights(
+    payload: RestoreWeightsRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> PersistedWeightsRead:
+    service = get_simulation_service(request)
+    try:
+        return await service.restore_weights(session, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CalibrationError as exc:
