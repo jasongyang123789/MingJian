@@ -17,15 +17,16 @@ from planagent.services.notification import NotificationService
 from planagent.services.openai_client import OpenAIService
 from planagent.simulation.rules import get_rule_registry
 from planagent.workers.base import Worker
+from planagent.workers.calibration import CalibrationWorker
 from planagent.workers.graph import GraphWorker
 from planagent.workers.ingest import IngestWorker
 from planagent.workers.knowledge import KnowledgeWorker
+from planagent.workers.monitoring import MonitoringWorker
 from planagent.workers.prediction_revision import PredictionRevisionWorker
 from planagent.workers.report import ReportWorker
 from planagent.workers.review import ReviewWorker
 from planagent.workers.simulation import SimulationWorker
 from planagent.workers.strategic_watch import StrategicWatchWorker
-from planagent.workers.calibration import CalibrationWorker
 from planagent.workers.watch_ingest import WatchIngestWorker
 
 _WORKER_PUBLIC_ERROR = "Worker execution failed"
@@ -69,6 +70,11 @@ def build_worker(worker_name: str) -> Worker:
             settings,
             rule_registry,
         ),
+        "monitoring-worker": lambda: MonitoringWorker(
+            settings,
+            event_bus,
+            rule_registry,
+        ),
     }
     try:
         worker = factories[worker_name]()
@@ -103,11 +109,19 @@ def list_workers() -> list[dict[str, object]]:
         WatchIngestWorker.description.to_dict(),
         PredictionRevisionWorker.description.to_dict(),
         CalibrationWorker.description.to_dict(),
+        MonitoringWorker.description.to_dict(),
     ]
 
 
-async def run_worker(worker_name: str, loop: bool, interval_seconds: float) -> None:
+async def run_worker(
+    worker_name: str, loop: bool, interval_seconds: float | None
+) -> None:
     worker = build_worker(worker_name)
+    if interval_seconds is None:
+        # Per-worker default (the monitoring worker reads its
+        # interval from settings); every other worker keeps the
+        # historical 5-second default.
+        interval_seconds = float(getattr(worker, "default_interval_seconds", 5.0))
     event_bus = getattr(worker, "event_bus", None)
     consumer_name = f"{worker_name}-{os.getpid()}"
     try:
@@ -309,8 +323,13 @@ def main() -> None:
     parser.add_argument(
         "--interval-seconds",
         type=float,
-        default=5.0,
-        help="Delay between loop iterations.",
+        default=None,
+        help=(
+            "Delay between loop iterations. When omitted, the "
+            "worker's own default applies (5 seconds, except the "
+            "monitoring worker, which reads "
+            "PLANAGENT_MONITORING_WORKER_INTERVAL_SECONDS)."
+        ),
     )
     args = parser.parse_args()
 

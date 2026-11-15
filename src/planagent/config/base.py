@@ -82,6 +82,13 @@ class BaseAppSettings(BaseSettings):
     default_military_ticks: int = 8
     worker_lease_seconds: int = 60
     worker_max_attempts: int = 3
+    # Monitoring worker (Sprint 11): evaluate-only loop-trigger
+    # checks. One hour is deliberately conservative — monitoring
+    # records trigger state for a later explicit review; it never
+    # acts on what it finds. Override with
+    # PLANAGENT_MONITORING_WORKER_INTERVAL_SECONDS, or per-run
+    # with worker_cli --interval-seconds.
+    monitoring_worker_interval_seconds: int = 3600
     stream_consumer_block_ms: int = 5000
     stream_consumer_count: int = 10
     sql_echo: bool = False

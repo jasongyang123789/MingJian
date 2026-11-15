@@ -352,6 +352,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  worker-monitoring:
+    profiles: ["advanced"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: planagent-worker-monitoring
+    command: python -m planagent.worker_cli monitoring-worker --loop
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PLANAGENT_DATABASE_URL: postgresql+psycopg://planagent:planagent@postgres:5432/planagent
+      PLANAGENT_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:
