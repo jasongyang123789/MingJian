@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { loopIterationOpen, loopRead, loopTimeline } from '../test/engineFixtures'
+import { loopEvaluationFired, loopIterationOpen, loopRead, loopTimeline } from '../test/engineFixtures'
 import LivingLoop from './LivingLoop'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -19,12 +19,25 @@ const RUNS = [
 describe('LivingLoop', () => {
   let loops: unknown[]
   let timeline: unknown
+  let evaluations: unknown[]
+  let cycleResult: unknown
   const posted: { url: string; body: unknown }[] = []
 
   beforeEach(() => {
     vi.restoreAllMocks()
     loops = [loopRead]
     timeline = loopTimeline
+    evaluations = []
+    cycleResult = {
+      cycle_id: 'cycle-9',
+      evaluated_at: '2026-02-05T00:00:00Z',
+      loops_evaluated: 1,
+      loops_skipped: 2,
+      loops_fired: 1,
+      loops_errored: 0,
+      loops: [],
+      errors: [],
+    }
     posted.length = 0
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -36,6 +49,10 @@ describe('LivingLoop', () => {
           loops = [...loops, created]
           return jsonResponse(created, 201)
         }
+        if (url === '/api/loops/monitoring/evaluate') {
+          evaluations = [loopEvaluationFired]
+          return jsonResponse(cycleResult)
+        }
         if (url.endsWith('/iterations')) return jsonResponse(loopIterationOpen, 201)
         if (url.endsWith('/triggers')) return jsonResponse({ id: 'registration-2' }, 201)
         if (url.endsWith('/observations')) return jsonResponse({}, 201)
@@ -43,6 +60,7 @@ describe('LivingLoop', () => {
       }
       if (url === '/api/loops') return jsonResponse(loops)
       if (url === '/api/simulation/runs') return jsonResponse(RUNS)
+      if (url.includes('/evaluations')) return jsonResponse(evaluations)
       if (url === '/api/loops/loop-1/timeline') return jsonResponse(timeline)
       if (url === '/api/loops/loop-2/timeline') {
         return jsonResponse({ loop: { ...loopRead, id: 'loop-2', name: '新循环', triggers: [] }, observations: [], iterations: [] })
@@ -171,5 +189,38 @@ describe('LivingLoop', () => {
     })
     const observation = posted.find((entry) => entry.url === '/api/loops/loop-1/observations')
     expect(observation?.body).toMatchObject({ field: 'cash', value: 88, source_claim_id: null })
+  })
+
+  it('shows the monitoring evaluation history for the selected loop', async () => {
+    evaluations = [loopEvaluationFired]
+    renderPage('/cockpit/loops?loop=loop-1')
+    await waitFor(() => {
+      expect(screen.getByText('监测评估')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('2026-02-05T00:00:00Z')).toBeInTheDocument()
+    })
+    // The fired note appears once in the iteration card and once in
+    // the evaluation history.
+    expect(screen.getAllByText(/Latest observed cash 60 breached threshold 70/)).toHaveLength(2)
+  })
+
+  it('runs one monitoring cycle on demand and shows the result', async () => {
+    renderPage('/cockpit/loops?loop=loop-1')
+    await waitFor(() => {
+      expect(screen.getByText('暂无监测评估')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('运行一次监测（全部循环）'))
+    await waitFor(() => {
+      expect(posted.some((entry) => entry.url === '/api/loops/monitoring/evaluate')).toBe(true)
+    })
+    await waitFor(() => {
+      expect(screen.getByText(/评估 1 个循环/)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/跳过 2 个/)).toBeInTheDocument()
+    expect(screen.getByText(/触发 1 个/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('2026-02-05T00:00:00Z')).toBeInTheDocument()
+    })
   })
 })

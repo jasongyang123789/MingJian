@@ -12,6 +12,7 @@ import type {
   DeterminismRead,
   EnsembleComparison,
   FirewallRead,
+  LoopEvaluationRead,
   LoopIterationRead,
   LoopObservationRead,
   LoopTimelineRead,
@@ -1285,4 +1286,65 @@ export const loopTimeline: LoopTimelineRead = {
   loop: loopRead,
   observations: loopObservations,
   iterations: [loopIterationDecided],
+}
+
+export const loopEvaluationFired: LoopEvaluationRead = {
+  id: 'evaluation-1',
+  loop_id: 'loop-1',
+  cycle_id: 'cycle-1',
+  evaluated_at: '2026-02-05T00:00:00Z',
+  observation_fingerprint: 'sha256:0123456789abcdef',
+  registration_id: 'registration-1',
+  observation_ids: ['obs-1', 'obs-2', 'obs-3'],
+  outcomes: loopIterationDecided.trigger_evaluations,
+  summary: 'fired',
+  error_code: null,
+  error_message: null,
+  created_at: '2026-02-05T00:00:00Z',
+}
+
+export const loopEvaluationError: LoopEvaluationRead = {
+  id: 'evaluation-2',
+  loop_id: 'loop-1',
+  cycle_id: 'cycle-2',
+  evaluated_at: '2026-02-02T00:00:00Z',
+  observation_fingerprint: 'sha256:fedcba9876543210',
+  registration_id: 'registration-1',
+  observation_ids: ['obs-1'],
+  outcomes: [],
+  summary: 'error',
+  error_code: 'loop_trigger_evaluation_failed',
+  error_message: "Deviation trigger 'cash-drift' has no reference value for field 'cash'.",
+  created_at: '2026-02-02T00:00:00Z',
+}
+
+export const loopEvaluationQuiet: LoopEvaluationRead = {
+  id: 'evaluation-3',
+  loop_id: 'loop-1',
+  cycle_id: 'cycle-3',
+  evaluated_at: '2026-02-03T00:00:00Z',
+  observation_fingerprint: 'sha256:abcdef0123456789',
+  registration_id: 'registration-1',
+  observation_ids: ['obs-1'],
+  outcomes: [
+    {
+      name: 'cash-floor',
+      kind: 'threshold',
+      field: 'cash',
+      fired: false,
+      status: 'quiet',
+      observed_value: 95,
+      threshold: 70,
+      tolerance: null,
+      reference_value: null,
+      consecutive_breaches: null,
+      observation_ids: ['obs-1'],
+      observed_values: [95],
+      note: 'Latest observed cash 95 did not breach threshold 70.',
+    },
+  ],
+  summary: 'quiet',
+  error_code: null,
+  error_message: null,
+  created_at: '2026-02-03T00:00:00Z',
 }

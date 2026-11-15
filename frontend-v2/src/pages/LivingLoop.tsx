@@ -1,18 +1,22 @@
 // Living-strategy loop page: loop list + creation, and the timeline
 // for the selected loop (trigger registrations, observations,
-// iterations with their explicit actions). Every loop action is an
-// explicit request — evaluation, re-simulation, comparison, and
-// decisions never run on their own — and every refusal surfaces the
-// backend's structured error code.
+// monitoring evaluations, iterations with their explicit actions).
+// Review actions — opening a review, re-simulation, comparison,
+// decisions — are always explicit requests. Monitoring evaluations
+// run on the worker's schedule and only record trigger state (they
+// never create runs or advance reviews); one cycle can also be run
+// on demand from this page. Every refusal surfaces the backend's
+// structured error code.
 
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { simulationApi } from '../api/endpoints'
 import { loopsApi, parseApiError } from '../api/engine'
-import type { LoopTriggerDefinition } from '../api/engineTypes'
+import type { LoopTriggerDefinition, MonitoringCycleResult } from '../api/engineTypes'
 import { CockpitNav } from '../components/cockpit/CockpitNav'
 import {
+  EvaluationHistory,
   IterationCard,
   ObservationForm,
   ObservationList,
@@ -91,6 +95,9 @@ export default function LivingLoop() {
   const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [registerError, setRegisterError] = useState<string | null>(null)
+  const [cycleBusy, setCycleBusy] = useState(false)
+  const [cycleError, setCycleError] = useState<string | null>(null)
+  const [cycleResult, setCycleResult] = useState<MonitoringCycleResult | null>(null)
 
   const { data: runs } = useApi(() => simulationApi.listRuns())
   const {
@@ -106,6 +113,15 @@ export default function LivingLoop() {
     reload: reloadTimeline,
   } = useApi(
     () => (selectedLoopId ? loopsApi.getTimeline(selectedLoopId) : Promise.resolve(null)),
+    selectedLoopId,
+  )
+  const {
+    data: evaluations,
+    loading: evaluationsLoading,
+    error: evaluationsError,
+    reload: reloadEvaluations,
+  } = useApi(
+    () => (selectedLoopId ? loopsApi.listEvaluations(selectedLoopId) : Promise.resolve(null)),
     selectedLoopId,
   )
 
@@ -150,6 +166,21 @@ export default function LivingLoop() {
     } catch (caught: unknown) {
       const info = parseApiError(caught)
       setRegisterError(info.code ? `${info.code}：${info.message}` : info.message)
+    }
+  }
+
+  async function runMonitoringCycle() {
+    setCycleError(null)
+    setCycleBusy(true)
+    try {
+      const result = await loopsApi.runMonitoringCycle()
+      setCycleResult(result)
+      reloadEvaluations()
+    } catch (caught: unknown) {
+      const info = parseApiError(caught)
+      setCycleError(info.code ? `${info.code}：${info.message}` : info.message)
+    } finally {
+      setCycleBusy(false)
     }
   }
 
@@ -309,6 +340,38 @@ export default function LivingLoop() {
                   <h4 className="mb-2 text-sm font-medium text-slate-200">记录观测</h4>
                   <ObservationForm loopId={timeline.loop.id} onRecorded={reloadTimeline} />
                 </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="监测评估" />
+            <CardBody>
+              <div className="space-y-4">
+                <p className="text-xs text-slate-500">
+                  监测 worker 定期评估该循环的触发器并记录结果；评估只记录触发状态，不创建 Run、不推进评审。输入无变化时不会产生重复记录。
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={cycleBusy}
+                    onClick={runMonitoringCycle}
+                    className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3.5 py-1.5 text-sm text-blue-300 transition-colors hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:text-slate-600"
+                  >
+                    {cycleBusy ? '运行中…' : '运行一次监测（全部循环）'}
+                  </button>
+                  {cycleResult && (
+                    <p className="text-xs text-slate-400">
+                      本次运行：评估 {cycleResult.loops_evaluated} 个循环，跳过{' '}
+                      {cycleResult.loops_skipped} 个（无变化），触发 {cycleResult.loops_fired} 个，出错{' '}
+                      {cycleResult.loops_errored} 个。
+                    </p>
+                  )}
+                </div>
+                {cycleError && <ErrorBanner message={cycleError} />}
+                {evaluationsLoading && <LoadingSpinner />}
+                {evaluationsError && <ErrorBanner message={evaluationsError} onRetry={reloadEvaluations} />}
+                {evaluations && <EvaluationHistory evaluations={evaluations} />}
               </div>
             </CardBody>
           </Card>

@@ -11,6 +11,7 @@ import { distributionsApi, loopsApi, nullOn404, parseApiError } from '../../api/
 import type {
   EnsembleComparison,
   GateMetric,
+  LoopEvaluationRead,
   LoopIterationRead,
   LoopObservationRead,
   LoopTriggerDefinition,
@@ -156,6 +157,57 @@ export function TriggerOutcomes({ outcomes }: { outcomes: TriggerEvaluationOutco
               {outcome.consecutive_breaches !== null &&
                 ` · 连续偏离 ${outcome.consecutive_breaches} 次`}
             </p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+const EVALUATION_BADGE: Record<string, string> = {
+  ...OUTCOME_BADGE,
+  error: 'bg-red-500/20 text-red-300 border-red-500/30',
+}
+
+const EVALUATION_LABELS: Record<string, string> = {
+  ...OUTCOME_LABELS,
+  error: '评估失败',
+}
+
+export function EvaluationHistory({ evaluations }: { evaluations: LoopEvaluationRead[] }) {
+  if (evaluations.length === 0) {
+    return (
+      <EmptyState
+        title="暂无监测评估"
+        description="监测 worker 定期评估触发器并记录结果；也可以手动运行一次监测。评估只记录触发状态，不创建 Run、不推进评审。"
+      />
+    )
+  }
+  return (
+    <div className="space-y-3">
+      {evaluations.map((evaluation) => (
+        <div key={evaluation.id} className="rounded-lg border border-slate-700/50 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${EVALUATION_BADGE[evaluation.summary]}`}
+            >
+              {EVALUATION_LABELS[evaluation.summary]}
+            </span>
+            <span className="font-mono text-xs text-slate-400">{evaluation.evaluated_at}</span>
+            <span className="text-xs text-slate-500">
+              {evaluation.observation_ids.length} 条观测 · 指纹 {formatHash(evaluation.observation_fingerprint)}
+            </span>
+          </div>
+          {evaluation.summary === 'error' && (
+            <p className="mt-1 text-sm text-red-300">
+              {evaluation.error_code}
+              {evaluation.error_message ? `：${evaluation.error_message}` : ''}
+            </p>
+          )}
+          {evaluation.outcomes.length > 0 && (
+            <div className="mt-2">
+              <TriggerOutcomes outcomes={evaluation.outcomes} />
+            </div>
           )}
         </div>
       ))}

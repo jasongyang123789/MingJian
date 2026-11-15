@@ -1136,3 +1136,38 @@ export interface LoopTimelineRead {
   observations: LoopObservationRead[]
   iterations: LoopIterationRead[]
 }
+
+export type LoopEvaluationSummary = 'fired' | 'quiet' | 'no_data' | 'error'
+
+export interface LoopEvaluationRead {
+  id: string
+  loop_id: string
+  cycle_id: string
+  evaluated_at: string
+  observation_fingerprint: string
+  registration_id: string | null
+  observation_ids: string[]
+  outcomes: TriggerEvaluationOutcome[]
+  summary: LoopEvaluationSummary
+  error_code: string | null
+  error_message: string | null
+  created_at: string
+}
+
+export interface MonitoringCycleLoopResult {
+  loop_id: string
+  result: 'evaluated' | 'skipped_unchanged'
+  evaluation_id: string
+  summary: LoopEvaluationSummary
+}
+
+export interface MonitoringCycleResult {
+  cycle_id: string
+  evaluated_at: string
+  loops_evaluated: number
+  loops_skipped: number
+  loops_fired: number
+  loops_errored: number
+  loops: MonitoringCycleLoopResult[]
+  errors: string[]
+}

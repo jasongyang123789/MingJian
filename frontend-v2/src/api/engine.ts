@@ -16,6 +16,7 @@ import type {
   GateRegistration,
   GateRegistrationRequest,
   LoopIterationRead,
+  LoopEvaluationRead,
   LoopObservationCreate,
   LoopObservationRead,
   LoopTimelineRead,
@@ -23,6 +24,7 @@ import type {
   MeceProposeRequest,
   MeceRunRead,
   MeceValidationResult,
+  MonitoringCycleResult,
   MonteCarloRequest,
   MonteCarloResult,
   MonteCarloTrialValues,
@@ -312,6 +314,16 @@ export const loopsApi = {
       `/loops/${encodeURIComponent(loopId)}/iterations/${encodeURIComponent(iterationId)}/decide`,
       payload,
     ),
+  listEvaluations: (loopId: string, params?: { limit?: number; offset?: number }) => {
+    const search = new URLSearchParams()
+    if (params?.limit !== undefined) search.set('limit', String(params.limit))
+    if (params?.offset !== undefined) search.set('offset', String(params.offset))
+    const query = search.toString()
+    return api.get<LoopEvaluationRead[]>(
+      `/loops/${encodeURIComponent(loopId)}/evaluations${query ? `?${query}` : ''}`,
+    )
+  },
+  runMonitoringCycle: () => api.post<MonitoringCycleResult>('/loops/monitoring/evaluate'),
 }
 
 // ==================== Sprint 6 — 技能 deliberation ====================

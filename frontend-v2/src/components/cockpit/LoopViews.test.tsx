@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   loopComparison,
+  loopEvaluationError,
+  loopEvaluationFired,
+  loopEvaluationQuiet,
   loopIterationDecided,
   loopIterationEvaluated,
   loopIterationOpen,
@@ -13,6 +16,7 @@ import {
 } from '../../test/engineFixtures'
 import {
   ComparisonView,
+  EvaluationHistory,
   IterationCard,
   ObservationList,
   ResimulationView,
@@ -119,6 +123,36 @@ describe('TriggerOutcomes', () => {
     )
     expect(screen.getByText('未触发')).toBeInTheDocument()
     expect(screen.getByText('无数据')).toBeInTheDocument()
+  })
+})
+
+describe('EvaluationHistory', () => {
+  it('shows the empty state when no evaluation has been recorded', () => {
+    render(<EvaluationHistory evaluations={[]} />)
+    expect(screen.getByText('暂无监测评估')).toBeInTheDocument()
+    expect(screen.getByText(/评估只记录触发状态/)).toBeInTheDocument()
+  })
+
+  it('shows a fired evaluation with its trigger outcomes', () => {
+    render(<EvaluationHistory evaluations={[loopEvaluationFired]} />)
+    expect(screen.getAllByText('已触发')).toHaveLength(4)
+    expect(screen.getByText('2026-02-05T00:00:00Z')).toBeInTheDocument()
+    expect(screen.getByText(/指纹 sha256:01234…abcdef/)).toBeInTheDocument()
+    expect(screen.getByText(/Latest observed cash 60 breached threshold 70/)).toBeInTheDocument()
+    expect(screen.getByText(/连续偏离 2 次/)).toBeInTheDocument()
+  })
+
+  it('shows a quiet evaluation distinctly', () => {
+    render(<EvaluationHistory evaluations={[loopEvaluationQuiet]} />)
+    expect(screen.getAllByText('未触发')).toHaveLength(2)
+    expect(screen.getByText(/指纹 sha256:abcde…456789/)).toBeInTheDocument()
+  })
+
+  it('shows an error evaluation with its code and message', () => {
+    render(<EvaluationHistory evaluations={[loopEvaluationError]} />)
+    expect(screen.getByText('评估失败')).toBeInTheDocument()
+    expect(screen.getByText(/loop_trigger_evaluation_failed/)).toBeInTheDocument()
+    expect(screen.getByText(/has no reference value for field 'cash'/)).toBeInTheDocument()
   })
 })
 
