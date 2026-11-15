@@ -192,14 +192,40 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   output, template deletion, ensemble/analysis launch buttons,
   monitoring worker / scheduled evaluation.
 
+## Sprint 11 — monitoring worker, evaluate + record only (done)
+
+- Delivered on `strategy-engine/sprint11-monitoring-worker`
+  (see SPRINT11.md): the SPRINT9.md §10 worker, authorized by Ho
+  2026-11-15 — one monitoring cycle evaluates every loop's active
+  trigger registration against all recorded observations and
+  records the outcome in a new `loop_evaluations` table (migration
+  0034). Fingerprint dedup (canonical SHA-256 of observation ids +
+  registration + triggers) means unchanged inputs write no new
+  row; failed evaluations are recorded as error rows, and one
+  loop's failure never aborts the cycle. The automation boundary
+  holds by construction: the cycle's only writes are evaluation
+  rows — no runs, no iterations, no state transitions. Endpoints
+  `POST /loops/monitoring/evaluate` (one cycle on demand) and
+  `GET /loops/{loop_id}/evaluations` (history, newest first);
+  worker registered in `worker_cli` (11th worker) with a
+  conservative 1-hour default interval
+  (`PLANAGENT_MONITORING_WORKER_INTERVAL_SECONDS`) and a compose
+  service (`advanced` profile, following the calibration worker).
+  Cockpit shows the evaluation history plus a run-once button.
+  Backend 1163 → 1192 tests (29 new), frontend
+  163 → 169, Sprint 0 smoke re-run PASS, mypy/ruff clean. No
+  alerting on fired triggers (recorded + shown, nothing pushes);
+  Docker stack and live backend integration remain UNVERIFIED.
+- NOT built (deferred, not done): decision-direction narrative
+  output, template deletion, ensemble/analysis launch buttons,
+  alerting on fired triggers, event-driven evaluation,
+  retention policy for evaluation rows.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
   (Sprint 6 central open item: live deliberation quality unverified;
   Sprint 7 adds live backend integration as unverified).
-- Monitoring worker / scheduled evaluation for the living loop
-  (evaluate + record only, never silent re-simulation — see
-  SPRINT9.md §10).
 - Docker Compose stack verification on a machine with a container
   runtime; GitHub-side fork (needs Ho's account).
 
