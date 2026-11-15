@@ -1171,3 +1171,196 @@ export interface MonitoringCycleResult {
   loops: MonitoringCycleLoopResult[]
   errors: string[]
 }
+
+
+// ---------------------------------------------------------------------------
+// Sprint 13 — decision-direction narratives
+// ---------------------------------------------------------------------------
+
+export type NarrativeProvenance = 'computed' | 'deliberated' | 'template'
+
+export interface NarrativeDirectionDefinition {
+  name: string
+  source_run_id: string
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+  deliberation_id: string | null
+}
+
+export interface NarrativeGenerateRequest {
+  topic: string | null
+  directions: NarrativeDirectionDefinition[]
+  loop_id: string | null
+}
+
+export interface NarrativeDistributionSection {
+  provenance: 'computed'
+  run_id: string
+  ensemble_id: string
+  metric: string
+  loss_threshold: number
+  trials: number
+  seed: number
+  arm: 'baseline' | 'strategy'
+  n: number
+  mean: number
+  min: number
+  max: number
+  p10: number
+  p50: number
+  p90: number
+  stddev: number
+  p_loss: number
+  expected_shortfall: Record<string, unknown> | null
+  bootstrap_intervals: Record<string, unknown>[]
+  trial_values_hash: string | null
+}
+
+export interface NarrativeDriverRow {
+  variable: string
+  low_value: number
+  high_value: number
+  outcome_low: number
+  outcome_high: number
+  swing: number
+}
+
+export interface NarrativeDriversSection {
+  provenance: 'computed'
+  rows: NarrativeDriverRow[]
+  ensemble_id: string | null
+  note: string | null
+}
+
+export interface NarrativeTripwireSignal {
+  kind: 'decision_gate' | 'threshold_search' | 'loop_trigger' | 'advisory_contract' | 'wargame_playbook'
+  provenance: NarrativeProvenance
+  text: string
+  source_ids: Record<string, string>
+  name: string | null
+  metric: string | null
+  operator: string | null
+  threshold: number | null
+  observed: number | null
+  passed: boolean | null
+}
+
+export interface NarrativeFailureModeQuote {
+  mode: string
+  cause: string
+  early_signal: string
+  prevention: string
+}
+
+export interface NarrativePremortemSection {
+  provenance: 'deliberated' | 'template'
+  deliberation_id: string | null
+  template_id: string | null
+  failure_narrative: string | null
+  failure_modes: NarrativeFailureModeQuote[]
+  fatal_flags: string[]
+  note: string | null
+}
+
+export interface NarrativeFirstStepSection {
+  provenance: 'deliberated' | 'template'
+  deliberation_id: string | null
+  template_id: string | null
+  next_action: string | null
+  cheapest_validation_test: string | null
+  conditions: string[]
+  note: string | null
+}
+
+export interface NarrativeMeceBranchTrace {
+  name: string
+  scope: string[]
+}
+
+export interface NarrativeMeceTrace {
+  provenance: 'computed'
+  branches: NarrativeMeceBranchTrace[]
+  tree_topic: string
+}
+
+export interface NarrativeDirection {
+  rank: number
+  name: string
+  source_run_id: string
+  arm: 'baseline' | 'strategy'
+  distribution: NarrativeDistributionSection
+  drivers: NarrativeDriversSection
+  signals: NarrativeTripwireSignal[]
+  signals_note: string | null
+  premortem: NarrativePremortemSection
+  first_step: NarrativeFirstStepSection
+  mece_trace: NarrativeMeceTrace | null
+  mece_note: string | null
+}
+
+export interface NarrativeMeceContext {
+  provenance: 'computed'
+  topic: string
+  is_mece: boolean
+  branch_count: number
+  scope_tag_count: number
+  issue_count: number
+}
+
+export interface NarrativeCalibrationContextEntry {
+  fit_id: string
+  kind: string
+  loo_rmse: number | null
+  inputs_hash: string
+  calibrated_template_id: string | null
+  n_observations: number
+  created_at: string
+}
+
+export interface NarrativeLoopContext {
+  provenance: 'computed'
+  loop_id: string
+  loop_name: string
+  registration_id: string | null
+  trigger_count: number
+}
+
+export interface NarrativeBody {
+  protocol: string
+  anchor_run_id: string
+  domain_id: string
+  topic: string
+  topic_source: 'request' | 'mece_tree' | 'run_id'
+  mece: NarrativeMeceContext | null
+  calibration_context: NarrativeCalibrationContextEntry[]
+  loop_context: NarrativeLoopContext | null
+  directions: NarrativeDirection[]
+  markdown: string
+}
+
+export interface NarrativePolishRead {
+  id: string
+  narrative_id: string
+  model: string | null
+  template_id: string
+  template_version: string
+  polished_markdown: string
+  created_at: string
+}
+
+export interface DecisionNarrativeRead {
+  id: string
+  run_id: string
+  version: number
+  topic: string
+  inputs_hash: string
+  content_hash: string
+  created_at: string
+  body: NarrativeBody
+  polish: NarrativePolishRead | null
+}
+
+export interface DecisionNarrativeListRead {
+  run_id: string
+  narratives: DecisionNarrativeRead[]
+}

@@ -7,6 +7,7 @@ const TABS = [
   { label: '变量模板', path: '/cockpit/variable-templates' },
   { label: '分布图表', path: '/cockpit/charts' },
   { label: '活战略循环', path: '/cockpit/loops' },
+  { label: '决策方向', path: '/cockpit/directions' },
   { label: '模板出处', path: '/cockpit/templates' },
 ]
 

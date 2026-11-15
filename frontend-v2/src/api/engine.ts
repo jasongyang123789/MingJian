@@ -6,6 +6,8 @@ import type {
   CalibrationFitRead,
   DecideRequest,
   DecisionGatesRead,
+  DecisionNarrativeListRead,
+  DecisionNarrativeRead,
   DecompositionTree,
   DeterminismRead,
   ExpectedShortfallRequest,
@@ -26,6 +28,8 @@ import type {
   MeceValidationResult,
   MonitoringCycleResult,
   MonteCarloRequest,
+  NarrativeGenerateRequest,
+  NarrativePolishRead,
   MonteCarloResult,
   MonteCarloTrialValues,
   PolicyFitRequest,
@@ -344,4 +348,24 @@ export const skillsApi = {
     api.get<SkillDeliberationListRead>(`/runs/${encodeURIComponent(runId)}/skills/deliberations`),
   proposeMece: (payload: MeceProposeRequest) =>
     api.post<MeceProposalRead>('/mece/propose', payload),
+}
+
+
+// ==================== Sprint 13 — 决策方向简报 ====================
+export const narrativesApi = {
+  generate: (runId: string, payload: NarrativeGenerateRequest) =>
+    api.post<DecisionNarrativeRead>(
+      `/runs/${encodeURIComponent(runId)}/narratives`,
+      payload,
+    ),
+  list: (runId: string) =>
+    api.get<DecisionNarrativeListRead>(`/runs/${encodeURIComponent(runId)}/narratives`),
+  get: (runId: string, narrativeId: string) =>
+    api.get<DecisionNarrativeRead>(
+      `/runs/${encodeURIComponent(runId)}/narratives/${encodeURIComponent(narrativeId)}`,
+    ),
+  polish: (runId: string, narrativeId: string) =>
+    api.post<NarrativePolishRead>(
+      `/runs/${encodeURIComponent(runId)}/narratives/${encodeURIComponent(narrativeId)}/polish`,
+    ),
 }

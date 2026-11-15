@@ -9,6 +9,7 @@ import type {
   AdvisoryBoardResult,
   CalibrationFitRead,
   DecisionGatesRead,
+  DecisionNarrativeRead,
   DeterminismRead,
   EnsembleComparison,
   FirewallRead,
@@ -1347,4 +1348,160 @@ export const loopEvaluationQuiet: LoopEvaluationRead = {
   error_code: null,
   error_message: null,
   created_at: '2026-02-03T00:00:00Z',
+}
+
+
+// ---------------------------------------------------------------------------
+// Sprint 13 — decision-direction narrative
+// ---------------------------------------------------------------------------
+
+export const narrativeRead: DecisionNarrativeRead = {
+  id: 'narrative-1',
+  run_id: 'run-anchor',
+  version: 2,
+  topic: 'Launch decision',
+  inputs_hash: 'sha256:inputs0000000000000000000000000000000000000000000000000000',
+  content_hash: 'sha256:content000000000000000000000000000000000000000000000000000',
+  created_at: '2026-11-15T10:00:00Z',
+  body: {
+    protocol: 'sprint13-v1',
+    anchor_run_id: 'run-anchor',
+    domain_id: 'corporate',
+    topic: 'Launch decision',
+    topic_source: 'request',
+    mece: {
+      provenance: 'computed',
+      topic: 'Should we launch?',
+      is_mece: true,
+      branch_count: 3,
+      scope_tag_count: 2,
+      issue_count: 0,
+    },
+    calibration_context: [
+      {
+        fit_id: 'fit-1',
+        kind: 'policy',
+        loo_rmse: 11.5,
+        inputs_hash: 'sha256:fit',
+        calibrated_template_id: 'tpl-2',
+        n_observations: 8,
+        created_at: '2026-11-14T00:00:00Z',
+      },
+    ],
+    loop_context: {
+      provenance: 'computed',
+      loop_id: 'loop-1',
+      loop_name: 'Watch',
+      registration_id: 'trig-reg-1',
+      trigger_count: 1,
+    },
+    directions: [
+      {
+        rank: 1,
+        name: 'Go all in',
+        source_run_id: 'run-anchor',
+        arm: 'baseline',
+        distribution: {
+          provenance: 'computed',
+          run_id: 'run-anchor',
+          ensemble_id: 'ens-1',
+          metric: 'cash',
+          loss_threshold: 0,
+          trials: 20,
+          seed: 42,
+          arm: 'baseline',
+          n: 20,
+          mean: 10,
+          min: 0,
+          max: 20,
+          p10: 2,
+          p50: 10,
+          p90: 18,
+          stddev: 5,
+          p_loss: 0.2,
+          expected_shortfall: { value: -3, threshold: -2, tail_count: 1, n: 20, alpha: 0.05, tail: 'lower' },
+          bootstrap_intervals: [
+            { statistic: 'p50', estimate: 10, low: 8, high: 12, draws: 200, seed: 7, level: 0.9, method: 'percentile' },
+          ],
+          trial_values_hash: 'sha256:trials',
+        },
+        drivers: {
+          provenance: 'computed',
+          rows: [
+            { variable: 'demand', low_value: 0, high_value: 1, outcome_low: 0, outcome_high: 20, swing: 20 },
+          ],
+          ensemble_id: 'ens-1',
+          note: null,
+        },
+        signals: [
+          {
+            kind: 'decision_gate',
+            provenance: 'computed',
+            text: 'Gate floor: p50 >= 5 (observed 10, passed)',
+            source_ids: { gate_evaluation_id: 'eval-1' },
+            name: 'floor',
+            metric: 'p50',
+            operator: '>=',
+            threshold: 5,
+            observed: 10,
+            passed: true,
+          },
+          {
+            kind: 'loop_trigger',
+            provenance: 'computed',
+            text: 'Loop trigger cash-floor: cash < 70',
+            source_ids: { loop_id: 'loop-1' },
+            name: 'cash-floor',
+            metric: null,
+            operator: null,
+            threshold: null,
+            observed: null,
+            passed: null,
+          },
+        ],
+        signals_note: null,
+        premortem: {
+          provenance: 'deliberated',
+          deliberation_id: 'delib-strategy-1',
+          template_id: 'gambit.premortem',
+          failure_narrative: 'The launch failed in month three.',
+          failure_modes: [
+            { mode: 'Support overload', cause: 'Ticket volume tripled', early_signal: 'Queue depth rising', prevention: 'Hire ahead' },
+          ],
+          fatal_flags: ['No fallback vendor'],
+          note: null,
+        },
+        first_step: {
+          provenance: 'template',
+          deliberation_id: null,
+          template_id: null,
+          next_action: null,
+          cheapest_validation_test: null,
+          conditions: [],
+          note: 'No advisory-board deliberation is recorded for this direction.',
+        },
+        mece_trace: {
+          provenance: 'computed',
+          branches: [{ name: 'Demand', scope: ['demand'] }],
+          tree_topic: 'Should we launch?',
+        },
+        mece_note: null,
+      },
+    ],
+    markdown: '# 决策方向简报：Launch decision\n\n方向 1：Go all in',
+  },
+  polish: null,
+}
+
+export const narrativeReadPolished: DecisionNarrativeRead = {
+  ...narrativeRead,
+  polish: {
+    id: 'polish-1',
+    narrative_id: 'narrative-1',
+    model: 'fixture-model',
+    template_id: 'narrative.polish',
+    template_version: '1',
+    polished_markdown: '# Polished launch brief',
+    created_at: '2026-11-15T11:00:00Z',
+  },
 }

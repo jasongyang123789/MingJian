@@ -15,6 +15,7 @@ import Monitoring from './pages/Monitoring'
 import Cockpit from './pages/Cockpit'
 import Charts from './pages/Charts'
 import Deliberation from './pages/Deliberation'
+import Directions from './pages/Directions'
 import LivingLoop from './pages/LivingLoop'
 import MeceAuthoring from './pages/MeceAuthoring'
 import TemplateProvenance from './pages/TemplateProvenance'
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/cockpit/variable-templates" element={<VariableTemplates />} />
             <Route path="/cockpit/charts" element={<Charts />} />
             <Route path="/cockpit/loops" element={<LivingLoop />} />
+            <Route path="/cockpit/directions" element={<Directions />} />
             <Route path="/cockpit/templates" element={<TemplateProvenance />} />
           </Route>
         </Routes>
