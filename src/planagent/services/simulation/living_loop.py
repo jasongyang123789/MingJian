@@ -748,9 +748,7 @@ class SimulationLivingLoopMixin:
         errors: list[str] = []
         for loop in loops:
             try:
-                results.append(
-                    await self._evaluate_loop_for_monitoring(session, loop, cycle, now)
-                )
+                results.append(await self._evaluate_loop_for_monitoring(session, loop, cycle, now))
             except Exception:
                 _logger.exception("Monitoring evaluation failed: loop_id=%s", loop.id)
                 errors.append(public_worker_error("loop", loop.id))
@@ -821,8 +819,7 @@ class SimulationLivingLoopMixin:
             registration = None
             registration_error = (
                 "loop_corrupt_registration",
-                f"Loop {loop.id} carries trigger registrations that fail "
-                f"validation: {exc}.",
+                (f"Loop {loop.id} carries trigger registrations that fail validation: {exc}."),
             )
             triggers_payload: Any = loop.triggers or []
         else:
@@ -841,9 +838,7 @@ class SimulationLivingLoopMixin:
             await session.scalars(
                 select(LoopEvaluationRecord)
                 .where(LoopEvaluationRecord.loop_id == loop.id)
-                .order_by(
-                    LoopEvaluationRecord.created_at.desc(), LoopEvaluationRecord.id.desc()
-                )
+                .order_by(LoopEvaluationRecord.created_at.desc(), LoopEvaluationRecord.id.desc())
                 .limit(1)
             )
         ).first()
@@ -869,8 +864,7 @@ class SimulationLivingLoopMixin:
             if baseline is None:
                 error_code = "loop_baseline_missing"
                 error_message = (
-                    f"Baseline run {loop.baseline_run_id} was not found "
-                    f"for loop {loop.id}."
+                    f"Baseline run {loop.baseline_run_id} was not found for loop {loop.id}."
                 )
                 summary = "error"
             else:

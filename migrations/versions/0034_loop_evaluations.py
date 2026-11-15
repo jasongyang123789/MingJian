@@ -40,9 +40,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_loop_evaluations_loop_id", "loop_evaluations", ["loop_id"])
     op.create_index("ix_loop_evaluations_cycle_id", "loop_evaluations", ["cycle_id"])
-    op.create_index(
-        "ix_loop_evaluations_registration_id", "loop_evaluations", ["registration_id"]
-    )
+    op.create_index("ix_loop_evaluations_registration_id", "loop_evaluations", ["registration_id"])
     op.create_index("ix_loop_evaluations_summary", "loop_evaluations", ["summary"])
 
 

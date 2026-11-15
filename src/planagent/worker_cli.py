@@ -10,10 +10,8 @@ import planagent.simulation  # noqa: F401
 from planagent.config import get_settings
 from planagent.db import get_database
 from planagent.domain.models import DeadLetterEvent
-from planagent.events.bus import ConsumedEvent
-from planagent.events.bus import build_event_bus
-from planagent.services.notification import NotificationConfig
-from planagent.services.notification import NotificationService
+from planagent.events.bus import ConsumedEvent, build_event_bus
+from planagent.services.notification import NotificationConfig, NotificationService
 from planagent.services.openai_client import OpenAIService
 from planagent.simulation.rules import get_rule_registry
 from planagent.workers.base import Worker
@@ -113,9 +111,7 @@ def list_workers() -> list[dict[str, object]]:
     ]
 
 
-async def run_worker(
-    worker_name: str, loop: bool, interval_seconds: float | None
-) -> None:
+async def run_worker(worker_name: str, loop: bool, interval_seconds: float | None) -> None:
     worker = build_worker(worker_name)
     if interval_seconds is None:
         # Per-worker default (the monitoring worker reads its

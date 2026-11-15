@@ -34,9 +34,7 @@ def _registration(registration_id: str, status: str) -> TriggerRegistration:
     return TriggerRegistration(
         id=registration_id,
         loop_id="loop-1",
-        triggers=[
-            ThresholdTrigger(name="floor", field="cash", operator="<", threshold=70.0)
-        ],
+        triggers=[ThresholdTrigger(name="floor", field="cash", operator="<", threshold=70.0)],
         registered_at="2026-01-01T00:00:00Z",
         observation_count_at_registration=0,
         status=status,  # type: ignore[arg-type]

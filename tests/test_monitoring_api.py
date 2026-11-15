@@ -19,7 +19,7 @@ tests verify the monitoring machinery, not a forecast.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -586,7 +586,7 @@ def test_cycle_accepts_pinned_cycle_id_and_time(monkeypatch, tmp_path) -> None:
                 result = await service.run_monitoring_cycle(
                     session,
                     cycle_id="cycle-pinned",
-                    evaluated_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+                    evaluated_at=datetime(2026, 3, 1, tzinfo=UTC),
                 )
             return result.model_dump(mode="json")
 
