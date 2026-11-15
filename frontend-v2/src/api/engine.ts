@@ -181,10 +181,10 @@ export const meceApi = {
 
 // ==================== Sprint 2 — 变量表 ====================
 //
-// No delete client: template deletion returns 204 with no body, and the
-// shared `api` transport always parses a JSON body. No Sprint 7 view
-// deletes templates; adding a 204-safe path belongs to a template
-// editing sprint, not to this read-focused cockpit.
+// Template deletion returns 204 with no body; it goes through the
+// 204-safe `api.deleteNoContent` path (Sprint 12), never through the
+// JSON-parsing `api.delete`. The backend refuses built-in templates
+// with 400 and unknown ids with 404 — both surface via parseApiError.
 export const variablesApi = {
   validate: (variableSet: VariableSet) =>
     api.post<VariableValidationResult>('/variables/validate', variableSet),
@@ -198,6 +198,8 @@ export const variablesApi = {
     api.post<VariableTemplateRead>('/variable-templates', payload),
   updateTemplate: (templateId: string, payload: VariableTemplateUpdate) =>
     api.put<VariableTemplateRead>(`/variable-templates/${encodeURIComponent(templateId)}`, payload),
+  deleteTemplate: (templateId: string) =>
+    api.deleteNoContent(`/variable-templates/${encodeURIComponent(templateId)}`),
   getForRun: (runId: string) =>
     api.get<VariableRunRead>(`/runs/${encodeURIComponent(runId)}/variables`),
 }

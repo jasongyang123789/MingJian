@@ -152,6 +152,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+// Sprint 12: some endpoints answer 204 with no body (template
+// deletion). `request` always parses JSON, which rejects on an empty
+// body, so no-content calls go through `requestResponse` directly and
+// never touch the body. Auth refresh, timeout, and error handling are
+// shared — only the body parse is skipped.
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  await requestResponse(path, init)
+}
+
 function filenameFromDisposition(disposition: string | null, fallback: string) {
   if (!disposition) return fallback
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
@@ -209,5 +218,8 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  // DELETE endpoints that answer 204 with no body (template deletion).
+  // Never parses a response body; errors still throw ApiError.
+  deleteNoContent: (path: string) => requestNoContent(path, { method: 'DELETE' }),
   download,
 }

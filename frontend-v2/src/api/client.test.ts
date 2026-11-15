@@ -41,3 +41,31 @@ describe('API authentication transport', () => {
     window.removeEventListener('mingjian:auth-expired', expiredListener)
   })
 })
+
+describe('API no-content transport', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves void on a 204 with no body, without parsing JSON', async () => {
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+
+    await expect(api.deleteNoContent('/variable-templates/t1')).resolves.toBeUndefined()
+
+    const call = fetchMock.mock.calls.at(-1)
+    expect(String(call?.[0])).toBe('/api/variable-templates/t1')
+    expect(call?.[1]?.method).toBe('DELETE')
+  })
+
+  it('propagates API errors with their status instead of resolving', async () => {
+    vi.spyOn(window, 'fetch').mockResolvedValue(
+      jsonResponse({ detail: 'Variable template t1 was not found.' }, 404),
+    )
+
+    await expect(api.deleteNoContent('/variable-templates/t1')).rejects.toMatchObject({
+      status: 404,
+    })
+  })
+})

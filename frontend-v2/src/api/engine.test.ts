@@ -104,6 +104,16 @@ describe('engine API clients', () => {
     expect(updated.init?.method).toBe('PUT')
   })
 
+  it('deletes a variable template with the 204-safe path', async () => {
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    await expect(variablesApi.deleteTemplate('t1')).resolves.toBeUndefined()
+    const deleted = lastCall(fetchMock)
+    expect(deleted.url).toBe('/api/variable-templates/t1')
+    expect(deleted.init?.method).toBe('DELETE')
+  })
+
   it('runs and reads Monte Carlo ensembles, replay, and determinism', async () => {
     const fetchMock = mockFetch(jsonResponse({ ensemble_id: 'e1' }))
     await distributionsApi.runMonteCarlo('r1', { trials: 50, seed: 42, metric: 'cash', loss_threshold: 0, strategy_levers: {} })
