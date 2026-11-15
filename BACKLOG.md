@@ -192,6 +192,37 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   output, template deletion, ensemble/analysis launch buttons,
   monitoring worker / scheduled evaluation.
 
+## Sprint 12 — cockpit cleanup: template deletion + launch buttons (done)
+
+- Delivered on `strategy-engine/sprint12-cockpit-cleanup`
+  (see SPRINT12.md): frontend-only, closing the two cockpit gaps
+  deferred since Sprint 8. Template deletion: a 204-safe
+  transport path (`api.deleteNoContent`, never parses a body)
+  plus `variablesApi.deleteTemplate`; the list offers a delete
+  button with two-step inline confirmation, disabled for
+  built-ins (same `is_builtin` marking as the read-only view;
+  the backend refuses built-ins with 400 anyway). Deleting the
+  template open in the editor goes through the unsaved-changes
+  guard; deleting any other template never touches the draft.
+  Confirmed from code: runs carry a template snapshot, so
+  deletion cannot break existing runs. Charts launch buttons:
+  the four empty states that named POST endpoints now run them
+  (ensemble, tornado, bootstrap, threshold search) with
+  backend-default payloads, running/failure states with retry,
+  and a reload of the stored fragment afterward — charts still
+  render stored data only. Metric/variable options come from the
+  run's variables fragment, with typed fallbacks; validity stays
+  with the backend. Frontend 169 → 195 tests (26 new), lint 0,
+  build passes; zero backend/src changes (diff touches
+  `frontend-v2/` only); Sprint 0 smoke re-run PASS. Launch
+  parameters beyond backend defaults stay API-only; Docker stack
+  and live backend integration remain UNVERIFIED.
+- NOT built (deferred, not done): decision-direction narrative
+  output, alerting on fired triggers, event-driven evaluation,
+  retention policy for evaluation rows, ordering-guard version
+  suppression, joint multivariate threshold fitting, automatic
+  weight restore.
+
 ## Sprint 11 — monitoring worker, evaluate + record only (done)
 
 - Delivered on `strategy-engine/sprint11-monitoring-worker`

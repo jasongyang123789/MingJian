@@ -1,0 +1,27 @@
+=== npm test -- --run ===
+ [32m✓[39m src/components/cockpit/templateDraft.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/components/cockpit/chartData.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m      Tests [22m [1m[32m195 passed[39m[22m[90m (195)[39m
+[2m   Start at [22m 14:15:15
+[2m   Duration [22m 51.58s[2m (transform 5.21s, setup 7.75s, import 17.18s, tests 60.00s, environment 52.53s)[22m
+
+
+=== npm run lint ===
+
+> frontend-v2@0.0.0 lint
+> eslint .
+
+lint exit: 0
+
+=== npm run build ===
+dist/assets/index-CpB1AaBv.js   894.58 kB │ gzip: 249.40 kB
+
+✓ built in 1.59s
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+build exit: 0
