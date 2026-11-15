@@ -168,13 +168,35 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   ensemble/analysis launch buttons, monitoring worker / scheduled
   evaluation.
 
+## Sprint 10 — calibration hardening (done)
+
+- Delivered on `strategy-engine/sprint10-calibration-hardening`
+  (see SPRINT10.md): target centering for rule-weight fits
+  (default-on intercept, `center_target: false` reproduces exact
+  Sprint 5 values; demo LOO 45.31 → 11.50, weights 32.70/21.44 →
+  2.65/1.00); persistent current-weights record (new table +
+  migration 0033, current-weights read + explicit restore, no
+  automatic restore); scenario-children handling (`include` /
+  `exclude` / `family` row weighting, both fit kinds);
+  fit-quality gate vs the prior-only baseline (whole-fit refusal
+  with zero rows for rule weights, per-metric `quality_gate`
+  reason + version suppression for policy fits); per-metric
+  Pearson correlation diagnostics (recorded, never refusing).
+  Backend 1125 → 1163 tests (38 new, all hand-verified), Sprint 0
+  smoke re-run PASS, mypy/ruff clean. Cockpit checked, no UI
+  change needed (gate-failed fits render honestly; suppressed
+  versions never flag templates). Live backend integration and
+  real deliberation rendering against a live LLM remain
+  UNVERIFIED.
+- NOT built (deferred, not done): decision-direction narrative
+  output, template deletion, ensemble/analysis launch buttons,
+  monitoring worker / scheduled evaluation.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
   (Sprint 6 central open item: live deliberation quality unverified;
   Sprint 7 adds live backend integration as unverified).
-- Calibration hardening (persist current weights, intercept/centering,
-  exclude/weight scenario children, fit-quality gates).
 - Monitoring worker / scheduled evaluation for the living loop
   (evaluate + record only, never silent re-simulation — see
   SPRINT9.md §10).
