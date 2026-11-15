@@ -19,13 +19,24 @@ per loop. Every transition refusal names the current state and the
 missing prerequisite; nothing is silently skipped or auto-advanced.
 There is no scheduler and no worker hook: evaluation,
 re-simulation, comparison, and decisions are explicit actions.
+
+The Sprint 11 monitoring worker is the one exception to "no worker
+hook", and it is deliberately narrow: ``run_monitoring_cycle``
+evaluates each loop's triggers against its recorded observations
+and records the outcome in ``loop_evaluations`` — and does nothing
+else. It never creates runs or iterations, never transitions
+iteration state, and never mutates loop rows. A recorded trigger
+firing plus an explicit review is still what starts a
+re-simulation (SPRINT9.md §10).
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +46,7 @@ from planagent.domain.models import (
     Claim,
     CompanyProfile,
     ForceProfile,
+    LoopEvaluationRecord,
     LoopIterationRecord,
     LoopObservationRecord,
     SimulationRun,
@@ -60,23 +72,36 @@ from planagent.services.living_loop.comparison import (
 from planagent.services.living_loop.models import (
     DecideRequest,
     EnsembleComparison,
+    LoopEvaluationRead,
     LoopIterationRead,
     LoopObservationCreate,
     LoopObservationRead,
     LoopTimelineRead,
+    MonitoringCycleLoopResult,
+    MonitoringCycleResult,
     ResimulateRequest,
     ResimulationRecord,
     ReviewDecisionRecord,
     StartIterationRequest,
     StrategyLoopCreate,
     StrategyLoopRead,
+    TriggerEvaluationOutcome,
     TriggerRegistration,
     TriggerRegistrationRequest,
+)
+from planagent.services.living_loop.monitoring import (
+    EvaluationSummary,
+    evaluation_fingerprint,
+    select_registration,
+    summarize_outcomes,
 )
 from planagent.services.living_loop.triggers import evaluate_triggers, select_window
 from planagent.services.mece.models import DecompositionTree
 from planagent.services.variables.models import VariableSet
 from planagent.simulation.domain_packs import registry
+from planagent.workers.base import public_worker_error
+
+_logger = logging.getLogger(__name__)
 
 #: Configuration fragments that mark a run as a derived artifact
 #: rather than a primary run (same rule as the Sprint 5 calibration
@@ -182,6 +207,23 @@ def _read_iteration(row: LoopIterationRecord) -> LoopIterationRead:
         ),
         created_at=format_cutoff(row.created_at),
         updated_at=format_cutoff(row.updated_at),
+    )
+
+
+def _read_evaluation(row: LoopEvaluationRecord) -> LoopEvaluationRead:
+    return LoopEvaluationRead(
+        id=row.id,
+        loop_id=row.loop_id,
+        cycle_id=row.cycle_id,
+        evaluated_at=format_cutoff(row.evaluated_at),
+        observation_fingerprint=row.observation_fingerprint,
+        registration_id=row.registration_id,
+        observation_ids=list(row.observation_ids or []),
+        outcomes=[TriggerEvaluationOutcome.model_validate(item) for item in (row.outcomes or [])],
+        summary=row.summary,  # type: ignore[arg-type]
+        error_code=row.error_code,
+        error_message=row.error_message,
+        created_at=format_cutoff(row.created_at),
     )
 
 
@@ -661,6 +703,215 @@ class SimulationLivingLoopMixin:
         await session.commit()
         await session.refresh(record)
         return _read_iteration(record)
+
+    # -------------------------------------------------------------- monitoring
+
+    async def run_monitoring_cycle(
+        self,
+        session: AsyncSession,
+        *,
+        cycle_id: str | None = None,
+        evaluated_at: datetime | None = None,
+    ) -> MonitoringCycleResult:
+        """Evaluate every loop's triggers and record the outcomes.
+
+        AUTOMATION BOUNDARY (SPRINT9.md §10): evaluate + record
+        only. This method's only writes are INSERTs into
+        ``loop_evaluations``. It never creates simulation runs or
+        loop iterations, never transitions iteration state, and
+        never mutates loop or observation rows — a recorded
+        trigger firing plus an explicit review is still what
+        starts a re-simulation, and this cycle starts none.
+
+        Each loop is evaluated against ALL its recorded
+        observations (the cumulative monitor view; see
+        ``services.living_loop.monitoring``). A loop whose latest
+        evaluation already carries the current fingerprint is
+        skipped without a write. One loop's failure never aborts
+        the cycle: known evaluation failures are recorded as
+        error rows, and unexpected exceptions are logged, reported
+        as public errors, and skipped.
+        """
+
+        cycle = cycle_id or generate_id()
+        now = normalize_cutoff(evaluated_at) if evaluated_at is not None else utc_now()
+        loops = list(
+            (
+                await session.scalars(
+                    select(StrategyLoopRecord).order_by(
+                        StrategyLoopRecord.created_at.asc(), StrategyLoopRecord.id.asc()
+                    )
+                )
+            ).all()
+        )
+        results: list[MonitoringCycleLoopResult] = []
+        errors: list[str] = []
+        for loop in loops:
+            try:
+                results.append(
+                    await self._evaluate_loop_for_monitoring(session, loop, cycle, now)
+                )
+            except Exception:
+                _logger.exception("Monitoring evaluation failed: loop_id=%s", loop.id)
+                errors.append(public_worker_error("loop", loop.id))
+        await session.commit()
+        return MonitoringCycleResult(
+            cycle_id=cycle,
+            evaluated_at=format_cutoff(now),
+            loops_evaluated=sum(1 for item in results if item.result == "evaluated"),
+            loops_skipped=sum(1 for item in results if item.result == "skipped_unchanged"),
+            loops_fired=sum(1 for item in results if item.summary == "fired"),
+            loops_errored=sum(1 for item in results if item.summary == "error"),
+            loops=results,
+            errors=errors,
+        )
+
+    async def list_loop_evaluations(
+        self, session: AsyncSession, loop_id: str, *, limit: int = 20, offset: int = 0
+    ) -> list[LoopEvaluationRead]:
+        """Evaluation history for one loop, newest first."""
+
+        await self._require_loop(session, loop_id)
+        rows = list(
+            (
+                await session.scalars(
+                    select(LoopEvaluationRecord)
+                    .where(LoopEvaluationRecord.loop_id == loop_id)
+                    .order_by(
+                        LoopEvaluationRecord.created_at.desc(), LoopEvaluationRecord.id.desc()
+                    )
+                    .limit(min(limit, 100))
+                    .offset(max(offset, 0))
+                )
+            ).all()
+        )
+        return [_read_evaluation(row) for row in rows]
+
+    async def _evaluate_loop_for_monitoring(
+        self,
+        session: AsyncSession,
+        loop: StrategyLoopRecord,
+        cycle_id: str,
+        evaluated_at: datetime,
+    ) -> MonitoringCycleLoopResult:
+        observations = list(
+            (
+                await session.scalars(
+                    select(LoopObservationRecord)
+                    .where(LoopObservationRecord.loop_id == loop.id)
+                    .order_by(
+                        LoopObservationRecord.observed_at.asc(), LoopObservationRecord.id.asc()
+                    )
+                )
+            ).all()
+        )
+        reads = [_read_observation(item) for item in observations]
+        observation_ids = [item.id for item in reads]
+
+        # Registration selection; stored JSON that no longer
+        # validates becomes a recorded error, not a crash — the
+        # fingerprint still covers the raw stored JSON so the
+        # error row dedups like any other.
+        registration_error: tuple[str, str] | None = None
+        try:
+            registrations = [
+                TriggerRegistration.model_validate(item) for item in (loop.triggers or [])
+            ]
+        except ValidationError as exc:
+            registration = None
+            registration_error = (
+                "loop_corrupt_registration",
+                f"Loop {loop.id} carries trigger registrations that fail "
+                f"validation: {exc}.",
+            )
+            triggers_payload: Any = loop.triggers or []
+        else:
+            registration = select_registration(registrations)
+            triggers_payload = (
+                registration.model_dump(mode="json")["triggers"]
+                if registration is not None
+                else None
+            )
+        fingerprint = evaluation_fingerprint(
+            observation_ids,
+            registration.id if registration is not None else None,
+            triggers_payload,
+        )
+        latest = (
+            await session.scalars(
+                select(LoopEvaluationRecord)
+                .where(LoopEvaluationRecord.loop_id == loop.id)
+                .order_by(
+                    LoopEvaluationRecord.created_at.desc(), LoopEvaluationRecord.id.desc()
+                )
+                .limit(1)
+            )
+        ).first()
+        if latest is not None and latest.observation_fingerprint == fingerprint:
+            existing = _read_evaluation(latest)
+            return MonitoringCycleLoopResult(
+                loop_id=loop.id,
+                result="skipped_unchanged",
+                evaluation_id=existing.id,
+                summary=existing.summary,
+            )
+
+        error_code: str | None = None
+        error_message: str | None = None
+        outcomes: list[TriggerEvaluationOutcome] = []
+        if registration_error is not None:
+            error_code, error_message = registration_error
+            summary: EvaluationSummary = "error"
+        elif registration is None:
+            summary = "no_data"
+        else:
+            baseline = await session.get(SimulationRun, loop.baseline_run_id)
+            if baseline is None:
+                error_code = "loop_baseline_missing"
+                error_message = (
+                    f"Baseline run {loop.baseline_run_id} was not found "
+                    f"for loop {loop.id}."
+                )
+                summary = "error"
+            else:
+                final_state = (baseline.summary or {}).get("final_state")
+                baseline_final = (
+                    {key: float(value) for key, value in final_state.items()}
+                    if isinstance(final_state, dict)
+                    else {}
+                )
+                try:
+                    outcomes = evaluate_triggers(
+                        registration.triggers, reads, baseline_final_state=baseline_final
+                    )
+                except ValueError as exc:
+                    error_code = "loop_trigger_evaluation_failed"
+                    error_message = str(exc)
+                    summary = "error"
+                else:
+                    summary = summarize_outcomes(outcomes, has_triggers=True)
+
+        row = LoopEvaluationRecord(
+            id=generate_id(),
+            loop_id=loop.id,
+            cycle_id=cycle_id,
+            evaluated_at=evaluated_at,
+            observation_fingerprint=fingerprint,
+            registration_id=registration.id if registration is not None else None,
+            observation_ids=observation_ids,
+            outcomes=[outcome.model_dump(mode="json") for outcome in outcomes],
+            summary=summary,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        session.add(row)
+        await session.flush()
+        return MonitoringCycleLoopResult(
+            loop_id=loop.id,
+            result="evaluated",
+            evaluation_id=row.id,
+            summary=summary,
+        )
 
     # ---------------------------------------------------------------- helpers
 

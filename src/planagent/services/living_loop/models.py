@@ -590,7 +590,10 @@ class MonitoringCycleResult(BaseModel):
     result says both what the cycle wrote and what the fleet's
     trigger state is after it. ``loops`` is in deterministic loop
     order (created_at, then id), the same order the cycle
-    evaluated in.
+    evaluated in. ``errors`` carries public error strings for
+    loops whose evaluation failed unexpectedly (the house worker
+    format — no exception details); a loop listed here got no row
+    and does not appear in ``loops``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -602,3 +605,4 @@ class MonitoringCycleResult(BaseModel):
     loops_fired: int
     loops_errored: int
     loops: list[MonitoringCycleLoopResult] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

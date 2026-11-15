@@ -12,9 +12,18 @@
   advance the iteration state machine; ``POST .../decide`` records
   the review decision (terminal).
 - ``GET /loops/{loop_id}/timeline`` reads the full audit trail.
+- ``POST /loops/monitoring/evaluate`` runs one monitoring cycle:
+  every loop's triggers are evaluated against its recorded
+  observations and the outcomes recorded (Sprint 11). The cycle
+  only evaluates + records — it creates no runs or iterations and
+  changes no loop state (SPRINT9.md §10).
+- ``GET /loops/{loop_id}/evaluations`` reads a loop's recorded
+  monitoring evaluations, newest first.
 
-All actions are explicit: there is no scheduler and no worker hook,
-so nothing in the loop runs without a recorded request. Gate
+All review actions are explicit: there is no scheduler that opens
+reviews, re-simulates, or decides. The monitoring worker only
+evaluates + records; a recorded trigger firing plus an explicit
+review is still what starts a re-simulation. Gate
 refusals from re-simulation surface the same codes as hand-created
 runs (``mece_validation_failed`` / ``variable_validation_failed`` /
 template codes), because the same creation path refused them.
@@ -29,10 +38,12 @@ from planagent.api.routes._deps import get_simulation_service
 from planagent.db import get_session
 from planagent.services.living_loop.models import (
     DecideRequest,
+    LoopEvaluationRead,
     LoopIterationRead,
     LoopObservationCreate,
     LoopObservationRead,
     LoopTimelineRead,
+    MonitoringCycleResult,
     ResimulateRequest,
     StartIterationRequest,
     StrategyLoopCreate,
@@ -103,6 +114,30 @@ async def get_loop_timeline(
     service = get_simulation_service(http_request)
     try:
         return await service.get_loop_timeline(session, loop_id)
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.post("/loops/monitoring/evaluate", response_model=MonitoringCycleResult)
+async def run_monitoring_cycle(
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> MonitoringCycleResult:
+    service = get_simulation_service(http_request)
+    return await service.run_monitoring_cycle(session)
+
+
+@router.get("/loops/{loop_id}/evaluations", response_model=list[LoopEvaluationRead])
+async def list_loop_evaluations(
+    loop_id: str,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[LoopEvaluationRead]:
+    service = get_simulation_service(http_request)
+    try:
+        return await service.list_loop_evaluations(session, loop_id, limit=limit, offset=offset)
     except LookupError as exc:
         raise _not_found(exc) from exc
 
