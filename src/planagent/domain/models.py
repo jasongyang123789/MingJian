@@ -1510,6 +1510,38 @@ class CalibrationFitRecord(Base):
     )
 
 
+class CalibrationWeightApplicationRecord(Base):
+    """Durable record of one rule-weight application (Sprint 10).
+
+    Sprint 5 kept fitted weights in memory only: a restart or
+    ``RuleRegistry.reload()`` reset them to 1.0, and the only durable
+    trace was the fit row's application events. This table is the
+    persistent "current weights" record: one append-only row per
+    application, written in the same transaction as the fit-row
+    event. The current persisted weights for a domain are the latest
+    row; ``supersedes_id`` chains each row to the previous application
+    for that domain so history is preserved, never overwritten.
+    Nothing reads this table automatically — restore is an explicit
+    endpoint — so a restart never silently changes registry behavior.
+    """
+
+    __tablename__ = "calibration_weight_applications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    domain_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    fit_id: Mapped[str] = mapped_column(
+        ForeignKey("calibration_fits.id"), nullable=False, index=True
+    )
+    weights: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    previous_weights: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        ForeignKey("calibration_weight_applications.id"), index=True
+    )
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class VariableTemplateRecord(Base):
     """Stored variable template (Sprint 2, PRD deltas D2/D3).
 

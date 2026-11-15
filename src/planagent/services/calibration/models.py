@@ -9,7 +9,7 @@ estimator enforces the rest.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +25,12 @@ MAX_BOOTSTRAP_DRAWS = 2000
 
 #: Maximum explicitly listed source runs per fit request.
 MAX_SOURCE_RUNS = 500
+
+#: How scenario children (runs with a ``parent_run_id``) enter a fit
+#: (Sprint 10): ``include`` keeps current behavior, ``exclude`` drops
+#: children, ``family`` weights each parent+children family to total
+#: weight 1. Unknown values are rejected by request validation.
+ScenarioChildrenMode = Literal["include", "exclude", "family"]
 
 
 class PolicyFitRequest(BaseModel):
@@ -44,6 +50,14 @@ class PolicyFitRequest(BaseModel):
     bootstrap_draws: int = Field(default=DEFAULT_BOOTSTRAP_DRAWS, ge=1, le=MAX_BOOTSTRAP_DRAWS)
     level: float = Field(default=0.95, gt=0, lt=1)
     source_run_ids: list[str] | None = Field(default=None, max_length=MAX_SOURCE_RUNS)
+    scenario_children: ScenarioChildrenMode = Field(default="include")
+    quality_gate: bool = Field(
+        default=True,
+        description=(
+            "Per-metric fit-quality gate: a metric whose fitted LOO RMSE "
+            "is worse than the prior-only baseline keeps its priors."
+        ),
+    )
 
 
 class RuleWeightFitRequest(BaseModel):
@@ -63,6 +77,22 @@ class RuleWeightFitRequest(BaseModel):
     bootstrap_draws: int = Field(default=DEFAULT_BOOTSTRAP_DRAWS, ge=1, le=MAX_BOOTSTRAP_DRAWS)
     level: float = Field(default=0.95, gt=0, lt=1)
     source_run_ids: list[str] | None = Field(default=None, max_length=MAX_SOURCE_RUNS)
+    center_target: bool = Field(
+        default=True,
+        description=(
+            "Center features and target and derive an unpenalized "
+            "intercept carrying the level. False reproduces the exact "
+            "Sprint 5 through-origin fit."
+        ),
+    )
+    scenario_children: ScenarioChildrenMode = Field(default="include")
+    quality_gate: bool = Field(
+        default=True,
+        description=(
+            "Whole-fit gate: refuse (writing nothing) when the fitted "
+            "LOO RMSE is worse than the prior-only baseline."
+        ),
+    )
 
 
 class ThresholdChange(BaseModel):
@@ -82,6 +112,9 @@ class ThresholdChange(BaseModel):
     n_tail: int
     unchanged_reason: str | None = None
     rejected_fit: dict[str, float] | None = None
+    fitted_loo_rmse: float | None = None
+    prior_only_rmse: float | None = None
+    quality_gate_passed: bool | None = None
 
 
 class RuleWeightChange(BaseModel):
@@ -125,6 +158,40 @@ class CalibrationFitRead(BaseModel):
     loo_rmse: float | None = None
     application: dict[str, Any] = Field(default_factory=dict)
     created_at: str
+
+
+class PersistedWeightsRead(BaseModel):
+    """One durable rule-weight application (Sprint 10).
+
+    The current persisted weights for a domain are the latest row;
+    history is preserved as the append-only chain linked by
+    ``supersedes_id``. ``weights`` are the post-clip values that took
+    effect; ``previous_weights`` are what the registry held for those
+    rules just before the application.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    domain_id: str
+    fit_id: str
+    weights: dict[str, float]
+    previous_weights: dict[str, float]
+    supersedes_id: str | None = None
+    applied_at: str
+
+
+class RestoreWeightsRequest(BaseModel):
+    """Explicitly re-apply the latest persisted weights to the registry.
+
+    Restore is always explicit: nothing restores weights on startup
+    or ``reload()``. The response is the persisted record that was
+    re-applied.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    domain_id: str = Field(min_length=1, max_length=64)
 
 
 class FirewallRead(BaseModel):
