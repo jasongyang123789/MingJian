@@ -805,7 +805,7 @@ def _evaluate_trim(
                 "Undecomposed P.O basket row",
                 f"Bare P.O row (solution {row.solution_code!r}).",
                 "P.O is decomposed to the finest granularity: HUD/radar/gateway/body-domain/APA/AVM/UWB each carry their own row (catalog: "
-                + ", ".join(sorted(PO_SUBPRODUCTS)),
+                + ", ".join(sorted(PO_SUBPRODUCTS))
                 + ").",
                 ["Legacy basket row not yet decomposed; split it into catalog sub-product rows."],
                 "Ho Q8 ruling + services/splits/catalog.py",
