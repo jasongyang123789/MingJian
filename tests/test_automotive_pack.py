@@ -31,8 +31,9 @@ def test_pack_registered_and_state_fields() -> None:
     assert pack.domain_id == "automotive"
     fields = {field.name: float(field.default) for field in pack.state_fields}
     # 25 synthesis C1 fields + cash (MC continuity) + the generation
-    # transition index (Ho's generation dimension).
-    assert len(fields) == 27
+    # transition index (Ho's generation dimension) + 4 Phase 2
+    # dual-track splits (NEV/ICE production + retail).
+    assert len(fields) == 31
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -44,6 +45,13 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["dms_mandate"] == 0.0
     assert fields["policy_tax_rate"] == 0.05
     assert fields["tier1_gross_margin"] == 0.191
+    # Dual-track splits sum exactly to their spine totals.
+    assert fields["nev_production_volume"] == 137.86
+    assert fields["ice_production_volume"] == 149.94
+    assert fields["nev_production_volume"] + fields["ice_production_volume"] == 287.8
+    assert fields["nev_retail_volume"] == 94.79
+    assert fields["ice_retail_volume"] == 103.11
+    assert fields["nev_retail_volume"] + fields["ice_retail_volume"] == 197.9
 
 
 def test_pack_actions_events_actors() -> None:
@@ -79,35 +87,51 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 24
-    assert len(TEMPLATE_FORMULAS) == 8
+    assert len(TEMPLATE_VARIABLES) == 30
+    assert len(TEMPLATE_FORMULAS) == 16
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 5
+    assert len(drivers) == 13
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
+        "price_index",
+        "income_index",
         "sales_volume_retail",
         "dealer_inventory_coef",
         "production_volume",
+        "nev_penetration",
+        "nev_retail_volume",
+        "ice_retail_volume",
+        "nev_production_volume",
+        "ice_production_volume",
+        "tier1_gross_margin",
         "generation_transition_index",
     ]
     # Every variable carries a unit and an evidence reference.
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 21 of 24 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 3 sensitivity coefficients are
+    # 23 of 30 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 7 sensitivity coefficients are
     # formula parameters, not state fields.
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
-    assert unbound == {"confidence_sensitivity", "income_sensitivity", "tax_sensitivity"}
+    assert unbound == {
+        "confidence_sensitivity",
+        "income_sensitivity",
+        "tax_sensitivity",
+        "lpr_sensitivity",
+        "material_passthrough",
+        "price_sensitivity",
+        "margin_material_sensitivity",
+    }
 
 
 def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 24
-    assert len(template.formulas) == 8
+    assert len(template.variables) == 30
+    assert len(template.formulas) == 16
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.

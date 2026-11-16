@@ -1427,3 +1427,118 @@ export interface DerivationRead {
   outcomes: DerivationRuleOutcome[]
   mappings: DirectionMappingRead[]
 }
+
+// ==================== Phase 2 — 汽车包 ====================
+
+export interface AutomotiveTrajectoryPoint {
+  tick: number
+  actor_id: string
+  state: Record<string, number>
+}
+
+export interface AutomotiveTrajectoryRead {
+  run_id: string
+  domain_id: string
+  run_status: string
+  tick_count: number
+  multiple_actors: boolean
+  actor_ids: string[]
+  points: AutomotiveTrajectoryPoint[]
+}
+
+export interface AutomotiveSplitStructureRead {
+  run_id: string
+  structure: Record<string, unknown>
+  validation: Record<string, unknown>
+}
+
+export interface SalesLayerRowRead {
+  tick: number
+  oem_id: string
+  product_id: string
+  units: number
+  capacity_value: number
+  own_sales: number | null
+}
+
+export interface SalesLayerTickTotalRead {
+  tick: number
+  production_volume: number
+  units: number
+  capacity_value: number
+  own_sales: number | null
+}
+
+export interface SalesLayerSummaryRead {
+  total_units: number
+  total_capacity_value: number
+  total_own_sales: number | null
+  tick_count: number
+  oem_count: number
+  product_count: number
+}
+
+export interface SalesLayerRead {
+  run_id: string
+  domain_id: string
+  snapshot_tick_count: number
+  rows: SalesLayerRowRead[]
+  per_tick: SalesLayerTickTotalRead[]
+  summary: SalesLayerSummaryRead
+  production_trajectory: Array<{ tick: number; production_volume: number }>
+  assumptions: string[]
+  skipped_unpriced_slots: string[]
+  own_sales_basis: string
+  own_sales_unavailable_reason: string | null
+}
+
+export interface SupplyShareOverride {
+  oem_id: string
+  product_id: string
+  share: number
+}
+
+export interface SalesLayerRequest {
+  oem_production_shares: Record<string, number>
+  own_supplier_id?: string | null
+  supply_shares?: SupplyShareOverride[]
+  default_supply_share?: number | null
+  strict_prices?: boolean
+}
+
+export interface CooccurrencePrompt {
+  rule_id: string
+  severity: 'anomaly' | 'info'
+  path: string
+  title: string
+  observed: string
+  expected_logic: string
+  likely_explanations: string[]
+  evidence_ref: string
+  scope: string
+}
+
+export interface PromptSkipRecord {
+  rule_id: string
+  path: string
+  reason: string
+}
+
+export interface PromptReportRead {
+  prompts: CooccurrencePrompt[]
+  skipped: PromptSkipRecord[]
+  anomaly_count: number
+  info_count: number
+  rules_evaluated: string[]
+  rules_skipped: string[]
+}
+
+export interface ExpectationCatalogEntry {
+  id: string
+  title: string
+  normal_logic: string
+  strength: string
+  scope: string
+  evidence_ref: string
+  evaluated: boolean
+}

@@ -13,6 +13,17 @@ on 2026-11-16:
 - supplier shares sum to 1 per nameplate x generation x trim x product slot;
 - one-host products (P01 cockpit host, P04 comm terminal — a car takes
   exactly one) have a share-weighted fitment sum <= 1 per slot.
+- (Phase 2) a per-nameplate transition schedule must reference existing
+  generations with the right lifecycle phases (outgoing ``phase_out``,
+  successor ``ramp``) and the nameplate must carry exactly those two
+  generations, so the scheduled mix always sums to 1.
+
+Fitment rates are INDEPENDENT penetrations (Ho 2026-11-16 Q7): each
+rate is the share of a model x trim's production volume carrying the
+product, and rates across products/solutions need NOT sum to 1. There
+is deliberately NO product-level sum gate in this validator — only
+range checks on individual rates. Same-function overlap is a prompt
+(services/splits/expectations.py), never a refusal.
 
 The one-host check is defense in depth: given the supplier-share sum
 gate and the rate range gate, the weighted sum cannot exceed 1. It is
@@ -28,6 +39,8 @@ the caller can locate the offending split without guessing.
 from __future__ import annotations
 
 from .models import (
+    GenerationTransitionSchedule,
+    NameplateSplit,
     SplitCheckRecord,
     SplitStructure,
     SplitValidationIssue,
@@ -64,6 +77,79 @@ def _issue(kind: str, path: str, message: str) -> SplitValidationIssue:
 
 def _sums_to_one(total: float) -> bool:
     return abs(total - 1.0) <= SUM_TOLERANCE
+
+
+def _validate_transition_schedule(
+    schedule: GenerationTransitionSchedule,
+    nameplate: NameplateSplit,
+    plate_path: str,
+    issues: list[SplitValidationIssue],
+) -> None:
+    """Structural checks for a per-nameplate transition schedule.
+
+    The schedule interpolates between exactly two generations, so the
+    nameplate must carry exactly the outgoing and successor generations
+    with the matching lifecycle phases. Anything else refuses loudly:
+    a schedule over a three-generation mix has no defined semantics.
+    """
+
+    by_id = {generation.generation_id: generation for generation in nameplate.generations}
+    outgoing = by_id.get(schedule.outgoing_generation_id)
+    successor = by_id.get(schedule.successor_generation_id)
+    if outgoing is None:
+        issues.append(
+            _issue(
+                "transition_schedule_unknown_generation",
+                plate_path,
+                f"Transition schedule references unknown outgoing generation "
+                f"{schedule.outgoing_generation_id!r}.",
+            )
+        )
+    elif outgoing.lifecycle_phase != "phase_out":
+        issues.append(
+            _issue(
+                "transition_schedule_phase_mismatch",
+                plate_path,
+                f"Outgoing generation {schedule.outgoing_generation_id!r} has phase "
+                f"{outgoing.lifecycle_phase!r}, not 'phase_out'.",
+            )
+        )
+    if successor is None:
+        issues.append(
+            _issue(
+                "transition_schedule_unknown_generation",
+                plate_path,
+                f"Transition schedule references unknown successor generation "
+                f"{schedule.successor_generation_id!r}.",
+            )
+        )
+    elif successor.lifecycle_phase != "ramp":
+        issues.append(
+            _issue(
+                "transition_schedule_phase_mismatch",
+                plate_path,
+                f"Successor generation {schedule.successor_generation_id!r} has phase "
+                f"{successor.lifecycle_phase!r}, not 'ramp'.",
+            )
+        )
+    if schedule.outgoing_generation_id == schedule.successor_generation_id:
+        issues.append(
+            _issue(
+                "transition_schedule_composition",
+                plate_path,
+                "Transition schedule names the same generation as outgoing and successor.",
+            )
+        )
+    if len(nameplate.generations) != 2:
+        issues.append(
+            _issue(
+                "transition_schedule_composition",
+                plate_path,
+                f"Nameplate {nameplate.nameplate_id!r} carries a transition schedule "
+                f"but has {len(nameplate.generations)} generations; a schedule "
+                "requires exactly the outgoing and successor generations.",
+            )
+        )
 
 
 def validate_split_structure(structure: SplitStructure) -> SplitValidationResult:
@@ -296,6 +382,9 @@ def validate_split_structure(structure: SplitStructure) -> SplitValidationResult
                         f"{generation_total}, not 1 (tolerance {SUM_TOLERANCE}).",
                     )
                 )
+            schedule = nameplate.transition_schedule
+            if schedule is not None:
+                _validate_transition_schedule(schedule, nameplate, plate_path, issues)
         if not _sums_to_one(nameplate_total):
             issues.append(
                 _issue(
@@ -337,6 +426,17 @@ def validate_split_structure(structure: SplitStructure) -> SplitValidationResult
             check="generation_shares",
             status=_status({"generation_shares_sum", "generation_share_out_of_range"}),
             detail="per-nameplate sums",
+        ),
+        SplitCheckRecord(
+            check="transition_schedules",
+            status=_status(
+                {
+                    "transition_schedule_unknown_generation",
+                    "transition_schedule_phase_mismatch",
+                    "transition_schedule_composition",
+                }
+            ),
+            detail="per-nameplate schedule references + composition",
         ),
         SplitCheckRecord(
             check="trim_shares",

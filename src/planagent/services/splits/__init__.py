@@ -1,9 +1,9 @@
-"""Bottom-layer split structures (Phase 1, automotive track).
+"""Split-structure services: models, validator, aggregation, schedules,
+co-occurrence prompts, and snapshot-wired S-layer computation.
 
-Pure deterministic validation of the OEM → nameplate → generation →
-trim → product → supplier-share tree, plus the bottom-up aggregation
-that turns production volumes into addressable units and capacity. No
-LLM calls, no randomness, no I/O.
+The split structure is the MECE bottom layer of the automotive model:
+OEM -> nameplate -> generation -> trim -> product -> supplier share.
+All modules are pure (no I/O); the API layer owns persistence.
 """
 
 from __future__ import annotations
@@ -18,8 +18,29 @@ from .aggregation import (
     prior_fitment_rate,
     simulated_supply_share,
 )
+from .aliases import (
+    SolutionClass,
+    classify_solution,
+    dc_platform,
+    is_huawei_solution,
+    normalize_code,
+    parse_camera_count,
+)
+from .catalog import PO_SUBPRODUCTS, PRODUCT_LINES, PoSubProduct, is_po_basket, product_line_of
+from .expectations import (
+    EXPECTATION_CATALOG,
+    LADDER_TOLERANCE,
+    Prompt,
+    PromptReport,
+    SkipRecord,
+    evaluate_prompts,
+    expectation_catalog,
+)
 from .models import (
+    MORPHOLOGIES,
+    PRICE_BASES,
     GenerationSplit,
+    GenerationTransitionSchedule,
     NameplateSplit,
     OemSplit,
     ProductFitment,
@@ -28,6 +49,30 @@ from .models import (
     SplitValidationIssue,
     SplitValidationResult,
     TrimSplit,
+)
+from .morphology import (
+    KNOWN_DATA_ERRORS,
+    MORPHOLOGY_FACTS,
+    MORPHOLOGY_LABELS,
+    OEMS_WITHOUT_TBOX,
+    KnownDataError,
+    MorphologyFact,
+    lookup_known_data_error,
+    lookup_morphology_fact,
+    normalize_nameplate_id,
+    normalize_oem_id,
+)
+from .sales_layer import (
+    SalesLayerComputation,
+    SalesLayerRow,
+    SalesLayerSummary,
+    compute_sales_layer,
+)
+from .schedules import (
+    effective_shares_for_nameplate,
+    generation_shares_at_tick,
+    structure_with_effective_shares,
+    transition_progress,
 )
 from .validator import (
     ONE_HOST_PRODUCTS,
@@ -38,12 +83,33 @@ from .validator import (
 )
 
 __all__ = [
+    "EXPECTATION_CATALOG",
+    "KNOWN_DATA_ERRORS",
+    "LADDER_TOLERANCE",
+    "MORPHOLOGIES",
+    "MORPHOLOGY_FACTS",
+    "MORPHOLOGY_LABELS",
+    "OEMS_WITHOUT_TBOX",
     "ONE_HOST_PRODUCTS",
+    "PO_SUBPRODUCTS",
+    "PRICE_BASES",
+    "PRODUCT_LINES",
     "SUM_TOLERANCE",
     "GenerationSplit",
+    "GenerationTransitionSchedule",
+    "KnownDataError",
+    "MorphologyFact",
     "NameplateSplit",
     "OemSplit",
+    "PoSubProduct",
     "ProductFitment",
+    "Prompt",
+    "PromptReport",
+    "SalesLayerComputation",
+    "SalesLayerRow",
+    "SalesLayerSummary",
+    "SkipRecord",
+    "SolutionClass",
     "SplitCheckRecord",
     "SplitStructure",
     "SplitValidationError",
@@ -52,12 +118,30 @@ __all__ = [
     "TrimSplit",
     "aggregate_capacity",
     "aggregate_units",
+    "classify_solution",
+    "compute_sales_layer",
+    "dc_platform",
+    "effective_shares_for_nameplate",
+    "evaluate_prompts",
+    "expectation_catalog",
     "generation_mix_at_index",
+    "generation_shares_at_tick",
+    "is_huawei_solution",
+    "is_po_basket",
+    "lookup_known_data_error",
+    "lookup_morphology_fact",
     "market_capacity_by_oem_product",
+    "normalize_code",
+    "normalize_nameplate_id",
+    "normalize_oem_id",
     "own_sales_from_supplier_rows",
     "own_sales_with_share",
+    "parse_camera_count",
     "prior_fitment_rate",
+    "product_line_of",
     "simulated_supply_share",
+    "structure_with_effective_shares",
+    "transition_progress",
     "validate_or_raise",
     "validate_split_structure",
 ]

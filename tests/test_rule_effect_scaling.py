@@ -2,7 +2,7 @@
 
 Covers ``scaled_effect_value`` (fixed constants unchanged, scaling,
 missing/non-finite fallback), the YAML ``scale_by`` parse (loud failure
-on malformed values), and the shipped automotive rules file (10 rules,
+on malformed values), and the shipped automotive rules file (13 rules,
 exactly one scaled effect, keyword-only triggers).
 """
 
@@ -101,7 +101,7 @@ def test_yaml_scale_by_malformed_fails_loudly(tmp_path: Path, bad_value: str) ->
 
 def test_automotive_rules_file_shape() -> None:
     rules = RuleRegistry(RULES_ROOT).get_rules("automotive")
-    assert len(rules) == 10
+    assert len(rules) == 13
     ids = {rule.rule_id for rule in rules}
     assert ids == {
         "auto.chip_shortage",
@@ -114,6 +114,9 @@ def test_automotive_rules_file_shape() -> None:
         "auto.generation_changeover",
         "auto.margin_pressure",
         "auto.export_hedge",
+        "auto.material_cost_shock",
+        "auto.rate_cut",
+        "auto.nev_momentum",
     }
     # Keyword-only triggers: no rule relies on conditions the engine
     # never evaluates against state.

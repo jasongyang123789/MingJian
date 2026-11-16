@@ -14,6 +14,30 @@ Shape rules live here (finite numbers, non-empty ids, controlled
 vocabularies); SUM rules live in the pure validator (:mod:`validator`),
 so a bad split surfaces as a structured gate refusal (400) instead of a
 422 — the same discipline as missing units on variables.
+
+Phase 2 additions (all optional, backward compatible — Phase 1 payloads
+validate unchanged):
+
+- ``ProductFitment.solution_code``: the workbook solution label
+  (e.g. ``"SA8650"``, ``"MFK:EQ4"``, ``"ABT12.9"``). The prompt engine
+  classifies solutions by (code, product-line) pairs (Ho Q4 ruling);
+  the code itself carries no global class.
+- ``ProductFitment.price_basis``: ``"discrete"`` (default), ``"bundle"``
+  (Huawei full-solution bundle incl. screen + cameras, Ho Q11), or
+  ``"includes_screen"`` (IVI one-box P01 ASP includes the screen, Ho
+  Q1/C4). Bundle / includes-screen prices are never compared with
+  discrete ASPs.
+- ``TrimSplit.morphology``: the computing-form attribute, a
+  model x year property (Ho Q1/Q5/Q9): ``"ivi_one_box"``,
+  ``"discrete_host"``, ``"scdc"``, ``"central_compute"``,
+  ``"fused"`` (screen folded into the cockpit/P01, VW T-Roc/CC 2026).
+- ``NameplateSplit.model_year``: the model year the structure row
+  describes; morphology facts are keyed by (OEM, nameplate, year).
+- ``NameplateSplit.transition_schedule``: the per-nameplate
+  generation-transition schedule (Phase 2, replacing Phase 1's single
+  global transition index for S-layer aggregation). The schedule
+  interpolates the generation mix from the static shares toward the
+  successor over ``duration_ticks`` starting at ``start_tick``.
 """
 
 from __future__ import annotations
@@ -35,6 +59,16 @@ def _require_finite_number(value: object) -> float:
     return result
 
 
+#: Computing-form vocabulary for ``TrimSplit.morphology`` (Ho Q1/Q5/Q9).
+#: Morphology is a model x year attribute, never an OEM invariant.
+MORPHOLOGIES = frozenset(
+    {"ivi_one_box", "discrete_host", "scdc", "central_compute", "fused"}
+)
+
+#: Price-basis vocabulary for ``ProductFitment.price_basis``.
+PRICE_BASES = frozenset({"discrete", "bundle", "includes_screen"})
+
+
 class ProductFitment(BaseModel):
     """One row: one supplier's fitment of one product on one trim.
 
@@ -46,6 +80,11 @@ class ProductFitment(BaseModel):
     ``supplier_share`` values must sum to 1 (the validator's slot gate).
     ``price`` is the per-unit ASP for this product on this trim; None
     means unknown (capacity aggregation refuses unpriced slots loudly).
+
+    Fitment rates are INDEPENDENT penetrations (Ho 2026-11-16 Q7):
+    the rate is the share of that model x trim's production volume
+    carrying the product, and rates across products/solutions need
+    NOT sum to 1. No product-level sum gate exists anywhere.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -56,12 +95,22 @@ class ProductFitment(BaseModel):
     supplier_id: str = Field(min_length=1, max_length=120)
     supplier_share: float
     price: float | None = None
+    solution_code: str | None = Field(default=None, max_length=120)
+    price_basis: Literal["discrete", "bundle", "includes_screen"] = "discrete"
 
     @field_validator("product_id", "supplier_id", mode="before")
     @classmethod
     def _strip_strings(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip()
+        return value
+
+    @field_validator("solution_code", mode="before")
+    @classmethod
+    def _strip_solution_code(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
         return value
 
     @field_validator("fitment", "supplier_share", mode="before")
@@ -78,13 +127,20 @@ class ProductFitment(BaseModel):
 
 
 class TrimSplit(BaseModel):
-    """One trim (high/mid/low, or the actual trim label) of a generation."""
+    """One trim (high/mid/low, or the actual trim label) of a generation.
+
+    ``morphology`` is the computing-form attribute of this trim's
+    model x year (Ho Q1/Q5/Q9). It is advisory data for the
+    co-occurrence prompt engine, never a gate: a trim without a
+    morphology simply yields no morphology prompts.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     trim_id: str = Field(min_length=1, max_length=120)
     share: float
     fitments: list[ProductFitment] = Field(default_factory=list)
+    morphology: Literal["ivi_one_box", "discrete_host", "scdc", "central_compute", "fused"] | None = None
 
     @field_validator("trim_id", mode="before")
     @classmethod
@@ -127,6 +183,37 @@ class GenerationSplit(BaseModel):
         return _require_finite_number(value)
 
 
+class GenerationTransitionSchedule(BaseModel):
+    """Per-nameplate generation-transition schedule (Phase 2).
+
+    The schedule interpolates the nameplate's generation mix from the
+    static ``share`` values toward the successor: at tick ``t`` the
+    progress is ``clamp((t - start_tick + 1) / duration_ticks, 0, 1)``;
+    the outgoing generation's share moves from its static share toward
+    0 and the successor's from its static share toward 1, linearly in
+    progress. The two shares always sum to 1 (the static shares do).
+    Ticks before ``start_tick`` use the static shares unchanged.
+
+    A schedule requires exactly two generations on the nameplate — the
+    outgoing (``phase_out``) and the successor (``ramp``) — enforced
+    by the validator. Three-generation schedules are not modeled.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    outgoing_generation_id: str = Field(min_length=1, max_length=120)
+    successor_generation_id: str = Field(min_length=1, max_length=120)
+    start_tick: int = Field(ge=1)
+    duration_ticks: int = Field(ge=1)
+
+    @field_validator("outgoing_generation_id", "successor_generation_id", mode="before")
+    @classmethod
+    def _strip_strings(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
 class NameplateSplit(BaseModel):
     """One nameplate (model line) of an OEM.
 
@@ -134,6 +221,12 @@ class NameplateSplit(BaseModel):
     variables (synthesis §C1 item 7): every nameplate carries them, and
     fitment priors are looked up by price band x energy. ``price_band``
     is a free string matching the lookup keys (e.g. "<10", "20-30").
+
+    ``model_year`` (Phase 2, optional) is the model year this row
+    describes; morphology registry facts are keyed by
+    (OEM, nameplate, year). ``transition_schedule`` (Phase 2,
+    optional) is the per-nameplate generation schedule; nameplates
+    without one keep their static generation shares at every tick.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -143,6 +236,8 @@ class NameplateSplit(BaseModel):
     price_band: str = Field(min_length=1, max_length=60)
     share: float
     generations: list[GenerationSplit] = Field(default_factory=list)
+    model_year: int | None = Field(default=None, ge=1990, le=2100)
+    transition_schedule: GenerationTransitionSchedule | None = None
 
     @field_validator("nameplate_id", "price_band", mode="before")
     @classmethod

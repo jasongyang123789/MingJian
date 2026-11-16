@@ -19,6 +19,12 @@
 # keyword list), so state-gated rules would silently misbehave. The DMS
 # switch and other policy-calendar state are lever-driven (C4 families),
 # not condition-driven.
+#
+# Phase 2 adds three transmission-link rules (C2 links 7-8 + dual
+# track): material-cost shocks, rate cuts, and NEV momentum. Rate HIKES
+# stay lever-driven (lpr_proxy is a sampled variable); only the easing
+# direction has an evidence-triggered rule, mirroring the Phase 1
+# asymmetry (tax hikes have a rule, tax cuts are lever-driven).
 rules:
   - id: "auto.policy_tax_hike"
     domain: "automotive"
@@ -228,3 +234,66 @@ rules:
         value: -0.1
     priority: 84
     explanation_template: "Subsidy payback appeared in '{statement}', so the run selected {action_id} to cushion the post-subsidy demand drop (C2 link 11)."
+
+  - id: "auto.material_cost_shock"
+    domain: "automotive"
+    action_id: "adjust_price"
+    trigger:
+      keywords:
+        - "lithium price"
+        - "raw material"
+        - "material cost"
+        - "steel price"
+        - "battery cost"
+        - "commodity price"
+    effects:
+      - target: "material_cost_index"
+        op: "add"
+        value: 0.05
+      - target: "tier1_gross_margin"
+        op: "add"
+        value: -0.005
+      - target: "price_index"
+        op: "add"
+        value: 0.01
+    priority: 83
+    explanation_template: "Material-cost pressure appeared in '{statement}', so the run selected {action_id}; cost pressure passes partly into price and squeezes margin until it does (C2 links 7-8)."
+
+  - id: "auto.rate_cut"
+    domain: "automotive"
+    action_id: "ramp_production"
+    trigger:
+      keywords:
+        - "rate cut"
+        - "lpr cut"
+        - "lpr reduction"
+        - "monetary easing"
+        - "rate reduction"
+        - "interest rate cut"
+    effects:
+      - target: "lpr_proxy"
+        op: "add"
+        value: -0.05
+      - target: "price_cut_expectation"
+        op: "add"
+        value: -0.02
+    priority: 81
+    explanation_template: "Monetary easing appeared in '{statement}', so the run selected {action_id}; cheaper financing supports demand through the retail driver (C2 link: LPR -> financing cost -> demand)."
+
+  - id: "auto.nev_momentum"
+    domain: "automotive"
+    action_id: "shift_mix_nev"
+    trigger:
+      keywords:
+        - "nev surge"
+        - "ev adoption"
+        - "new energy surge"
+        - "electrification"
+        - "nev penetration"
+        - "electric surge"
+    effects:
+      - target: "nev_penetration"
+        op: "add"
+        value: 0.01
+    priority: 79
+    explanation_template: "NEV momentum appeared in '{statement}', so the run selected {action_id}; penetration steps up and the dual-track split drivers re-derive both tracks (Phase 2 dual track)."

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from planagent.api.routes.analysis import router as analysis_router
+from planagent.api.routes.automotive import router as automotive_router
 from planagent.api.routes.agents import router as agents_router
 from planagent.api.routes.calibration import router as calibration_router
 from planagent.api.routes.debate_votes import router as debate_votes_router
@@ -32,6 +33,7 @@ from planagent.api.routes.auth import get_community_access_payload
 
 router = APIRouter()
 router.include_router(analysis_router, tags=["Analysis & Assistant"])
+router.include_router(automotive_router, tags=["Automotive"])
 router.include_router(agents_router, dependencies=[Depends(get_community_access_payload)])
 router.include_router(debate_votes_router)
 router.include_router(debate_replay_router, tags=["Debate Replay"])

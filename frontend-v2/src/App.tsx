@@ -13,6 +13,7 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Monitoring from './pages/Monitoring'
 import Cockpit from './pages/Cockpit'
+import Automotive from './pages/Automotive'
 import Charts from './pages/Charts'
 import Deliberation from './pages/Deliberation'
 import Directions from './pages/Directions'
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/cockpit/loops" element={<LivingLoop />} />
             <Route path="/cockpit/directions" element={<Directions />} />
             <Route path="/cockpit/templates" element={<TemplateProvenance />} />
+            <Route path="/cockpit/automotive" element={<Automotive />} />
           </Route>
         </Routes>
       </AuthGate>

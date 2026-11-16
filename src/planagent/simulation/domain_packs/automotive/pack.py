@@ -18,6 +18,13 @@ representative successor-generation share, ramped by a tick driver.
 Per-nameplate generation schedules are Phase 2; the split-gate
 structure (``services/splits``) already carries the full
 nameplate → generation → trim → product → supplier-share tree.
+
+Phase 2 adds the NEV/ICE dual track: ``nev_*`` / ``ice_*`` splits of
+the production spine and retail, derived each tick from the shared
+spine x ``nev_penetration`` by tick drivers (the template's dual-track
+drivers). The splits always sum back to their spine totals by
+construction. Transmission links (income / LPR / materials) live in
+the template's tick drivers; the pack only carries the state fields.
 """
 
 from __future__ import annotations
@@ -94,6 +101,22 @@ class AutomotiveDomainPack(DomainPack):
             ),
             # Synthesis C1/B1: CAAM total-volume caliber, 2025.
             StateFieldSpec("nev_penetration", "NEV share of total vehicle sales.", 0.479),
+            # Phase 2 dual track: NEV/ICE splits of the production spine
+            # and retail. Initial values are the spine x 0.479, rounded
+            # so each pair sums exactly to its spine total; tick
+            # drivers re-derive them from the live spine x penetration.
+            StateFieldSpec(
+                "nev_production_volume", "Monthly NEV production volume, 10k vehicles.", 137.86
+            ),
+            StateFieldSpec(
+                "ice_production_volume", "Monthly ICE production volume, 10k vehicles.", 149.94
+            ),
+            StateFieldSpec(
+                "nev_retail_volume", "Monthly NEV retail volume, 10k vehicles.", 94.79
+            ),
+            StateFieldSpec(
+                "ice_retail_volume", "Monthly ICE retail volume, 10k vehicles.", 103.11
+            ),
             # Synthesis C1: 1.0 = 2025, anchored to CNY 43,377 per-capita disposable income.
             StateFieldSpec("income_index", "Disposable-income level, 1.0 = 2025.", 1.0),
             # Synthesis C1/B4: ASSUMPTION PARAMETER (no unified public series).

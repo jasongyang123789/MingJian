@@ -60,6 +60,12 @@ import type {
   VariableTemplateRead,
   VariableTemplateUpdate,
   VariableValidationResult,
+  AutomotiveSplitStructureRead,
+  AutomotiveTrajectoryRead,
+  ExpectationCatalogEntry,
+  PromptReportRead,
+  SalesLayerRead,
+  SalesLayerRequest,
 } from './engineTypes'
 
 // ==================== 错误解析 ====================
@@ -397,4 +403,24 @@ export const directionsApi = {
     api.deleteNoContent(
       `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}`,
     ),
+}
+
+// ==================== Phase 2 — 汽车包 ====================
+export const automotiveApi = {
+  getTrajectory: (runId: string) =>
+    api.get<AutomotiveTrajectoryRead>(
+      `/runs/${encodeURIComponent(runId)}/automotive/trajectory`,
+    ),
+  getSplitStructure: (runId: string) =>
+    api.get<AutomotiveSplitStructureRead>(
+      `/runs/${encodeURIComponent(runId)}/automotive/split-structure`,
+    ),
+  computeSalesLayer: (runId: string, payload: SalesLayerRequest) =>
+    api.post<SalesLayerRead>(
+      `/runs/${encodeURIComponent(runId)}/automotive/sales-layer`,
+      payload,
+    ),
+  evaluatePrompts: (payload: { split_structure: unknown; dms_mandate_on?: boolean | null }) =>
+    api.post<PromptReportRead>('/automotive/prompts/evaluate', payload),
+  getExpectations: () => api.get<ExpectationCatalogEntry[]>('/automotive/expectations'),
 }
