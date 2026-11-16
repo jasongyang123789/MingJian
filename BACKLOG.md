@@ -444,6 +444,43 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   materials links and NEV/ICE dual-track dynamics not
   modeled; cockpit has no automotive views.
 
+## Sprint 16 — seminar core: multi-model rounds over a frozen case (done)
+
+- Delivered on `strategy-engine/sprint16-seminar-core` (see
+  SPRINT16.md), from Phase 1 tip `0c5fceb`, as Ho directed on
+  2026-11-16 (approved the seminar-mechanism design, start at
+  S16). Design authority: the seminar design doc (§16 S16 row;
+  §2–§6, §9, §12). Backend only; no live LLM call anywhere
+  (fixture/fake-port driven); no scheduler/worker/background
+  progression (Sprint 9 boundary). New: migration 0038 with all
+  five seminar tables (seminars, seminar_rounds, seminar_board,
+  seminar_finals, seminar_reports — the last table-only, S17
+  writes it); the parameterized SkillLLMPort (target/temperature/
+  timeout per roster entry, defaults primary/0.3, keys only from
+  environment variable names); frozen case snapshots (canonical
+  JSON + SHA-256; later run products never enter); the append-only
+  board (monotonic seq, wave-start snapshot reads, latest_per_model
+  policy, quotation rendering with the §4.3 trust boundary); the
+  round engine (analysis via existing pipelines + new
+  `seminar.reflect` stage, quiet-rounds convergence + hard cap,
+  per-model failure isolation, reflection failure preserving the
+  analysis); `seminar.reflect` + `seminar.final_verdict` templates
+  and contracts (separate registry, version 1 — the 17-template v2
+  pin untouched); create/advance/finalize endpoints (chair 503
+  with zero rows; GET/synthesize are S17). Acceptance: 3 fake
+  models × 3 waves with board seqs 1–9 in wave × roster order and
+  snapshot versions 0/3/6; quiet convergence stops a stable model
+  at 3 of 5 rounds while a flip-flopping model runs to the cap;
+  single-model failures isolated with zero rows beyond passed
+  stages. Backend 1430 → 1510 tests, 0 failed; mypy clean; ruff
+  zero new findings vs baseline; migration 0038 up/down/re-up
+  verified; Sprint 0 smoke PASS. Limits: live port path untested
+  (S18 live smoke); no retries/taxonomy/budgets (S18); no token
+  accounting; convergence compares exact normalized strings;
+  concurrent advances to one seminar are not serialized. Note:
+  the full suite has outgrown /tmp's 512M tmpfs — full runs now
+  need `TMPDIR=/dev/shm/pytest-tmp`.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
