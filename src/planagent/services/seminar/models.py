@@ -24,6 +24,28 @@ from planagent.config.openai import TARGET_NAMES
 MAX_ROSTER_MODELS = 10
 MAX_SEMINAR_ROUNDS = 10
 
+#: The chair model id recorded on agent-chair reports (Sprint 18):
+#: the chair is the agent (Glint), not a roster model. Stored on the
+#: report row and rendered in the report header as chair provenance.
+AGENT_CHAIR_MODEL_ID = "glint-agent"
+
+#: Default per-seminar budget: 200 stage-call attempts (design §10.3/
+#: §14). Counts attempts, so retries consume budget too.
+DEFAULT_MAX_STAGE_CALLS = 200
+
+#: Default per-seminar token budget: 1,000,000 tokens. Generous on
+#: purpose — the guardrail catches runaway seminars, not normal ones.
+DEFAULT_MAX_TOKENS = 1_000_000
+
+#: Default timeout-only retries (design §10.3): 2 retries = 3 attempts.
+DEFAULT_MAX_RETRIES = 2
+
+#: Default fixed backoff between timeout retries (seconds).
+DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
+
+#: Default Jaccard threshold for near-duplicate pre-pass grouping.
+DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.8
+
 
 def _strip_text(value: object) -> object:
     if isinstance(value, str):
@@ -118,6 +140,14 @@ class SeminarConfig(_StripMixin):
     options: list[str] = Field(default_factory=list, max_length=20)
     context_lines: list[str] = Field(default_factory=list, max_length=50)
     chair_participates: bool = False
+    chair_mode: Literal["model", "agent"] = "model"
+    max_stage_calls: int = Field(default=DEFAULT_MAX_STAGE_CALLS, ge=1)
+    max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=1)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0, le=5)
+    retry_backoff_seconds: float = Field(default=DEFAULT_RETRY_BACKOFF_SECONDS, ge=0.0, le=60.0)
+    near_duplicate_threshold: float = Field(
+        default=DEFAULT_NEAR_DUPLICATE_THRESHOLD, gt=0.0, le=1.0
+    )
 
     @model_validator(mode="after")
     def _mode_matches_pipeline(self) -> SeminarConfig:
@@ -152,6 +182,14 @@ class SeminarCreateRequest(_StripMixin):
     failure_date: str = Field(default="one year from now", max_length=120)
     chair_model: ModelPortConfig
     context_lines: list[str] = Field(default_factory=list, max_length=50)
+    chair_mode: Literal["model", "agent"] = "model"
+    max_stage_calls: int = Field(default=DEFAULT_MAX_STAGE_CALLS, ge=1)
+    max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, ge=1)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0, le=5)
+    retry_backoff_seconds: float = Field(default=DEFAULT_RETRY_BACKOFF_SECONDS, ge=0.0, le=60.0)
+    near_duplicate_threshold: float = Field(
+        default=DEFAULT_NEAR_DUPLICATE_THRESHOLD, gt=0.0, le=1.0
+    )
 
     @model_validator(mode="after")
     def _mode_matches_pipeline(self) -> SeminarCreateRequest:
@@ -188,6 +226,12 @@ class SeminarCreateRequest(_StripMixin):
             options=list(self.options),
             context_lines=list(self.context_lines),
             chair_participates=chair_participates,
+            chair_mode=self.chair_mode,
+            max_stage_calls=self.max_stage_calls,
+            max_tokens=self.max_tokens,
+            max_retries=self.max_retries,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+            near_duplicate_threshold=self.near_duplicate_threshold,
         )
 
 
@@ -273,11 +317,11 @@ class BoardDigest(BaseModel):
 
 
 class RoundError(BaseModel):
-    """A recorded round failure: best-effort kind + stage + message.
+    """A recorded round failure: taxonomy kind + stage + message.
 
-    The formal error taxonomy (timeout/contract/unavailable/cancelled)
-    is S18; S16 records the exception-derived kind string honestly and
-    isolates the failure per model.
+    ``kind`` is an :class:`~planagent.services.seminar.errors.ErrorKind`
+    value (timeout / contract / unavailable / budget_exhausted /
+    cancelled / error), formalized in Sprint 18 (design §10.2).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -341,11 +385,71 @@ class SynthesizeRequest(BaseModel):
     (design §10.4); zero finals always refuse, since there is nothing
     to cluster. Partiality of the resulting report is derived from
     stored rows (finals < roster), never from this flag alone.
+    ``deterministic_fallback`` skips the chair stages and writes a
+    deterministic report (design §7.4: the caller may require the
+    deterministic composer); in agent-chair mode it is the explicit
+    re-synthesize fallback path.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     allow_partial: bool = False
+    deterministic_fallback: bool = False
+
+
+class ChairBriefRead(BaseModel):
+    """The chair brief for an agent-chair seminar (Sprint 18).
+
+    Produced (and stored, versioned) by POST /synthesize when
+    ``chair_mode`` is ``agent``: everything the agent chair needs to
+    write the clustering + synthesis, and nothing else — pre-pass
+    clusters with exact + near-duplicate groups, disagreements
+    derived in code, computed metrics, verbatim verdicts, the
+    participation note, and absent models. The brief pins the item
+    set the submission's merge-map coverage is validated against;
+    ``brief_version`` + ``brief_hash`` identify it in the audit
+    trail. No report is written by the brief step; the seminar
+    awaits chair input via POST /chair-synthesis.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    seminar_id: str
+    brief_version: int
+    brief_hash: str
+    topic: str
+    status: str
+    chair_mode: str = "agent"
+    chair_model_id: str = AGENT_CHAIR_MODEL_ID
+    prepass: dict[str, Any]
+    deterministic_clusters: dict[str, Any]
+    disagreements: list[dict[str, Any]] = Field(default_factory=list)
+    computed_metrics: dict[str, Any]
+    verdicts: list[dict[str, Any]] = Field(default_factory=list)
+    participation_note: str
+    absent_models: list[dict[str, Any]] = Field(default_factory=list)
+    finals_used: int
+    roster_size: int
+    partial: bool
+    submit_endpoint: str
+
+
+class ChairSynthesisRequest(BaseModel):
+    """An agent chair's submission (Sprint 18).
+
+    Both payloads are validated against the SAME contracts the model
+    chair's outputs are validated against (``ClaimClusters`` and
+    ``SeminarSynthesis``), and the clustering goes through the SAME
+    merge-map coverage enforcement. ``brief_version`` pins which
+    stored brief the submission answers (default: the latest brief);
+    the submission is validated against that brief's pre-pass items.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    clusters: dict[str, Any]
+    synthesis: dict[str, Any]
+    brief_version: int | None = None
 
 
 class SynthesizeRead(BaseModel):
@@ -401,6 +505,8 @@ class SeminarDetailRead(BaseModel):
     board_latest_seq: int = 0
     finals_count: int = 0
     reports: list[SeminarReportSummary] = Field(default_factory=list)
+    budgets: dict[str, Any] = Field(default_factory=dict)
+    diagnosis: dict[str, Any] = Field(default_factory=dict)
 
 
 class SeminarSummaryRead(BaseModel):
@@ -468,12 +574,20 @@ class ReportDetailRead(BaseModel):
 
 
 __all__ = [
+    "AGENT_CHAIR_MODEL_ID",
+    "DEFAULT_MAX_RETRIES",
+    "DEFAULT_MAX_STAGE_CALLS",
+    "DEFAULT_MAX_TOKENS",
+    "DEFAULT_NEAR_DUPLICATE_THRESHOLD",
+    "DEFAULT_RETRY_BACKOFF_SECONDS",
     "MAX_ROSTER_MODELS",
     "MAX_SEMINAR_ROUNDS",
     "AdvanceModelRead",
     "AdvanceRead",
     "BoardDigest",
     "BoardRowRead",
+    "ChairBriefRead",
+    "ChairSynthesisRequest",
     "EndpointConfig",
     "FinalRowRead",
     "FinalizeModelRead",

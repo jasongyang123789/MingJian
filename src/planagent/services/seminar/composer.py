@@ -81,15 +81,28 @@ def compose_report(
     round_rows: list[dict[str, Any]],
     board_rows: list[dict[str, Any]],
     report_hash: str,
+    usage_rollup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Assemble the §8 report document from stored artifacts."""
+    """Assemble the §8 report document from stored artifacts.
+
+    ``usage_rollup`` (Sprint 18) is the audit-ledger token rollup
+    (per-model + totals); when provided it replaces the S17 "not
+    recorded" note in the audit appendix. Callers without ledger
+    access omit it and the note stands.
+    """
     synthesis = synthesis_envelope.get("synthesis")
     synthesis_path = str(synthesis_envelope.get("production_path", "unknown"))
     fallback_reason = synthesis_envelope.get("fallback_reason")
     cluster_production = str(clusters.get("production", "unknown"))
     claims = clusters.get("claims") or []
     disagreements = clusters.get("disagreements") or []
-    chair_path = synthesis is not None and synthesis_path == "chair"
+    # The chair path covers both the model chair ("chair") and the
+    # agent chair ("agent_chair"): both fill the narrative sections
+    # from a validated SeminarSynthesis contract (provenance
+    # "deliberated"); only the deterministic fallback uses template
+    # notes.
+    chair_path = synthesis is not None and synthesis_path in ("chair", "agent_chair")
+    chair_mode = str(synthesis_envelope.get("chair_mode", "model"))
 
     header: dict[str, Any] = {
         "seminar_id": seminar_id,
@@ -98,6 +111,7 @@ def compose_report(
         "version": version,
         "partial": partial,
         "chair_model_id": chair_model_id,
+        "chair_mode": chair_mode,
         "chair_participates": chair_participates,
         "production_path": synthesis_path,
         "cluster_production": cluster_production,
@@ -106,6 +120,17 @@ def compose_report(
         "roster_size": int(computed_metrics.get("roster_size", len(roster))),
         "absent_models": computed_metrics.get("absent_models") or [],
     }
+    if synthesis_envelope.get("brief_version") is not None:
+        header["brief_version"] = synthesis_envelope["brief_version"]
+        header["brief_hash"] = synthesis_envelope.get("brief_hash")
+    if chair_mode == "agent":
+        header["chair_provenance_note"] = (
+            "The chair synthesis was submitted by the agent chair "
+            f"({chair_model_id}), not a model call: the clustering and "
+            "synthesis payloads were validated against the same contracts "
+            "and the same merge-map coverage rule as model-chair output, "
+            "against the stored chair brief identified above."
+        )
     if chair_participates:
         header["chair_participation_flag"] = (
             "The chair model also participated in this seminar as a roster model. "
@@ -245,15 +270,27 @@ def compose_report(
             }
             for entry in roster
         ],
-        "chair_config": {
-            "model_id": chair_model_id,
-            "endpoint": chair_config.get("endpoint"),
-            "temperature": chair_config.get("temperature"),
-            "timeout_seconds": chair_config.get("timeout_seconds"),
-        },
+        "chair_config": (
+            {
+                "model_id": chair_model_id,
+                "chair_mode": "agent",
+                "note": "Agent chair: no model endpoint was called for this report.",
+            }
+            if chair_mode == "agent"
+            else {
+                "model_id": chair_model_id,
+                "endpoint": chair_config.get("endpoint"),
+                "temperature": chair_config.get("temperature"),
+                "timeout_seconds": chair_config.get("timeout_seconds"),
+            }
+        ),
         "token_usage": (
-            "Not recorded: the Sprint 6 port protocol returns no usage "
-            "figures (token accounting is S18 scope)."
+            usage_rollup
+            if usage_rollup is not None
+            else (
+                "Not recorded: the Sprint 6 port protocol returns no usage "
+                "figures (token accounting is S18 scope)."
+            )
         ),
     }
 
@@ -264,7 +301,9 @@ def compose_report(
         "canonical_claims": {
             "claims": claims,
             "merge_map": clusters.get("merge_map") or {},
-            "provenance": "deliberated" if cluster_production == "llm" else "computed",
+            "provenance": (
+                "deliberated" if cluster_production in ("llm", "agent_chair") else "computed"
+            ),
             "production": cluster_production,
         },
         "disagreements": {
@@ -276,11 +315,15 @@ def compose_report(
         "alternatives": alternatives,
         "key_evidence": {
             "items": _evidence_union(claims, field="key_evidence"),
-            "provenance": "deliberated" if cluster_production == "llm" else "computed",
+            "provenance": (
+                "deliberated" if cluster_production in ("llm", "agent_chair") else "computed"
+            ),
         },
         "kill_criteria": {
             "items": _evidence_union(claims, field="kill_criteria"),
-            "provenance": "deliberated" if cluster_production == "llm" else "computed",
+            "provenance": (
+                "deliberated" if cluster_production in ("llm", "agent_chair") else "computed"
+            ),
         },
         "minority_report": minority,
         "rounds_evolution": rounds_evolution,

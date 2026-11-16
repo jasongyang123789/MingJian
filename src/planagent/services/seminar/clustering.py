@@ -11,7 +11,11 @@ Pure functions over stored final verdicts — no LLM, no I/O:
   normalization (case / whitespace / punctuation) for exact-duplicate
   detection.
 * :func:`deterministic_prepass` groups items by normalized text into
-  exact-duplicate groups. Byte-identical for identical inputs.
+  exact-duplicate groups, and additionally groups exact groups whose
+  wordings are near-duplicates (Sprint 18): deterministic normalized
+  token-set similarity, no LLM. Near-duplicate groups are ADVISORY —
+  they are shown to the chair (model or agent) as merge candidates;
+  the deterministic fallback never merges distinct wordings.
 * :func:`expand_clusters` validates an LLM clustering against the
   pre-pass (every item id in exactly one claim) and expands each
   source with the item's stored facts, building the auditable merge
@@ -62,6 +66,67 @@ def normalize_claim_text(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", stripped).strip()
 
 
+#: Default Jaccard threshold for near-duplicate grouping (Sprint 18).
+#: Two wordings group when their normalized token sets are at least
+#: this similar. Configurable per seminar; pinned by tests.
+DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.8
+
+
+def token_set(normalized_text: str) -> frozenset[str]:
+    """The normalized token set of a claim: whitespace-split words."""
+    return frozenset(normalized_text.split())
+
+
+def jaccard_similarity(left: frozenset[str], right: frozenset[str]) -> float:
+    """Jaccard similarity of two token sets.
+
+    Two empty sets are identical (1.0) — both wordings normalized to
+    nothing (pure punctuation); an empty set against a non-empty one
+    is 0.0. Empty wordings share one exact group anyway, so this edge
+    only matters for grouping across exact groups.
+    """
+    if not left and not right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def group_near_duplicates(
+    exact_groups: list[list[str]],
+    items_by_id: dict[str, dict[str, Any]],
+    *,
+    threshold: float,
+) -> list[list[str]]:
+    """Group exact groups into near-duplicate groups, deterministically.
+
+    Single-pass greedy grouping in first-appearance order: each exact
+    group joins the FIRST earlier near-duplicate group whose
+    representative (the first exact group's token set) is at least
+    ``threshold`` similar; otherwise it starts a new group. The
+    representative never moves, so grouping is stable and order
+    independent of later arrivals — identical inputs always produce
+    identical groups. Returns item-id lists (exact groups flattened,
+    in order); singleton groups are included so every exact group
+    appears exactly once.
+    """
+    representatives: list[frozenset[str]] = []
+    groups: list[list[str]] = []
+    for exact_group in exact_groups:
+        first_item = items_by_id[exact_group[0]]
+        tokens = token_set(str(first_item["normalized_text"]))
+        placed = False
+        for index, representative in enumerate(representatives):
+            if jaccard_similarity(tokens, representative) >= threshold:
+                groups[index].extend(exact_group)
+                placed = True
+                break
+        if not placed:
+            representatives.append(tokens)
+            groups.append(list(exact_group))
+    return groups
+
+
 def collect_claim_items(
     verdicts: list[dict[str, Any]],
     *,
@@ -105,15 +170,27 @@ def collect_claim_items(
 
 def deterministic_prepass(
     items: list[dict[str, Any]],
+    *,
+    near_duplicate_threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
 ) -> dict[str, Any]:
-    """Group items by normalized text into exact-duplicate groups.
+    """Group items by normalized text into exact-duplicate groups, plus
+    near-duplicate groups over the exact groups (Sprint 18).
 
     Returns ``{"items": [...], "exact_groups": [[item_ids...], ...],
-    "exact_duplicate_groups": n}``. Groups are ordered by first
-    appearance; items within a group keep collection order. Fully
-    deterministic: identical inputs produce byte-identical output
-    under canonical JSON.
+    "exact_duplicate_groups": n, "near_duplicate_groups":
+    [[item_ids...], ...], "near_duplicate_group_count": m,
+    "near_duplicate_threshold": t, "item_count": len(items)}``. Groups
+    are ordered by first appearance; items within a group keep
+    collection order. Fully deterministic: identical inputs produce
+    byte-identical output under canonical JSON. Near-duplicate groups
+    are advisory merge candidates for the chair; they never change
+    the exact grouping, and the deterministic fallback clusters on
+    exact groups only.
     """
+    if not 0.0 < near_duplicate_threshold <= 1.0:
+        raise ValueError(
+            f"near_duplicate_threshold must be in (0, 1]; got {near_duplicate_threshold}."
+        )
     groups: dict[str, list[str]] = {}
     order: list[str] = []
     for item in items:
@@ -123,10 +200,17 @@ def deterministic_prepass(
             order.append(key)
         groups[key].append(str(item["item_id"]))
     exact_groups = [groups[key] for key in order]
+    items_by_id = {str(item["item_id"]): item for item in items}
+    near_groups = group_near_duplicates(
+        exact_groups, items_by_id, threshold=near_duplicate_threshold
+    )
     return {
         "items": [dict(item) for item in items],
         "exact_groups": exact_groups,
         "exact_duplicate_groups": sum(1 for group in exact_groups if len(group) > 1),
+        "near_duplicate_groups": near_groups,
+        "near_duplicate_group_count": sum(1 for group in near_groups if len(group) > 1),
+        "near_duplicate_threshold": near_duplicate_threshold,
         "item_count": len(items),
     }
 
@@ -153,14 +237,18 @@ def expand_clusters(
     clusters: ClaimClusters,
     *,
     prepass: dict[str, Any],
+    production: str = "llm",
 ) -> dict[str, Any]:
-    """Validate + expand an LLM clustering into the stored shape.
+    """Validate + expand a clustering into the stored shape.
 
     Every pre-pass item id must appear in exactly one claim's sources;
     violations raise ``ValueError`` (the caller treats this as a
     cluster-stage contract failure and falls back to deterministic
     clusters). Sources are expanded with the item's stored facts and
     the merge map (``item_id -> claim index``) is built in code.
+    ``production`` names who produced the grouping (``llm`` for the
+    model chair, ``agent_chair`` for an agent-chair submission); the
+    validation is identical either way.
     """
     items_by_id = {str(item["item_id"]): item for item in prepass["items"]}
     raw_claims = [claim.model_dump(mode="json") for claim in clusters.claims]
@@ -194,7 +282,7 @@ def expand_clusters(
         "disagreements": derive_disagreements(claims),
         "merge_map": merge_map,
         "prepass": prepass,
-        "production": "llm",
+        "production": production,
     }
 
 
@@ -285,13 +373,30 @@ def render_quoted_claims(prepass: dict[str, Any]) -> str:
 
 
 def render_prepass_groups(prepass: dict[str, Any]) -> str:
-    """Render the exact-duplicate groups for the cluster prompt."""
-    groups = [group for group in prepass["exact_groups"] if len(group) > 1]
-    if not groups:
-        return "(No exact duplicates found by the deterministic pre-pass.)"
-    lines = []
-    for group in groups:
-        lines.append("Exact-duplicate group: " + ", ".join(group))
+    """Render the exact-duplicate and near-duplicate groups for the
+    cluster prompt. Near-duplicate groups are advisory merge
+    candidates (deterministic token-set similarity, Sprint 18): the
+    chair adjudicates whether they are the same claim."""
+    lines: list[str] = []
+    exact = [group for group in prepass["exact_groups"] if len(group) > 1]
+    if exact:
+        for group in exact:
+            lines.append("Exact-duplicate group: " + ", ".join(group))
+    else:
+        lines.append("(No exact duplicates found by the deterministic pre-pass.)")
+    near = [
+        group
+        for group in prepass.get("near_duplicate_groups") or []
+        if len(group) > 1
+        and not any(set(group) == set(exact_group) for exact_group in exact)
+    ]
+    threshold = prepass.get("near_duplicate_threshold", DEFAULT_NEAR_DUPLICATE_THRESHOLD)
+    if near:
+        lines.append(
+            f"Near-duplicate candidate groups (Jaccard >= {threshold}, advisory only):"
+        )
+        for group in near:
+            lines.append("Near-duplicate candidate group: " + ", ".join(group))
     return "\n".join(lines)
 
 
@@ -329,15 +434,19 @@ def render_disagreements(clusters: dict[str, Any]) -> str:
 
 __all__ = [
     "CLUSTERABLE_FIELDS",
+    "DEFAULT_NEAR_DUPLICATE_THRESHOLD",
     "DISSENT_PLACEHOLDER",
     "collect_claim_items",
     "derive_disagreements",
     "deterministic_clusters",
     "deterministic_prepass",
     "expand_clusters",
+    "group_near_duplicates",
+    "jaccard_similarity",
     "normalize_claim_text",
     "render_clustered_claims",
     "render_disagreements",
     "render_prepass_groups",
     "render_quoted_claims",
+    "token_set",
 ]

@@ -23,6 +23,7 @@ rounds, so they can never drift from the audit trail.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Any
@@ -40,6 +41,11 @@ from planagent.services.seminar.contracts import (
     FinalVerdict,
     Reflection,
     parse_seminar_stage_output,
+)
+from planagent.services.seminar.errors import (
+    BudgetExhaustedError,
+    ErrorKind,
+    is_timeout_exception,
 )
 from planagent.services.seminar.models import BoardDigest, ModelStatus, RoundError
 from planagent.services.seminar.templates import (
@@ -80,12 +86,14 @@ async def run_seminar_stage(
             f"No LLM target is configured for seminar stage {template_id!r}; "
             "the seminar cannot run without one."
         )
+    started = time.monotonic()
     response = await port.generate_json(
         template_id=template_id,
         system_prompt=system_prompt,
         user_content=user_content,
         max_tokens=template.max_tokens,
     )
+    duration_ms = (time.monotonic() - started) * 1000.0
     if response.payload is None:
         raise SkillContractError(
             template_id,
@@ -106,20 +114,31 @@ async def run_seminar_stage(
         contract_version=SEMINAR_CONTRACT_VERSION,
         output=parsed.model_dump(mode="json"),
         model=response.model,
+        usage=response.usage.to_dict() if response.usage is not None else None,
+        duration_ms=duration_ms,
+        attempts=response.attempts,
     )
 
 
 def classify_error(exc: BaseException) -> str:
-    """Best-effort failure kind for a round error record (S18 formalizes)."""
-    if isinstance(exc, SkillLLMUnavailable):
-        return "unavailable"
-    if isinstance(exc, SkillContractError):
-        return "contract"
-    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
-        return "timeout"
+    """Classify a failure into the formal taxonomy (S18, design §10.2).
+
+    Returns an :class:`ErrorKind` value. ``cancelled`` is classified
+    distinctly from ``timeout`` (it must never be retried); SDK
+    timeout errors classify as ``timeout``; anything unrecognized is
+    ``error`` with the message preserved on the record.
+    """
     if isinstance(exc, asyncio.CancelledError):
-        return "cancelled"
-    return "error"
+        return ErrorKind.CANCELLED.value
+    if isinstance(exc, BudgetExhaustedError):
+        return ErrorKind.BUDGET_EXHAUSTED.value
+    if isinstance(exc, SkillLLMUnavailable):
+        return ErrorKind.UNAVAILABLE.value
+    if isinstance(exc, SkillContractError):
+        return ErrorKind.CONTRACT.value
+    if is_timeout_exception(exc):
+        return ErrorKind.TIMEOUT.value
+    return ErrorKind.ERROR.value
 
 
 @dataclass

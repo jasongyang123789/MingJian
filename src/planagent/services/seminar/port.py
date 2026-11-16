@@ -18,8 +18,11 @@ URL and key from the NAMED environment variables.
 key must resolve AND a model must resolve. The call path mirrors that
 method's semantics (json_object response format, shared JSON
 extraction, any failure → ``payload=None`` so the stage runner raises
-a contract error). The formal timeout/contract/unavailable error
-taxonomy is S18; S16 records failures honestly at the round level.
+a contract error) — with TWO Sprint 18 differences: SDK timeout
+errors surface as :class:`TimeoutError` (so the retry wrapper can
+retry exactly timeouts, and the taxonomy can classify them), and SDK
+token usage is captured onto the response where the provider reports
+it. Every other failure still collapses to ``payload=None``.
 """
 
 from __future__ import annotations
@@ -29,12 +32,12 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from openai import AsyncOpenAI
+from openai import APITimeoutError, AsyncOpenAI
 
 from planagent.config import Settings
 from planagent.services.openai_client import extract_json_payload
 from planagent.services.seminar.models import EndpointConfig, ModelPortConfig
-from planagent.services.skills.orchestration import SkillLLMResponse
+from planagent.services.skills.orchestration import SkillLLMResponse, TokenUsage
 
 
 @dataclass(frozen=True)
@@ -125,6 +128,15 @@ class ParameterizedSkillPort:
                 temperature=self._resolved.temperature,
                 response_format={"type": "json_object"},
             )
+        except APITimeoutError as exc:
+            # Timeouts surface distinctly (S18): the retry wrapper
+            # retries exactly these, and the taxonomy classifies them
+            # as timeout rather than contract. Raised as stdlib
+            # TimeoutError so every classifier sees one type.
+            raise TimeoutError(f"LLM stage call timed out: {exc}") from exc
+        except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
+            return SkillLLMResponse(model=None, payload=None)
+        try:
             text = response.choices[0].message.content or "{}"
             try:
                 parsed = json.loads(extract_json_payload(text))
@@ -133,9 +145,34 @@ class ParameterizedSkillPort:
             return SkillLLMResponse(
                 model=self._resolved.model,
                 payload=parsed if isinstance(parsed, dict) else None,
+                usage=_sdk_usage(response),
             )
         except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
             return SkillLLMResponse(model=None, payload=None)
+
+
+def _sdk_usage(response: object) -> TokenUsage | None:
+    """Read token usage off an SDK completion response, if reported.
+
+    Providers differ: some omit ``usage`` entirely. Absent usage is
+    ``None`` (not a fabricated zero); a present-but-partial usage
+    fills missing fields from the reported total.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    total_tokens = int(getattr(usage, "total_tokens", 0) or 0)
+    if total_tokens == 0:
+        total_tokens = prompt_tokens + completion_tokens
+    if prompt_tokens == 0 and completion_tokens == 0 and total_tokens == 0:
+        return None
+    return TokenUsage(
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
 
 
 def default_port_factory(

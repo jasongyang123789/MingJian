@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from itertools import combinations
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -101,10 +102,34 @@ class SkillLLMUnavailable(RuntimeError):
     """No configured LLM target for skill stages; nothing was fabricated."""
 
 
+@dataclass(frozen=True)
+class TokenUsage:
+    """Token accounting for one LLM call (Sprint 18).
+
+    Captured from the SDK response where the provider reports it;
+    ``None`` usage on a response means the provider/port reported
+    nothing — never a fabricated zero. Totals are the provider's own
+    figure when present, else prompt + completion.
+    """
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+        }
+
+
 @dataclass
 class SkillLLMResponse:
     model: str | None
     payload: dict[str, Any] | None
+    usage: TokenUsage | None = None
+    attempts: int = 1
 
 
 class SkillLLMPort(Protocol):
@@ -163,7 +188,13 @@ class OpenAIServiceSkillPort:
 
 
 class StageRecord(BaseModel):
-    """One executed stage, with full provenance for audit."""
+    """One executed stage, with full provenance for audit.
+
+    ``usage`` / ``duration_ms`` / ``attempts`` are Sprint 18
+    accounting, recorded by the stage runners when the port reports
+    them. ``None`` means "not reported" (older stored records and
+    ports without usage reporting) — never a fabricated zero.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +204,9 @@ class StageRecord(BaseModel):
     contract_version: str
     output: dict[str, Any]
     model: str | None = None
+    usage: dict[str, Any] | None = None
+    duration_ms: float | None = None
+    attempts: int | None = None
 
 
 def dump_stage_json(output: dict[str, Any]) -> str:
@@ -199,12 +233,14 @@ async def run_stage(
             f"No LLM target is configured for skill stage {template_id!r}; "
             "deliberation cannot run without one."
         )
+    started = time.monotonic()
     response = await port.generate_json(
         template_id=template_id,
         system_prompt=system_prompt,
         user_content=user_content,
         max_tokens=template.max_tokens,
     )
+    duration_ms = (time.monotonic() - started) * 1000.0
     if response.payload is None:
         raise SkillContractError(
             template_id,
@@ -226,6 +262,9 @@ async def run_stage(
         contract_version=SKILL_CONTRACT_VERSION,
         output=parsed.model_dump(mode="json"),
         model=response.model,
+        usage=response.usage.to_dict() if response.usage is not None else None,
+        duration_ms=duration_ms,
+        attempts=response.attempts,
     )
 
 
@@ -847,6 +886,7 @@ __all__ = [
     "SkillLLMUnavailable",
     "StageRecord",
     "StrategyTeamResult",
+    "TokenUsage",
     "TournamentResult",
     "WeightedDirection",
     "assemble_weighted_direction",

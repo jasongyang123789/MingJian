@@ -13,7 +13,15 @@
   synthesis and stores a versioned report (201). Chair-stage failures
   fall back to the deterministic composer; the report records the
   path and the reason. Fewer than 2 finals refuses (400) unless
-  ``allow_partial`` is passed.
+  ``allow_partial`` is passed. On agent-chair seminars it produces
+  and stores a versioned chair brief instead (200) — no model chair
+  call, no report row — and the seminar awaits chair input.
+- ``POST /seminars/{seminar_id}/chair-synthesis`` accepts an agent
+  chair's submission (clustering + synthesis, same contracts, same
+  merge-map coverage rule) against a stored brief and writes a
+  versioned report (201).
+- ``GET /seminars/{seminar_id}/audit`` serves the append-only audit
+  log in seq order, filterable by kind and model_id.
 - GET endpoints serve stored seminar state: detail, board, rounds,
   finals, report versions, one composed report, and a run's seminars.
 
@@ -24,14 +32,17 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.api.routes._deps import get_seminar_service
 from planagent.db import get_session
+from planagent.services.seminar.audit import AuditEventRead
 from planagent.services.seminar.models import (
     AdvanceRead,
     BoardRowRead,
+    ChairBriefRead,
+    ChairSynthesisRequest,
     FinalizeRead,
     FinalRowRead,
     ReportDetailRead,
@@ -132,18 +143,21 @@ async def finalize_seminar_endpoint(
 
 @router.post(
     "/seminars/{seminar_id}/synthesize",
-    response_model=SynthesizeRead,
+    response_model=SynthesizeRead | ChairBriefRead,
     status_code=201,
 )
 async def synthesize_seminar_endpoint(
     seminar_id: str,
     request: Request,
+    response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
     payload: SynthesizeRequest | None = None,
-) -> SynthesizeRead:
+) -> SynthesizeRead | ChairBriefRead:
     service = get_seminar_service(request)
     try:
-        return await service.synthesize_seminar(session, seminar_id, payload or SynthesizeRequest())
+        result = await service.synthesize_seminar(
+            session, seminar_id, payload or SynthesizeRequest()
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SeminarServiceError as exc:
@@ -152,6 +166,53 @@ async def synthesize_seminar_endpoint(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # A chair brief creates no report: 200, not 201.
+    if isinstance(result, ChairBriefRead):
+        response.status_code = 200
+    return result
+
+
+@router.post(
+    "/seminars/{seminar_id}/chair-synthesis",
+    response_model=SynthesizeRead,
+    status_code=201,
+)
+async def submit_chair_synthesis_endpoint(
+    seminar_id: str,
+    payload: ChairSynthesisRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SynthesizeRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.submit_chair_synthesis(session, seminar_id, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeminarServiceError as exc:
+        raise HTTPException(
+            status_code=400, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/seminars/{seminar_id}/audit", response_model=list[AuditEventRead])
+async def get_seminar_audit_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    kind: Annotated[str | None, Query()] = None,
+    model_id: Annotated[str | None, Query()] = None,
+) -> list[AuditEventRead]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_audit_events(session, seminar_id, kind=kind, model_id=model_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeminarServiceError as exc:
+        raise HTTPException(
+            status_code=400, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
 
 
 @router.get("/seminars/{seminar_id}", response_model=SeminarDetailRead)

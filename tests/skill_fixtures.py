@@ -9,7 +9,7 @@ import copy
 import json
 from pathlib import Path
 
-from planagent.services.skills.orchestration import LENS_ORDER, SkillLLMResponse
+from planagent.services.skills.orchestration import LENS_ORDER, SkillLLMResponse, TokenUsage
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "skill_outputs"
 
@@ -20,10 +20,26 @@ def load_fixture(name: str) -> dict:
 
 
 class ScriptedSkillPort:
-    """Fake LLM port: serves queued fixture payloads per template id."""
+    """Fake LLM port: serves queued fixture payloads per template id.
 
-    def __init__(self, script: dict[str, list[dict]], *, available: bool = True) -> None:
+    ``usage_script`` (Sprint 18) is an optional parallel queue of
+    scripted :class:`TokenUsage` values per template id, popped in
+    call order alongside the payloads, so tests can pin token
+    accounting end to end. Queues shorter than the payload queues
+    yield ``None`` usage for the remaining calls.
+    """
+
+    def __init__(
+        self,
+        script: dict[str, list[dict]],
+        *,
+        available: bool = True,
+        usage_script: dict[str, list[TokenUsage]] | None = None,
+    ) -> None:
         self._script = {key: [copy.deepcopy(item) for item in queue] for key, queue in script.items()}
+        self._usage_script = {
+            key: list(queue) for key, queue in (usage_script or {}).items()
+        }
         self._available = available
         self.calls: list[dict[str, str]] = []
 
@@ -49,7 +65,9 @@ class ScriptedSkillPort:
         queue = self._script.get(template_id)
         if not queue:
             raise AssertionError(f"No scripted response left for template {template_id!r}.")
-        return SkillLLMResponse(model="fixture", payload=queue.pop(0))
+        usage_queue = self._usage_script.get(template_id) or []
+        usage = usage_queue.pop(0) if usage_queue else None
+        return SkillLLMResponse(model="fixture", payload=queue.pop(0), usage=usage)
 
     def assert_exhausted(self) -> None:
         remaining = {key: len(queue) for key, queue in self._script.items() if queue}

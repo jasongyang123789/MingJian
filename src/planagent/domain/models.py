@@ -1980,3 +1980,70 @@ class SeminarReportRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class SeminarAuditEventRecord(Base):
+    """One append-only seminar audit event (Sprint 18).
+
+    The seminar's flight recorder: stage-call attempts (start/finish
+    pairs), retries, budget exhaustions, fallbacks, queue waits,
+    status transitions, chair-brief production, synthesis
+    submissions, report writes, synthesis failures, and refusals.
+    ``seq`` is monotonically increasing per seminar; rows are never
+    updated or deleted. ``model_id`` is NULL for seminar-level
+    events; ``stage`` holds the template id for stage events;
+    ``round_no`` and ``stage_call_id`` are correlation ids.
+    """
+
+    __tablename__ = "seminar_audit_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "seminar_id", "seq", name="uq_seminar_audit_events_seminar_seq"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    stage: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    round_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stage_call_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class SeminarChairBriefRecord(Base):
+    """One versioned agent-chair brief (Sprint 18).
+
+    Written by POST /synthesize on an agent-chair seminar: the
+    deterministic synthesis inputs (pre-pass, deterministic clusters,
+    computed metrics, verbatim verdicts) the agent chair answers.
+    Append-only and versioned like reports; a chair submission
+    references one brief version, and coverage is validated against
+    that brief's pinned pre-pass items. ``brief`` holds the full
+    brief document; ``brief_hash`` covers its deterministic content.
+    """
+
+    __tablename__ = "seminar_chair_briefs"
+    __table_args__ = (
+        UniqueConstraint(
+            "seminar_id", "version", name="uq_seminar_chair_briefs_seminar_version"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    brief: Mapped[dict] = mapped_column(JSON, nullable=False)
+    brief_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
