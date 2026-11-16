@@ -345,6 +345,16 @@ def test_seminar_transitions_allow_the_forward_path() -> None:
     validate_seminar_transition("synthesizing", "reported")
 
 
+def test_seminar_transitions_allow_s17_synthesize_paths() -> None:
+    """S17: explicit close from running, versioned re-synthesis from
+    reported/partial, and the synthesizing failure rollback."""
+    validate_seminar_transition("running", "synthesizing")
+    validate_seminar_transition("reported", "synthesizing")
+    validate_seminar_transition("partial", "synthesizing")
+    validate_seminar_transition("synthesizing", "partial")
+    validate_seminar_transition("synthesizing", "collecting")
+
+
 def test_seminar_transitions_refuse_backward_steps() -> None:
     for current, target in (
         ("running", "open"),
