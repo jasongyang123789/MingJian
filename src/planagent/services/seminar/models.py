@@ -207,24 +207,36 @@ _ALLOWED_TRANSITIONS: dict[SeminarStatus, frozenset[SeminarStatus]] = {
     # (all converged/capped/failed) lands directly in collecting; the
     # running state is never observable for such a seminar.
     SeminarStatus.OPEN: frozenset({SeminarStatus.RUNNING, SeminarStatus.COLLECTING}),
-    SeminarStatus.RUNNING: frozenset({SeminarStatus.RUNNING, SeminarStatus.COLLECTING}),
+    # running -> synthesizing: the explicit close (design §2): the
+    # caller synthesizes before every model terminates; the report is
+    # partial iff finals are missing (derived from stored rows, not
+    # from the prior status).
+    SeminarStatus.RUNNING: frozenset(
+        {SeminarStatus.RUNNING, SeminarStatus.COLLECTING, SeminarStatus.SYNTHESIZING}
+    ),
     SeminarStatus.COLLECTING: frozenset(
         {SeminarStatus.COLLECTING, SeminarStatus.SYNTHESIZING, SeminarStatus.PARTIAL}
     ),
     SeminarStatus.SYNTHESIZING: frozenset(
         {SeminarStatus.REPORTED, SeminarStatus.PARTIAL, SeminarStatus.COLLECTING}
     ),
-    SeminarStatus.REPORTED: frozenset(),
-    SeminarStatus.PARTIAL: frozenset(),
+    # reported/partial -> synthesizing: versioned re-synthesis
+    # (design §10.1: a failed chair synthesis may be retried later as
+    # a NEW version, never overwriting). This is the only backward
+    # step, and the append-only versioning keeps the audit trail.
+    SeminarStatus.REPORTED: frozenset({SeminarStatus.SYNTHESIZING}),
+    SeminarStatus.PARTIAL: frozenset({SeminarStatus.SYNTHESIZING}),
 }
 
 
 def validate_seminar_transition(current: str, target: str) -> None:
     """Refuse any state-machine step outside the allowed forward set.
 
-    S16 code performs open → running → collecting only; the
-    synthesizing/reported/partial transitions exist for S17 and are
-    never produced by S16 code paths.
+    S16 code performs open → running → collecting only; S17 adds the
+    synthesize transitions (collecting/running/reported/partial →
+    synthesizing → reported/partial, plus synthesizing → collecting
+    as the failure rollback). Re-synthesis from reported/partial is
+    the only backward step and always creates a new report version.
     """
     current_status = SeminarStatus(current)
     target_status = SeminarStatus(target)
@@ -322,23 +334,166 @@ class FinalizeRead(BaseModel):
     status: str
 
 
+class SynthesizeRequest(BaseModel):
+    """Synthesize a seminar report (design §12).
+
+    ``allow_partial`` relaxes the two-final minimum to one final
+    (design §10.4); zero finals always refuse, since there is nothing
+    to cluster. Partiality of the resulting report is derived from
+    stored rows (finals < roster), never from this flag alone.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    allow_partial: bool = False
+
+
+class SynthesizeRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str
+    seminar_id: str
+    version: int
+    partial: bool
+    agreement_level: str | None
+    production_path: str
+    cluster_production: str
+    fallback_reason: str | None = None
+    report_hash: str
+    chair_model_id: str
+    status: str
+
+
+class SeminarModelProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str
+    status: str
+    rounds: int
+    has_final: bool
+    latest_board_seq: int | None = None
+
+
+class SeminarReportSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int
+    partial: bool
+    production_path: str
+    cluster_production: str
+    report_hash: str
+    chair_model_id: str
+
+
+class SeminarDetailRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seminar_id: str
+    run_id: str
+    topic: str
+    status: str
+    case_snapshot_hash: str
+    roster: list[RosterEntry]
+    config: SeminarConfig
+    chair_model: ModelPortConfig
+    per_model: list[SeminarModelProgress] = Field(default_factory=list)
+    board_publications: int = 0
+    board_latest_seq: int = 0
+    finals_count: int = 0
+    reports: list[SeminarReportSummary] = Field(default_factory=list)
+
+
+class SeminarSummaryRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seminar_id: str
+    run_id: str
+    topic: str
+    status: str
+    roster_size: int
+    finals_count: int
+    report_versions: int
+
+
+class BoardRowRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    seminar_id: str
+    seq: int
+    model_id: str
+    round_no: int
+    digest: dict[str, Any]
+
+
+class RoundRowRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    seminar_id: str
+    model_id: str
+    round_no: int
+    board_snapshot_seq: int
+    stages: list[dict[str, Any]]
+    reflection: dict[str, Any] | None = None
+    reflection_stage: dict[str, Any] | None = None
+    status: str
+    error: dict[str, Any] | None = None
+
+
+class FinalRowRead(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    seminar_id: str
+    model_id: str
+    verdict: dict[str, Any]
+    stage: dict[str, Any]
+    board_snapshot_seq: int
+    status: str
+
+
+class ReportDetailRead(BaseModel):
+    """One report version: row metadata plus the composed document."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report_id: str
+    seminar_id: str
+    version: int
+    partial: bool
+    chair_model_id: str
+    report_hash: str
+    document: dict[str, Any]
+
+
 __all__ = [
     "MAX_ROSTER_MODELS",
     "MAX_SEMINAR_ROUNDS",
     "AdvanceModelRead",
     "AdvanceRead",
     "BoardDigest",
+    "BoardRowRead",
     "EndpointConfig",
+    "FinalRowRead",
     "FinalizeModelRead",
     "FinalizeRead",
     "ModelPortConfig",
     "ModelStatus",
+    "ReportDetailRead",
     "RosterEntry",
     "RoundError",
+    "RoundRowRead",
     "RoundStatus",
     "SeminarConfig",
     "SeminarCreateRead",
     "SeminarCreateRequest",
+    "SeminarDetailRead",
+    "SeminarModelProgress",
+    "SeminarReportSummary",
     "SeminarStatus",
+    "SeminarSummaryRead",
+    "SynthesizeRead",
+    "SynthesizeRequest",
     "validate_seminar_transition",
 ]

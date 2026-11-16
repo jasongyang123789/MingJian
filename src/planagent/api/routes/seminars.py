@@ -1,4 +1,4 @@
-"""Seminar endpoints (Sprint 16, design §12).
+"""Seminar endpoints (Sprint 16–17, design §12).
 
 - ``POST /runs/{run_id}/seminars`` freezes the case snapshot and
   creates a seminar (201). Refusals happen before any row is written:
@@ -9,8 +9,14 @@
   isolated and recorded; they never fail the wave.
 - ``POST /seminars/{seminar_id}/finalize`` runs final verdicts for
   eligible models (200). A failed verdict writes no row for its model.
+- ``POST /seminars/{seminar_id}/synthesize`` runs chair clustering +
+  synthesis and stores a versioned report (201). Chair-stage failures
+  fall back to the deterministic composer; the report records the
+  path and the reason. Fewer than 2 finals refuses (400) unless
+  ``allow_partial`` is passed.
+- GET endpoints serve stored seminar state: detail, board, rounds,
+  finals, report versions, one composed report, and a run's seminars.
 
-``synthesize`` and the GET endpoints are S17 — deliberately absent.
 There is no background progression: every wave is an explicit request.
 """
 
@@ -25,9 +31,18 @@ from planagent.api.routes._deps import get_seminar_service
 from planagent.db import get_session
 from planagent.services.seminar.models import (
     AdvanceRead,
+    BoardRowRead,
+    FinalRowRead,
     FinalizeRead,
+    ReportDetailRead,
+    RoundRowRead,
     SeminarCreateRead,
     SeminarCreateRequest,
+    SeminarDetailRead,
+    SeminarReportSummary,
+    SeminarSummaryRead,
+    SynthesizeRead,
+    SynthesizeRequest,
 )
 from planagent.services.seminar.service import (
     SeminarChairUnavailable,
@@ -113,3 +128,128 @@ async def finalize_seminar_endpoint(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/seminars/{seminar_id}/synthesize",
+    response_model=SynthesizeRead,
+    status_code=201,
+)
+async def synthesize_seminar_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    payload: SynthesizeRequest | None = None,
+) -> SynthesizeRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.synthesize_seminar(session, seminar_id, payload or SynthesizeRequest())
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeminarServiceError as exc:
+        raise HTTPException(
+            status_code=400, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/seminars/{seminar_id}", response_model=SeminarDetailRead)
+async def get_seminar_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SeminarDetailRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.get_seminar_detail(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/seminars/{seminar_id}/board", response_model=list[BoardRowRead])
+async def get_seminar_board_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[BoardRowRead]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_board(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/seminars/{seminar_id}/rounds", response_model=list[RoundRowRead])
+async def get_seminar_rounds_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[RoundRowRead]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_rounds(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/seminars/{seminar_id}/finals", response_model=list[FinalRowRead])
+async def get_seminar_finals_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[FinalRowRead]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_finals(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/seminars/{seminar_id}/reports",
+    response_model=list[SeminarReportSummary],
+)
+async def get_seminar_reports_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[SeminarReportSummary]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_reports(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/seminars/{seminar_id}/reports/{version}",
+    response_model=ReportDetailRead,
+)
+async def get_seminar_report_endpoint(
+    seminar_id: str,
+    version: int,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ReportDetailRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.get_report(session, seminar_id, version)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/seminars",
+    response_model=list[SeminarSummaryRead],
+)
+async def get_run_seminars_endpoint(
+    run_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[SeminarSummaryRead]:
+    service = get_seminar_service(request)
+    try:
+        return await service.list_seminars_for_run(session, run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -1,17 +1,19 @@
-"""Seminar service (Sprint 16).
+"""Seminar service (Sprint 16–17).
 
 Wires the seminar mechanism into the existing service patterns:
 creates seminars over completed runs (frozen case snapshot, roster +
 chair config stored, chair availability checked BEFORE any row is
 written), runs explicit advance waves (bounded-concurrency asyncio,
 per-model failure isolation, sequential deterministic persistence),
-and runs explicit finalization (verdicts for eligible models).
+runs explicit finalization (verdicts for eligible models), and runs
+explicit chair synthesis (clustering + synthesis + deterministic
+composer fallback, versioned reports).
 
 No scheduler, no worker, no background progression of any kind: every
-wave and every finalization is an explicit request (the Sprint 9
-automation boundary). The service never touches the numeric core: it
-reads stored engine products at freeze time and writes only seminar
-tables.
+wave, finalization, and synthesis is an explicit request (the Sprint
+9 automation boundary). The service never touches the numeric core:
+it reads stored engine products at freeze time and writes only
+seminar tables.
 
 Port injection: the service takes a ``port_factory`` mapping a
 :class:`ModelPortConfig` to a :class:`SkillLLMPort`. Production uses
@@ -19,7 +21,11 @@ Port injection: the service takes a ``port_factory`` mapping a
 environment); tests inject fake ports. The chair port is built and
 availability-checked at creation; roster ports are built per wave
 (roster unavailability surfaces per model at advance time, isolated
-per design §10.1 — it is NOT a creation-time refusal).
+per design §10.1 — it is NOT a creation-time refusal). At synthesize
+time the chair port is rebuilt: chair unavailability or chair-stage
+failure does NOT refuse the request — the deterministic composer
+produces a fallback report and the report records the path and the
+reason (design §7.4/§10.1).
 """
 
 from __future__ import annotations
@@ -37,11 +43,21 @@ from planagent.domain.models import (
     SeminarBoardRecord,
     SeminarFinalRecord,
     SeminarRecord,
+    SeminarReportRecord,
     SeminarRoundRecord,
     SimulationRun,
     generate_id,
     utc_now,
 )
+from planagent.services.distributions.canonical import sha256_hash
+from planagent.services.seminar.chair import run_cluster, run_synthesize
+from planagent.services.seminar.clustering import (
+    collect_claim_items,
+    deterministic_clusters,
+    deterministic_prepass,
+    expand_clusters,
+)
+from planagent.services.seminar.composer import compose_report
 from planagent.services.seminar.engine import (
     RoundOutcome,
     classify_error,
@@ -49,18 +65,29 @@ from planagent.services.seminar.engine import (
     run_round,
     run_verdict,
 )
+from planagent.services.seminar.metrics import compute_metrics
 from planagent.services.seminar.models import (
     AdvanceModelRead,
     AdvanceRead,
+    BoardRowRead,
+    FinalRowRead,
     FinalizeModelRead,
     FinalizeRead,
     ModelPortConfig,
     ModelStatus,
+    ReportDetailRead,
     RosterEntry,
+    RoundRowRead,
     SeminarConfig,
     SeminarCreateRead,
     SeminarCreateRequest,
+    SeminarDetailRead,
+    SeminarModelProgress,
+    SeminarReportSummary,
     SeminarStatus,
+    SeminarSummaryRead,
+    SynthesizeRead,
+    SynthesizeRequest,
     validate_seminar_transition,
 )
 from planagent.services.seminar.port import default_port_factory
@@ -92,6 +119,40 @@ class SeminarServiceError(ValueError):
 
 class SeminarChairUnavailable(RuntimeError):
     """The chair endpoint is not configured; nothing was written."""
+
+
+def compute_report_hash(
+    *,
+    seminar_id: str,
+    chair_model_id: str,
+    partial: bool,
+    prepass: dict[str, Any],
+    cluster_production: str,
+    computed_metrics: dict[str, Any],
+    verdicts: list[dict[str, Any]],
+    synthesis_production_path: str,
+) -> str:
+    """Hash the report's deterministic content (design §9 audit 4).
+
+    Covers ONLY deterministic inputs: the pre-pass, the computed
+    metrics, the verbatim verdicts, and the system facts (partial
+    flag, chair, production paths). LLM outputs (cluster wordings,
+    synthesis narrative) are excluded, so the same stored inputs
+    always hash identically; the version is excluded so a
+    re-synthesis from unchanged inputs hashes identically too.
+    """
+    return sha256_hash(
+        {
+            "seminar_id": seminar_id,
+            "chair_model_id": chair_model_id,
+            "partial": partial,
+            "prepass": prepass,
+            "cluster_production": cluster_production,
+            "computed_metrics": computed_metrics,
+            "verdicts": [entry["verdict"] for entry in verdicts],
+            "synthesis_production_path": synthesis_production_path,
+        }
+    )
 
 
 class SeminarService:
@@ -132,6 +193,16 @@ class SeminarService:
     async def _final_rows(self, session: AsyncSession, seminar_id: str) -> list[SeminarFinalRecord]:
         result = await session.execute(
             select(SeminarFinalRecord).where(SeminarFinalRecord.seminar_id == seminar_id)
+        )
+        return list(result.scalars().all())
+
+    async def _report_rows(
+        self, session: AsyncSession, seminar_id: str
+    ) -> list[SeminarReportRecord]:
+        result = await session.execute(
+            select(SeminarReportRecord)
+            .where(SeminarReportRecord.seminar_id == seminar_id)
+            .order_by(SeminarReportRecord.version)
         )
         return list(result.scalars().all())
 
@@ -518,10 +589,512 @@ class SeminarService:
         await session.commit()
         return FinalizeRead(seminar_id=seminar.id, finals=finals, status=seminar.status)
 
+    # -- synthesize ------------------------------------------------------
+
+    def _absent_models(
+        self,
+        *,
+        roster: list[RosterEntry],
+        final_model_ids: frozenset[str],
+        statuses: dict[str, ModelStatus],
+        round_rows: list[SeminarRoundRecord],
+    ) -> list[dict[str, Any]]:
+        absent: list[dict[str, Any]] = []
+        for entry in roster:
+            if entry.model_id in final_model_ids:
+                continue
+            rows = [row for row in round_rows if row.model_id == entry.model_id]
+            latest = max(rows, key=lambda row: row.round_no) if rows else None
+            error = (latest.error or {}) if latest is not None else {}
+            if error:
+                reason = (
+                    f"failed at stage {error.get('stage')} "
+                    f"({error.get('kind')}): {error.get('message')}"
+                )
+            else:
+                reason = (
+                    f"no final verdict stored (model status: "
+                    f"{statuses[entry.model_id]}; finalize produced no verdict)"
+                )
+            absent.append(
+                {
+                    "model_id": entry.model_id,
+                    "status": statuses[entry.model_id],
+                    "reason": reason,
+                }
+            )
+        return absent
+
+    async def synthesize_seminar(
+        self,
+        session: AsyncSession,
+        seminar_id: str,
+        request: SynthesizeRequest,
+    ) -> SynthesizeRead:
+        seminar = await self._get_seminar(session, seminar_id)
+        if seminar.status == SeminarStatus.SYNTHESIZING.value:
+            raise SeminarServiceError(
+                "seminar_synthesize_in_flight",
+                f"Seminar {seminar_id} is already synthesizing; "
+                "concurrent synthesizes to one seminar must be serialized by the caller.",
+            )
+        if seminar.status == SeminarStatus.OPEN.value:
+            raise SeminarServiceError(
+                "seminar_not_ready",
+                f"Seminar {seminar_id} has never advanced; "
+                "advance and finalize before synthesizing.",
+            )
+        roster = [RosterEntry.model_validate(item) for item in seminar.roster]
+        config = SeminarConfig.model_validate(seminar.config)
+        chair_model = ModelPortConfig.model_validate(seminar.chair_model)
+        round_rows = await self._round_rows(session, seminar_id)
+        board_rows = await self._board_rows(session, seminar_id)
+        final_rows = await self._final_rows(session, seminar_id)
+        finals_by_model = {row.model_id: row for row in final_rows}
+        verdicts: list[dict[str, Any]] = [
+            {
+                "model_id": entry.model_id,
+                "verdict": finals_by_model[entry.model_id].verdict,
+                "stage": finals_by_model[entry.model_id].stage,
+                "board_snapshot_seq": finals_by_model[entry.model_id].board_snapshot_seq,
+            }
+            for entry in roster
+            if entry.model_id in finals_by_model
+        ]
+        # Minimum-threshold refusals happen BEFORE any write (design
+        # §10.4): zero finals always refuse; one final refuses unless
+        # the caller explicitly allows a partial report.
+        if not verdicts:
+            raise SeminarServiceError(
+                "seminar_no_finals",
+                "Synthesis requires at least one final verdict; "
+                "this seminar has none. Finalize first.",
+            )
+        if len(verdicts) < 2 and not request.allow_partial:
+            raise SeminarServiceError(
+                "seminar_insufficient_finals",
+                "Synthesis requires at least 2 final verdicts; "
+                "this seminar has 1. Pass allow_partial=true to "
+                "synthesize a partial report from a single verdict.",
+            )
+
+        prior_status = seminar.status
+        validate_seminar_transition(prior_status, SeminarStatus.SYNTHESIZING.value)
+        seminar.status = SeminarStatus.SYNTHESIZING.value
+        seminar.updated_at = utc_now()
+        await session.commit()
+        try:
+            read = await self._synthesize_locked(
+                session,
+                seminar=seminar,
+                roster=roster,
+                config=config,
+                chair_model=chair_model,
+                round_rows=round_rows,
+                board_rows=board_rows,
+                verdicts=verdicts,
+            )
+        except Exception:
+            # Failure rollback: no report row, status restored. The
+            # synthesizing -> prior-status edge is valid for every
+            # prior status synthesize accepts (collecting, running,
+            # reported, partial).
+            await session.rollback()
+            seminar.status = prior_status
+            seminar.updated_at = utc_now()
+            await session.commit()
+            raise
+        return read
+
+    async def _synthesize_locked(
+        self,
+        session: AsyncSession,
+        *,
+        seminar: SeminarRecord,
+        roster: list[RosterEntry],
+        config: SeminarConfig,
+        chair_model: ModelPortConfig,
+        round_rows: list[SeminarRoundRecord],
+        board_rows: list[SeminarBoardRecord],
+        verdicts: list[dict[str, Any]],
+    ) -> SynthesizeRead:
+        round_no_by_model: dict[str, int] = {}
+        for row in round_rows:
+            round_no_by_model[row.model_id] = max(
+                round_no_by_model.get(row.model_id, 0), row.round_no
+            )
+        items, excluded_placeholders = collect_claim_items(
+            verdicts, round_no_by_model=round_no_by_model
+        )
+        prepass = deterministic_prepass(items)
+        prepass["excluded_dissent_placeholders"] = excluded_placeholders
+
+        final_model_ids = frozenset(entry["model_id"] for entry in verdicts)
+        statuses = self._model_statuses(
+            roster=roster,
+            config=config,
+            round_rows=round_rows,
+            board_rows=board_rows,
+            final_model_ids=final_model_ids,
+        )
+        absent = self._absent_models(
+            roster=roster,
+            final_model_ids=final_model_ids,
+            statuses=statuses,
+            round_rows=round_rows,
+        )
+
+        chair_port = self._port_factory(chair_model)
+        failures: list[str] = []
+
+        # Stage 1: clustering. Any failure (unavailable port, empty
+        # response, contract violation, incomplete merge map) falls
+        # back to deterministic pre-pass clusters — recorded, never
+        # hidden.
+        try:
+            parsed_clusters, cluster_stage = await run_cluster(
+                chair_port,
+                topic=seminar.topic,
+                prepass=prepass,
+                output_language=config.output_language,
+            )
+            clusters = expand_clusters(parsed_clusters, prepass=prepass)
+            cluster_stage_json = cluster_stage.model_dump(mode="json")
+        except Exception as exc:  # noqa: BLE001 — chair failure -> fallback
+            clusters = deterministic_clusters(prepass)
+            cluster_stage_json = None
+            failures.append(f"cluster stage failed ({classify_error(exc)}): {str(exc)[:300]}")
+        clusters["stage"] = cluster_stage_json
+
+        round_dicts = [
+            {
+                "model_id": row.model_id,
+                "round_no": row.round_no,
+                "status": row.status,
+                "board_snapshot_seq": row.board_snapshot_seq,
+                "stages": row.stages or [],
+            }
+            for row in round_rows
+        ]
+        computed_metrics = compute_metrics(
+            verdicts=verdicts,
+            clusters=clusters,
+            roster_ids=[entry.model_id for entry in roster],
+            round_rows=round_dicts,
+            statuses={model_id: str(status) for model_id, status in statuses.items()},
+            absent_models=absent,
+        )
+
+        # Stage 2: synthesis. Runs over whatever clusters exist (LLM
+        # or deterministic); failure leaves synthesis null and the
+        # composer marks the narrative sections as not generated.
+        synthesis_payload: dict[str, Any] | None = None
+        synthesis_stage_json: dict[str, Any] | None = None
+        try:
+            parsed_synthesis, synthesis_stage = await run_synthesize(
+                chair_port,
+                topic=seminar.topic,
+                clusters=clusters,
+                verdicts=verdicts,
+                computed_metrics=computed_metrics,
+                chair_participates=config.chair_participates,
+                chair_model_id=chair_model.model_id,
+                output_language=config.output_language,
+            )
+            synthesis_payload = parsed_synthesis.model_dump(mode="json")
+            synthesis_stage_json = synthesis_stage.model_dump(mode="json")
+        except Exception as exc:  # noqa: BLE001 — chair failure -> fallback
+            failures.append(
+                f"synthesize stage failed ({classify_error(exc)}): {str(exc)[:300]}"
+            )
+        synthesis_path = "chair" if synthesis_payload is not None else "deterministic_fallback"
+        fallback_reason = "; ".join(failures) if failures else None
+        synthesis_envelope: dict[str, Any] = {
+            "synthesis": synthesis_payload,
+            "stage": synthesis_stage_json,
+            "production_path": synthesis_path,
+            "fallback_reason": fallback_reason,
+            "chair_participates": config.chair_participates,
+        }
+
+        partial = len(verdicts) < len(roster)
+        report_hash = compute_report_hash(
+            seminar_id=seminar.id,
+            chair_model_id=chair_model.model_id,
+            partial=partial,
+            prepass=prepass,
+            cluster_production=str(clusters.get("production")),
+            computed_metrics=computed_metrics,
+            verdicts=verdicts,
+            synthesis_production_path=synthesis_path,
+        )
+        existing = await self._report_rows(session, seminar.id)
+        version = max((row.version for row in existing), default=0) + 1
+        record = SeminarReportRecord(
+            id=generate_id(),
+            seminar_id=seminar.id,
+            version=version,
+            clusters=clusters,
+            synthesis=synthesis_envelope,
+            computed_metrics=computed_metrics,
+            report_hash=report_hash,
+            chair_model_id=chair_model.model_id,
+            partial=partial,
+            created_at=utc_now(),
+        )
+        session.add(record)
+        target = (
+            SeminarStatus.PARTIAL.value if partial else SeminarStatus.REPORTED.value
+        )
+        validate_seminar_transition(seminar.status, target)
+        seminar.status = target
+        seminar.updated_at = utc_now()
+        await session.commit()
+        await session.refresh(record)
+        agreement_level = (
+            str(synthesis_payload["agreement_level"])
+            if synthesis_payload is not None
+            else None
+        )
+        return SynthesizeRead(
+            report_id=record.id,
+            seminar_id=seminar.id,
+            version=record.version,
+            partial=record.partial,
+            agreement_level=agreement_level,
+            production_path=synthesis_path,
+            cluster_production=str(clusters.get("production")),
+            fallback_reason=fallback_reason,
+            report_hash=record.report_hash,
+            chair_model_id=record.chair_model_id,
+            status=seminar.status,
+        )
+
+    # -- reads -------------------------------------------------------------
+
+    async def get_seminar_detail(
+        self, session: AsyncSession, seminar_id: str
+    ) -> SeminarDetailRead:
+        seminar = await self._get_seminar(session, seminar_id)
+        roster = [RosterEntry.model_validate(item) for item in seminar.roster]
+        config = SeminarConfig.model_validate(seminar.config)
+        round_rows = await self._round_rows(session, seminar_id)
+        board_rows = await self._board_rows(session, seminar_id)
+        final_rows = await self._final_rows(session, seminar_id)
+        report_rows = await self._report_rows(session, seminar_id)
+        final_model_ids = frozenset(row.model_id for row in final_rows)
+        statuses = self._model_statuses(
+            roster=roster,
+            config=config,
+            round_rows=round_rows,
+            board_rows=board_rows,
+            final_model_ids=final_model_ids,
+        )
+        latest_seq: dict[str, int] = {}
+        for row in board_rows:
+            latest_seq[row.model_id] = max(latest_seq.get(row.model_id, 0), row.seq)
+        per_model = [
+            SeminarModelProgress(
+                model_id=entry.model_id,
+                status=str(statuses[entry.model_id]),
+                rounds=sum(1 for row in round_rows if row.model_id == entry.model_id),
+                has_final=entry.model_id in final_model_ids,
+                latest_board_seq=latest_seq.get(entry.model_id),
+            )
+            for entry in roster
+        ]
+        return SeminarDetailRead(
+            seminar_id=seminar.id,
+            run_id=seminar.run_id,
+            topic=seminar.topic,
+            status=seminar.status,
+            case_snapshot_hash=seminar.case_snapshot_hash,
+            roster=roster,
+            config=config,
+            chair_model=ModelPortConfig.model_validate(seminar.chair_model),
+            per_model=per_model,
+            board_publications=len(board_rows),
+            board_latest_seq=max((row.seq for row in board_rows), default=0),
+            finals_count=len(final_rows),
+            reports=[
+                SeminarReportSummary(
+                    version=row.version,
+                    partial=row.partial,
+                    production_path=str((row.synthesis or {}).get("production_path", "unknown")),
+                    cluster_production=str((row.clusters or {}).get("production", "unknown")),
+                    report_hash=row.report_hash,
+                    chair_model_id=row.chair_model_id,
+                )
+                for row in report_rows
+            ],
+        )
+
+    async def list_board(self, session: AsyncSession, seminar_id: str) -> list[BoardRowRead]:
+        await self._get_seminar(session, seminar_id)
+        rows = await self._board_rows(session, seminar_id)
+        return [
+            BoardRowRead(
+                id=row.id,
+                seminar_id=row.seminar_id,
+                seq=row.seq,
+                model_id=row.model_id,
+                round_no=row.round_no,
+                digest=row.digest or {},
+            )
+            for row in rows
+        ]
+
+    async def list_rounds(self, session: AsyncSession, seminar_id: str) -> list[RoundRowRead]:
+        await self._get_seminar(session, seminar_id)
+        rows = await self._round_rows(session, seminar_id)
+        return [
+            RoundRowRead(
+                id=row.id,
+                seminar_id=row.seminar_id,
+                model_id=row.model_id,
+                round_no=row.round_no,
+                board_snapshot_seq=row.board_snapshot_seq,
+                stages=row.stages or [],
+                reflection=row.reflection,
+                reflection_stage=row.reflection_stage,
+                status=row.status,
+                error=row.error,
+            )
+            for row in rows
+        ]
+
+    async def list_finals(self, session: AsyncSession, seminar_id: str) -> list[FinalRowRead]:
+        await self._get_seminar(session, seminar_id)
+        rows = await self._final_rows(session, seminar_id)
+        return [
+            FinalRowRead(
+                id=row.id,
+                seminar_id=row.seminar_id,
+                model_id=row.model_id,
+                verdict=row.verdict or {},
+                stage=row.stage or {},
+                board_snapshot_seq=row.board_snapshot_seq,
+                status=row.status,
+            )
+            for row in rows
+        ]
+
+    async def list_reports(
+        self, session: AsyncSession, seminar_id: str
+    ) -> list[SeminarReportSummary]:
+        await self._get_seminar(session, seminar_id)
+        rows = await self._report_rows(session, seminar_id)
+        return [
+            SeminarReportSummary(
+                version=row.version,
+                partial=row.partial,
+                production_path=str((row.synthesis or {}).get("production_path", "unknown")),
+                cluster_production=str((row.clusters or {}).get("production", "unknown")),
+                report_hash=row.report_hash,
+                chair_model_id=row.chair_model_id,
+            )
+            for row in rows
+        ]
+
+    async def get_report(
+        self, session: AsyncSession, seminar_id: str, version: int
+    ) -> ReportDetailRead:
+        seminar = await self._get_seminar(session, seminar_id)
+        rows = await self._report_rows(session, seminar_id)
+        record = next((row for row in rows if row.version == version), None)
+        if record is None:
+            raise LookupError(f"Seminar {seminar_id} has no report version {version}.")
+        roster = [RosterEntry.model_validate(item) for item in seminar.roster]
+        config = SeminarConfig.model_validate(seminar.config)
+        round_rows = await self._round_rows(session, seminar_id)
+        board_rows = await self._board_rows(session, seminar_id)
+        final_rows = await self._final_rows(session, seminar_id)
+        finals_by_model = {row.model_id: row for row in final_rows}
+        verdicts = [
+            {
+                "model_id": entry.model_id,
+                "verdict": finals_by_model[entry.model_id].verdict,
+                "stage": finals_by_model[entry.model_id].stage,
+                "board_snapshot_seq": finals_by_model[entry.model_id].board_snapshot_seq,
+            }
+            for entry in roster
+            if entry.model_id in finals_by_model
+        ]
+        document = compose_report(
+            seminar_id=seminar.id,
+            run_id=seminar.run_id,
+            topic=seminar.topic,
+            version=record.version,
+            partial=record.partial,
+            chair_model_id=record.chair_model_id,
+            chair_participates=config.chair_participates,
+            case_snapshot_hash=seminar.case_snapshot_hash,
+            roster=[entry.model_dump(mode="json") for entry in roster],
+            chair_config=seminar.chair_model or {},
+            clusters=record.clusters or {},
+            synthesis_envelope=record.synthesis or {},
+            computed_metrics=record.computed_metrics or {},
+            verdicts=verdicts,
+            round_rows=[
+                {
+                    "model_id": row.model_id,
+                    "round_no": row.round_no,
+                    "status": row.status,
+                    "board_snapshot_seq": row.board_snapshot_seq,
+                    "stages": row.stages or [],
+                }
+                for row in round_rows
+            ],
+            board_rows=[
+                {"seq": row.seq, "model_id": row.model_id, "round_no": row.round_no}
+                for row in board_rows
+            ],
+            report_hash=record.report_hash,
+        )
+        return ReportDetailRead(
+            report_id=record.id,
+            seminar_id=seminar.id,
+            version=record.version,
+            partial=record.partial,
+            chair_model_id=record.chair_model_id,
+            report_hash=record.report_hash,
+            document=document,
+        )
+
+    async def list_seminars_for_run(
+        self, session: AsyncSession, run_id: str
+    ) -> list[SeminarSummaryRead]:
+        run = await session.get(SimulationRun, run_id)
+        if run is None:
+            raise LookupError(f"Simulation run {run_id} was not found.")
+        result = await session.execute(
+            select(SeminarRecord)
+            .where(SeminarRecord.run_id == run_id)
+            .order_by(SeminarRecord.created_at)
+        )
+        seminars = list(result.scalars().all())
+        summaries: list[SeminarSummaryRead] = []
+        for seminar in seminars:
+            finals = await self._final_rows(session, seminar.id)
+            reports = await self._report_rows(session, seminar.id)
+            summaries.append(
+                SeminarSummaryRead(
+                    seminar_id=seminar.id,
+                    run_id=seminar.run_id,
+                    topic=seminar.topic,
+                    status=seminar.status,
+                    roster_size=len(seminar.roster or []),
+                    finals_count=len(finals),
+                    report_versions=len(reports),
+                )
+            )
+        return summaries
+
 
 __all__ = [
     "PortFactory",
     "SeminarChairUnavailable",
     "SeminarService",
     "SeminarServiceError",
+    "compute_report_hash",
 ]
