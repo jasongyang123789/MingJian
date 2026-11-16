@@ -49,6 +49,7 @@
     "variable_count": 4
   },
   "variable_set": {
+    "assumption_data": {},
     "formulas": [
       {
         "description": "获客成本换算为千元",
@@ -61,7 +62,8 @@
           ],
           "op": "divide"
         },
-        "output": "获客成本(千元)"
+        "output": "获客成本(千元)",
+        "tick_driver": false
       },
       {
         "description": "期初现金扣减获客与研发投入",
@@ -82,7 +84,8 @@
           ],
           "op": "subtract"
         },
-        "output": "cash"
+        "output": "cash",
+        "tick_driver": false
       },
       {
         "description": "客单价提升净流失",
@@ -97,7 +100,8 @@
           ],
           "op": "subtract"
         },
-        "output": "净留存信号"
+        "output": "净留存信号",
+        "tick_driver": false
       },
       {
         "description": "管线覆盖随净留存信号缩放,下限 0.5",
@@ -116,7 +120,8 @@
           ],
           "op": "max"
         },
-        "output": "pipeline"
+        "output": "pipeline",
+        "tick_driver": false
       }
     ],
     "internal": {

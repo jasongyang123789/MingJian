@@ -400,6 +400,9 @@ class TestSimulationExecution:
             # no template or inline variable set attached.
             variable_template_id=None,
             variable_set=None,
+            # Stand-in field added in Phase 1 (split gate); absent =
+            # no split structure attached.
+            split_structure=None,
         )
         with pytest.raises(ValueError, match="not implemented"):
             await engine_service.create_simulation_run(mock_session, payload)

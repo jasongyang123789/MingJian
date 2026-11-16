@@ -168,7 +168,7 @@ def test_template_crud_lifecycle(monkeypatch, tmp_path: Path) -> None:
         listing = client.get("/variable-templates")
         assert listing.status_code == 200
         ids = [item["id"] for item in listing.json()]
-        assert ids[:2] == ["builtin:corporate", "builtin:military"]
+        assert ids[:3] == ["builtin:automotive", "builtin:corporate", "builtin:military"]
         assert template_id in ids
 
         filtered = client.get("/variable-templates", params={"domain_id": "military"})
@@ -212,6 +212,7 @@ def test_template_create_refuses_invalid_variables_and_unknown_domain(
         # Nothing was stored: only the built-ins list.
         listing = client.get("/variable-templates")
         assert [item["id"] for item in listing.json()] == [
+            "builtin:automotive",
             "builtin:corporate",
             "builtin:military",
         ]
