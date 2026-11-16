@@ -21,6 +21,8 @@ import LivingLoop from './pages/LivingLoop'
 import MeceAuthoring from './pages/MeceAuthoring'
 import TemplateProvenance from './pages/TemplateProvenance'
 import VariableTemplates from './pages/VariableTemplates'
+import Seminars from './pages/Seminars'
+import SeminarDetail from './pages/SeminarDetail'
 import { AuthGate } from './auth/AuthGate'
 
 export default function App() {
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="/cockpit/directions" element={<Directions />} />
             <Route path="/cockpit/templates" element={<TemplateProvenance />} />
             <Route path="/cockpit/automotive" element={<Automotive />} />
+            <Route path="/cockpit/seminars" element={<Seminars />} />
+            <Route path="/cockpit/seminars/:id" element={<SeminarDetail />} />
           </Route>
         </Routes>
       </AuthGate>

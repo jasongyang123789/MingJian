@@ -10,6 +10,7 @@ const TABS = [
   { label: '决策方向', path: '/cockpit/directions' },
   { label: '模板出处', path: '/cockpit/templates' },
   { label: '汽车推演', path: '/cockpit/automotive' },
+  { label: '研讨', path: '/cockpit/seminars' },
 ]
 
 export function CockpitNav() {
