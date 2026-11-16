@@ -481,6 +481,42 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   the full suite has outgrown /tmp's 512M tmpfs — full runs now
   need `TMPDIR=/dev/shm/pytest-tmp`.
 
+## Sprint 17 — seminar chair synthesis: clustering, metrics, versioned reports (done)
+
+- Delivered on `strategy-engine/sprint17-seminar-synthesis` (see
+  SPRINT17.md), from S16 tip `4dc21eb`. Design authority: the
+  seminar design doc (§16 S17 row; §7 clustering, §8 synthesis +
+  deterministic composer, §9 schema, §12 endpoints). Backend
+  only; no live LLM call anywhere (fixture/fake-port driven);
+  no scheduler/worker/background progression (Sprint 9 boundary
+  — synthesis only on explicit POST). No new migration
+  (seminar_reports already exists from 0038); the 17-template
+  v2 pin untouched. New: deterministic claim pre-pass (exact
+  duplicate groups) + LLM semantic clustering with a
+  code-built, coverage-enforced merge_map and disagreements
+  derived from mixed stances (preserved, never averaged);
+  deterministic metrics in code (pairwise recommendation
+  agreement, confidence distribution, Borda count, dedup
+  statistics) next to the chair's judgment; `seminar.cluster`
+  + `seminar.synthesize` contracts and templates (separate
+  registry, now 4 templates, version 1, §4.3 trust boundary
+  pinned); deterministic composer fallback (Sprint 13
+  provenance discipline) with the production path recorded;
+  POST /seminars/{id}/synthesize (versioned, append-only
+  reports; minimum-2-finals refusals before any write;
+  allow_partial partial reports; re-synthesis keeps the same
+  deterministic-input hash) and the GET endpoints (detail,
+  board, rounds, finals, reports, run seminars). Acceptance:
+  2 models × 2 rounds → 11 items → 7 claims, 1 disagreement,
+  Borda 3–3 tie broken by name; chair failure → recorded
+  deterministic fallback, no exception; 1 final refuses with
+  zero rows. Backend 1510 → 1571 tests, 0 failed; mypy clean;
+  ruff zero new findings vs 4dc21eb; Sprint 0 smoke PASS.
+  Limits: live chair path untested (S18 live smoke); no
+  retries/taxonomy/budgets/token accounting (S18); exact-string
+  claim matching only; concurrent synthesizes to one seminar
+  are refused, not serialized; no cockpit view (S18).
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
