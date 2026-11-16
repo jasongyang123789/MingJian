@@ -316,5 +316,107 @@ Chair participation and prompts:
   pre-pass group `I1, I6`; synthesize prompt carries
   "Disagreement on claim 0" and "did NOT participate".
 - `test_no_seminar_template_contains_consensus_following_wording`:
-  all 4 templates free of the 5 banned phrases; 
-...[truncated 2599 chars]
+  all 4 templates free of the 5 banned phrases; the registry is
+  pinned to exactly the 4 seminar template ids
+  (`test_registry_contains_exactly_the_four_seminar_templates`).
+
+HTTP surface — `test_synthesize_and_get_endpoints_over_http`:
+
+- Synthesize over HTTP: 201, `partial` False, agreement level
+  high, `production_path` chair, status `reported`.
+- GETs: detail (`finals_count` 2, `board_publications` 4), board
+  seqs [1, 2, 3, 4], 4 rounds, 2 finals, 1 report (version 1),
+  report document with 3 canonical claims and
+  `unified_recommendation` "Phase the rollout.", run seminars
+  list — all 200.
+
+## 5. How to run / verify
+
+```bash
+cd ~/workspace/mingjian-base   # after merge; or the S17 worktree
+git checkout strategy-engine/sprint17-seminar-synthesis
+env -u NO_PROXY -u no_proxy .venv/bin/python -m pytest \
+  tests/test_seminar_api.py tests/test_seminar_service.py \
+  tests/test_seminar_synthesis_service.py \
+  tests/unit/test_seminar_templates.py tests/unit/test_seminar_contracts.py \
+  tests/unit/test_seminar_engine.py tests/unit/test_seminar_port.py \
+  tests/unit/test_seminar_clustering.py tests/unit/test_seminar_composer.py \
+  tests/unit/test_seminar_metrics.py -q
+# Full backend suite (TMPDIR redirect needed: the suite exceeds /tmp's 512M):
+rm -rf /tmp/pytest-of-root && mkdir -p /dev/shm/pytest-tmp
+TMPDIR=/dev/shm/pytest-tmp env -u NO_PROXY -u no_proxy \
+  .venv/bin/python -m pytest -q
+rm -rf /dev/shm/pytest-tmp
+# Sprint 0 smoke (revert the evidence file afterwards):
+env -u NO_PROXY -u no_proxy .venv/bin/python docs/sprint0/smoke_e2e.py
+git checkout -- docs/sprint0/smoke-evidence.json
+```
+
+## 6. Known limits
+
+- The chair's LIVE call path is untested against a real endpoint
+  (no live LLM in S17 by design): clustering/synthesis quality,
+  real merge-map conformance, and real chair behavior are
+  unverified until S18's live smoke.
+- No stage-level retries (S18): a transient chair failure falls
+  back to the deterministic path, recorded, with no retry.
+- Error taxonomy is the S16 best-effort `classify_error` only;
+  the formal taxonomy is S18.
+- No budget guardrails, no token accounting (the audit appendix
+  says so explicitly; S18 scope).
+- Exact-string claim matching in the pre-pass only:
+  near-duplicate claims need the LLM cluster stage to merge.
+- Concurrent synthesizes to one seminar are refused
+  (`seminar_synthesize_in_flight`), not serialized.
+- Report version is max+1 with no unique constraint (same
+  pre-existing pattern as S14 mappings; the unique seminar+version
+  constraint exists at the DB level).
+- `synthesize` on a never-finalized `running` seminar refuses
+  via no-finals, not a distinct error.
+- Docker stack, Postgres/Redis, real-browser rendering, and
+  live-LLM paths remain unverified (standing limits).
+
+## 7. Cockpit check
+
+No frontend file changed; no frontend re-run. The cockpit has no
+seminar views (S18 scope).
+
+## 8. Deferred (out of scope, recorded deliberately)
+
+- S18: formal error taxonomy + stage-level retries (timeout-only)
+  + budget guardrails + token accounting; cockpit seminar views
+  (board timeline, round comparison, report reading); live smoke
+  (>=2 models x 2 rounds x 1 synthesis).
+- Per-model early-finalize endpoint (design §5.3 option).
+- "Most-divergent k history digests" snapshot policy option.
+- Direction-as-variable-overrides (option B) and LLM-proposed
+  directions (option C) — standing deferrals.
+
+## 9. Commits on this branch
+
+- `35701b9` — chair synthesis: cluster/synthesize contracts +
+  templates, clustering, metrics, composer, synthesize + GET
+  endpoints
+- `eca747a` — merge-map coverage failures recorded as contract
+  failures
+- `fa4189e` — synthesis tests + mypy/ruff/format fixups
+- `1fb9ac9` — state-machine transition pins
+- `f6bca5a` — Sprint 17 report, backlog update, verification log
+- (this commit) — complete the report: the report as first
+  committed ended mid-sentence with a literal truncation marker
+  and no §5–§9. The verifier completed §4 (HTTP evidence) and
+  §5–§9 from asserted test values only; no code changed.
+
+## 10. What was NOT verified
+
+- Live-LLM behavior of any kind: no live call in this sprint by
+  design. The chair cluster/synthesize prompts against a real
+  endpoint, real claim-merging quality, real disagreement
+  preservation, and chair synthesis quality are all unverified
+  until S18 live work.
+- Real-backend integration over HTTP for the new endpoints beyond
+  TestClient (same standing caveat as prior sprints).
+- Docker / Postgres / Redis behavior of the new code.
+- Concurrency beyond the fake-port level: simultaneous synthesize
+  requests are refused, not serialized; behavior under real
+  (slow) chair ports is untested.
