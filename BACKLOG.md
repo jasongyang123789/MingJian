@@ -369,6 +369,40 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   0 smoke PASS. Live-LLM verification remains with the
   separate deliberation harness, untouched by this batch.
 
+## Sprint 15 — skill prompt/contract alignment, both directions (done)
+
+- Delivered on `strategy-engine/sprint15-skill-alignment`
+  (see SPRINT15.md), from fix batch 1 tip `ba513ef`, as Ho
+  directed on 2026-11-16 ("两个方向都做，做完了重新测试").
+  No LLM call anywhere in this sprint; the live harness
+  re-test is the parent's job after verification. All 17
+  skill templates audited field-by-field against their
+  Pydantic contracts: 2 evidenced mismatches (the 2026-11-16
+  kakouai capture: intake_classify's missing framework
+  index + object-shaped wave_plan; crit_intake's nested
+  objects where flat strings are required) and 8
+  inspection-only shape wordings; 10 prompts rewritten to
+  specify exact shapes, 7 byte-identical. The real
+  21-framework index exists in the grafted McKinsey skill
+  source and is now rendered into the intake prompt.
+  Contract side: a deterministic `mode="before"` validator
+  normalizes structured shapes to the canonical shapes
+  downstream already consumes (object/list → labeled flat
+  string; object → one string per key for `list[str]`;
+  `{"name", "description"}` option items → name, description
+  dropped by design and flagged); conforming input validates
+  byte-identical (pinned over 11 fixtures); `extra="forbid"`
+  stays; `frameworks` min-1 relaxed to an empty-list default
+  (no code consumes it except by serialization). The exact
+  captured stage-1 outputs are golden fixtures and now
+  validate. Template + contract versions bump `1` → `2` as
+  a set (existing single-constant precedent); deliberation
+  records pin the versions used. Backend 1289 → 1349 tests,
+  0 failed; mypy clean (204 files); Sprint 0 smoke PASS;
+  no frontend file changed. Limits: live verification NOT
+  done; later-stage templates fixed by inspection only,
+  stages 2+ still unobserved live.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
