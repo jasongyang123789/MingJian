@@ -133,6 +133,7 @@ def test_valid_structure_passes_all_checks() -> None:
         "structure",
         "nameplate_shares",
         "generation_shares",
+        "transition_schedules",
         "trim_shares",
         "supplier_shares",
         "fitments",
