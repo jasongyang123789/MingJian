@@ -341,6 +341,34 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   restore, the Sprint 13 fragment-bug fix (own branch, after
   Sprint 14).
 
+## Fix batch 1 — narratives fragment bug + LLM adapter bug (done)
+
+- Delivered on `strategy-engine/fix-batch1-narratives-adapter`
+  (see FIX-BATCH-1.md), right after Sprint 14, as approved by
+  Ho on 2026-11-16. Not a numbered sprint: two verified bugs
+  fixed, with regression tests, no migration, no UI change.
+  (1) Narrative generation refused any run with stored
+  robustness results or registered gates (verified over real
+  HTTP 2026-11-16): `_assemble_direction` validated raw stored
+  fragments against read models requiring a top-level `run_id`
+  the writers never store. Fixed by validating each
+  sub-fragment on its own model and injecting `run_id` — the
+  services' own read-path construction; genuinely corrupt
+  fragments still refuse before any write. Sprint 14's pinned
+  refusal test is replaced with 14 regression tests (5 success
+  on enriched runs, 9 corrupt-refusal). (2) LLM adapter bug
+  (verified 2026-11-16): `generate_json_for_target` returned
+  `(meta, None)` for every successful response because
+  `_extract_json_payload` returns a `str` the caller required
+  to be a `dict`. Fixed by parsing the payload (`json.loads`,
+  decode error → `None`), keeping the requires-dict contract;
+  the fix is byte-identical to the verified worktree patch.
+  11 new tests pin the REAL method against a fake SDK client
+  (previously untested — how the bug shipped). Backend
+  1265 → 1289 tests, 0 failed; mypy clean (204 files); Sprint
+  0 smoke PASS. Live-LLM verification remains with the
+  separate deliberation harness, untouched by this batch.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
