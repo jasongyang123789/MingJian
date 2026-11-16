@@ -592,6 +592,33 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   retention policy; cockpit seminar views + live smoke still
   queued.
 
+## Sprint 20 — cockpit seminar views: list/create + detail, board/rounds/finals, versioned reports, audit log, agent-chair brief + submission (done, frontend only)
+
+- Delivered on `strategy-engine/sprint20-cockpit-seminar` (see
+  SPRINT20.md), from `e35c0ce`, per Ho's 2026-11-16 15:36
+  "全都开始做". Frontend only: zero `.py` / backend files; built
+  only against the API surface at `e35c0ce`, no dependence on the
+  parallel Sprint 19 backend work. New routes `/cockpit/seminars`
+  (list + create form with roster editor, pipeline-dependent modes,
+  chair mode, budgets, retry settings) and
+  `/cockpit/seminars/:id` (action bar: advance/finalize/synthesize
+  with allow_partial + deterministic_fallback toggles; roster
+  progress, budgets, diagnosis; board timeline as quotations;
+  per-model rounds comparison; verbatim finals; versioned report
+  reader with provenance badges, claims + merge_map, disagreements
+  prominent, Borda alternatives, minority report; audit log with
+  kind + model_id filters and per-kind detail lines; agent-mode
+  chair brief view + ClaimClusters/SeminarSynthesis submission
+  form with client-side JSON validation, verbatim server errors,
+  deterministic-cluster prefill, and a placeholder guard). Typed
+  `seminarApi` (13 endpoints) + types read from
+  `routes/seminars.py`. No auto-refresh, no polling. Frontend 228
+  → 269 tests, 0 failed; `tsc -b`, lint, and build all clean.
+  Limits: the chair brief is in-session only (no GET brief endpoint
+  at `e35c0ce`; refresh requires re-synthesizing); the shared 30s
+  client timeout may trip on long live-model waves; no
+  live-backend or real-browser verification in this sprint.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
