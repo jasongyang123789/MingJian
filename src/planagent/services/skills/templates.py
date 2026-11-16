@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from string import Formatter
 
-_TEMPLATE_VERSION = "1"
+_TEMPLATE_VERSION = "2"
 
 # Placeholders use ``{slot}``; literal braces in template text use the
 # ``str.format`` escapes ``{{`` and ``}}``.

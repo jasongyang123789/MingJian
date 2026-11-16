@@ -9,17 +9,34 @@ output for audit.
 Contracts mirror the JSON shapes promised by the templates in
 :mod:`planagent.services.skills.templates`. Unknown keys are forbidden:
 a stage that returns fields outside its contract is a contract failure.
+
+Sprint 15 (contracts v2): live runs on 2026-11-16 showed models
+returning valid, high-quality JSON in structured shapes the v1
+contracts forbade — objects where a flat string is required, and
+lists of objects where a list of strings is required. The v1
+contracts refused those outputs and both pipelines died at stage 1.
+V2 keeps the canonical output shapes byte-identical AND normalizes
+the structured shapes to them deterministically, before validation:
+a mode="before" validator on :class:`_Contract` renders objects and
+arrays into flat strings (see :func:`_render_value`), so downstream
+consumers see exactly the shapes they already consume. Coercion is
+lossless except for one documented case (``CritIntake.options``:
+``{"name", "description"}`` items reduce to the name — the canonical
+shape is names-only). Nothing is fabricated: an empty value still
+fails a ``min_length`` constraint, unknown keys are still forbidden,
+and literals, scores, and nested-model shapes are never coerced.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+import json
+from typing import Annotated, Any, ClassVar, Literal, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, ValidationInfo, field_validator
 
 from planagent.services.mece.models import DecompositionTree
 
-SKILL_CONTRACT_VERSION = "1"
+SKILL_CONTRACT_VERSION = "2"
 
 Score = Annotated[float, Field(ge=0.0, le=10.0)]
 Importance = Annotated[int, Field(ge=1, le=5)]
@@ -45,6 +62,119 @@ class SkillContractError(RuntimeError):
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # Fields whose list-of-strings values NAME things: a dict item with
+    # a "name" key coerces to the name alone (see _coerce_field_value).
+    # Subclasses opt in per field; the default is labeled rendering.
+    STR_LIST_NAME_FIELDS: ClassVar[frozenset[str]] = frozenset()
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce_structured_shapes(cls, value: Any, info: ValidationInfo) -> Any:
+        """Normalize structured shapes to canonical ones, before validation.
+
+        Runs for every field of every contract: str fields accept dicts
+        and lists (rendered flat), list[str] fields accept dicts and
+        lists of dicts. All other annotations pass through untouched,
+        so literals, scores, mappings, and nested models validate
+        exactly as before. Conforming input is returned unchanged.
+        """
+        if info.field_name is None:
+            return value
+        field = cls.model_fields.get(info.field_name)
+        if field is None:
+            return value
+        return _coerce_field_value(
+            field_name=info.field_name,
+            annotation=field.annotation,
+            value=value,
+            name_fields=cls.STR_LIST_NAME_FIELDS,
+        )
+
+
+def _render_value(value: Any) -> str:
+    """Deterministically render any JSON value as a flat string.
+
+    Objects become ``"key: value"`` pairs joined with ``"; "`` in
+    insertion order; arrays become their rendered items joined with
+    ``"; "``; strings pass through; other scalars render as JSON
+    literals (``true``/``null``/numbers). Lossless: every key and item
+    in the input appears in the output, in input order.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return "; ".join(f"{key}: {_render_value(item)}" for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return "; ".join(_render_value(item) for item in value)
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _strip_annotated(annotation: Any) -> Any:
+    while get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    return annotation
+
+
+def _annotation_is_str(annotation: Any) -> bool:
+    return _strip_annotated(annotation) is str
+
+
+def _annotation_is_str_list(annotation: Any) -> bool:
+    unwrapped = _strip_annotated(annotation)
+    if get_origin(unwrapped) is not list:
+        return False
+    args = get_args(unwrapped)
+    return len(args) == 1 and _strip_annotated(args[0]) is str
+
+
+def _coerce_name_item(item: Any) -> Any:
+    """Coerce one item of a naming list: ``{"name", ...}`` -> the name.
+
+    The description (or any sibling key) is dropped: the canonical
+    shape is names-only, and downstream consumers match on names. A
+    dict without a string ``"name"`` key renders flat instead, so
+    nothing is silently lost.
+    """
+    if isinstance(item, dict):
+        name = item.get("name")
+        if isinstance(name, str):
+            return name
+        return _render_value(item)
+    if isinstance(item, str):
+        return item
+    return _render_value(item)
+
+
+def _coerce_field_value(
+    *,
+    field_name: str,
+    annotation: Any,
+    value: Any,
+    name_fields: frozenset[str],
+) -> Any:
+    """Coerce one raw field value toward its canonical shape.
+
+    Rules (Sprint 15): str fields accept dicts/lists via
+    :func:`_render_value`; list[str] fields accept a dict (one
+    rendered string per top-level entry, insertion order) and lists
+    containing non-strings (each item rendered, or name-reduced for
+    naming fields). A bare string for a list[str] field is NOT
+    wrapped: that stays a contract error (pinned by test).
+    """
+    if _annotation_is_str(annotation):
+        if isinstance(value, (dict, list, tuple)):
+            return _render_value(value)
+        return value
+    if _annotation_is_str_list(annotation):
+        if isinstance(value, dict):
+            return [f"{key}: {_render_value(item)}" for key, item in value.items()]
+        if isinstance(value, (list, tuple)):
+            if field_name in name_fields:
+                return [_coerce_name_item(item) for item in value]
+            return [item if isinstance(item, str) else _render_value(item) for item in value]
+        return value
+    return value
+
 
 # ---------------------------------------------------------------------------
 # McKinsey pipeline contracts
@@ -58,7 +188,13 @@ class IntakeClassification(_Contract):
     audience: str = Field(min_length=1)
     constraints: list[str] = Field(default_factory=list)
     stakes: Literal["standard", "deep"]
-    frameworks: list[str] = Field(min_length=1)
+    # No min_length: an empty list is a legitimate answer (no index
+    # framework fits the engagement). The v1 min_length=1 turned the
+    # model's honest empty answer into a pipeline failure on the live
+    # 2026-11-16 runs; downstream only serializes the intake, so an
+    # empty list is safe. The prompt still asks for at least one
+    # framework when any fits.
+    frameworks: list[str] = Field(default_factory=list)
     wave_plan: list[str] = Field(min_length=1)
     open_questions: list[str] = Field(default_factory=list)
 
@@ -202,6 +338,12 @@ class TournamentJudgment(_Contract):
 
 
 class CritIntake(_Contract):
+    # Options are consumed downstream as plain names (lens scoring keys
+    # and the chair's final option). A {"name", "description"} item
+    # coerces to its name; the description is dropped by design and the
+    # drop is recorded in SPRINT15.md.
+    STR_LIST_NAME_FIELDS: ClassVar[frozenset[str]] = frozenset({"options"})
+
     decision: str = Field(min_length=1)
     options: list[str] = Field(min_length=1)
     context: str = Field(min_length=1)

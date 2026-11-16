@@ -130,7 +130,7 @@ def test_strategy_team_run_persists_and_lists(monkeypatch, tmp_path: Path) -> No
             "Demand growth assumption is untested",
         ]
         assert all(
-            stage["template_version"] == "1" and stage["contract_version"] == "1"
+            stage["template_version"] == "2" and stage["contract_version"] == "2"
             for stage in result["stages"]
         )
         port.assert_exhausted()
@@ -242,7 +242,7 @@ def test_malformed_llm_output_is_502_and_writes_nothing(monkeypatch, tmp_path: P
         detail = response.json()["detail"]
         assert detail["code"] == "skill_contract_failed"
         assert detail["template_id"] == "mckinsey.intake_classify"
-        assert detail["contract_version"] == "1"
+        assert detail["contract_version"] == "2"
         listed = client.get(f"/runs/{run['id']}/skills/deliberations")
         assert listed.json()["deliberations"] == []
 

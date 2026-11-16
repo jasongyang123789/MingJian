@@ -150,8 +150,8 @@ async def test_run_stage_records_provenance_and_model() -> None:
     )
     assert record.stage == "diagnose"
     assert record.template_id == "mckinsey.diagnose"
-    assert record.template_version == "1"
-    assert record.contract_version == "1"
+    assert record.template_version == "2"
+    assert record.contract_version == "2"
     assert record.model == "fixture"
     assert record.output["findings"]
     port.assert_exhausted()
@@ -261,8 +261,8 @@ async def test_strategy_team_standard_run_end_to_end() -> None:
         "verify:execution",
         "verify:premortem",
     ]
-    assert all(stage.template_version == "1" for stage in result.stages)
-    assert all(stage.contract_version == "1" for stage in result.stages)
+    assert all(stage.template_version == "2" for stage in result.stages)
+    assert all(stage.contract_version == "2" for stage in result.stages)
     assert result.synthesis["recommended_option"] == "Phased rollout"
     assert result.synthesis_recommendation_in_shortlist is True
     assert [entry["name"] for entry in result.shortlist["ranked"]] == [

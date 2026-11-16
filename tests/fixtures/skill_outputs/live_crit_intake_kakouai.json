@@ -1,0 +1,121 @@
+{
+  "decision": "Should the SaaS team launch an AI customer-service line within the next 12 months, and if so, through a phased rollout, full launch, or partner-led approach?",
+  "options": [
+    {
+      "name": "Phased rollout",
+      "description": "Validate demand and delivery with a limited pilot, expanding only after agreed commercial, cash, and risk gates are met."
+    },
+    {
+      "name": "Full launch",
+      "description": "Commit to developing, selling, and supporting the line broadly within the decision window."
+    },
+    {
+      "name": "Partner-led",
+      "description": "Use a partner to supply or operate substantial parts of the offering, subject to acceptable economics, accountability, and exit terms."
+    },
+    {
+      "name": "Defer or do not launch",
+      "description": "Preserve runway and engineering capacity for the existing SaaS business; reconsider if stronger demand evidence or a lower-risk delivery path emerges."
+    }
+  ],
+  "context": {
+    "organization": "20-person SaaS team with 6 engineers and 14 months of cash runway.",
+    "decision_horizon": "Within the next 12 months.",
+    "risk_posture": "No bet-the-company moves; kill criteria must be agreed upfront.",
+    "decision_structure": "The supplied decomposition covers demand, delivery, economics, and risk. Its mutual exclusion, exhaustiveness, and structure received PASS verdicts. These verdicts validate the supplied structure, not commercial viability."
+  },
+  "evidence": {
+    "known_facts": [
+      {
+        "item": "Development effort",
+        "detail": "Triangular estimate of 24 to 60 person-months, with mode 36.",
+        "source": "Engineering lead judgment."
+      },
+      {
+        "item": "Customer acquisition cost",
+        "detail": "Triangular estimate of 8000 to 20000 yuan/customer, with mode 12000.",
+        "source": "q3-marketing-report."
+      },
+      {
+        "item": "Uplift",
+        "detail": "Triangular estimate of 20 to 60 percent, with mode 35.",
+        "source": "Pricing workshop estimate; the uplift base is unspecified."
+      },
+      {
+        "item": "Churn",
+        "detail": "Triangular estimate of 5 to 25 percent, with mode 12.",
+        "source": "Customer-success judgment; the measurement period and customer cohort are unspecified."
+      },
+      {
+        "item": "Monte Carlo results",
+        "detail": "Across 20 trials with seed 42, baseline and strategy cash were constant at 100, with zero dispersion and zero paired improvement. Reported loss probability was 0 at a loss threshold of 0. Lower-tail expected shortfall at alpha 0.1 was 100 for baseline and strategy and 0 for paired deltas.",
+        "interpretation": "These outputs do not distinguish the alternatives or establish safety. The constant cash results leave unclear whether uncertain inputs and strategy-specific costs affect the model."
+      },
+      {
+        "item": "Evidence cutoff",
+        "detail": "Only evidence dated at or before 2026-11-16T01:50:12.085345Z was visible to the simulation, using creation_time."
+      }
+    ],
+    "important_unknowns": [
+      "Target segment, customer problem, paid demand, willingness to pay, and access to buyers.",
+      "Product scope, service-quality requirements, technical feasibility, and engineering capacity available without harming the existing business.",
+      "Current cash and burn, revenue baseline, pricing, gross margin, inference and support costs, acquisition payback, and option-specific cash requirements.",
+      "Whether the CAC evidence applies to the proposed line, and what uplift and churn measure.",
+      "Partner availability, commercial terms, delivery responsibilities, data rights, and exit provisions.",
+      "Customer-data sensitivity, security obligations, applicable compliance requirements, and liability for incorrect AI responses.",
+      "Simulation cash units, strategy definition, model equations, and how uncertain inputs influence cash.",
+      "Approved success thresholds, pilot budget, kill criteria, and the decision owner's current preference."
+    ]
+  },
+  "economics": {
+    "assessment": "The supplied evidence is insufficient to establish profitable demand, affordable delivery, or superiority over preserving the existing business.",
+    "capacity_and_cash": "Development effort of 24 to 60 person-months is a material commitment for a team with 6 engineers. A launch window of 12 months against 14 months of runway makes spending timing and protection of the core business central to the decision.",
+    "commercial_uncertainty": "CAC has a documented source, but its applicability is unconfirmed. Uplift and churn are judgment-based estimates with missing definitions. Without revenue, margins, ongoing delivery costs, and cash timing, these inputs cannot establish acquisition payback or cash sustainability.",
+    "model_limitations": "The identical baseline and strategy cash outputs provide no economic basis for choosing among rollout approaches. The reported zero loss probability should not be interpreted as evidence that a launch has no downside."
+  },
+  "constraints": [
+    "Do not make a bet-the-company commitment.",
+    "Agree kill criteria before committing resources.",
+    "Operate within 14 months of cash runway.",
+    "Account for a 20-person team and only 6 engineers, including existing-product obligations.",
+    "Evaluate launch feasibility within the next 12 months.",
+    "Respect the supplied evidence cutoff when interpreting the simulation.",
+    "Treat unresolved data, security, compliance, and liability requirements as launch gates."
+  ],
+  "success": {
+    "measurable_outcome": "By the end of the next 12 months, either demonstrate paid demand and acceptable delivery quality, contribution margin, acquisition payback, cash exposure, and core-product impact against thresholds agreed before the pilot, or stop without breaching the agreed cash and risk limits.",
+    "deadline": "Within the next 12 months.",
+    "threshold_status": "Numerical acceptance thresholds and earlier go/no-go checkpoints are not supplied and must be agreed before execution."
+  },
+  "current_preference": {
+    "stated": "No current preference was provided.",
+    "provisional_advisory_view": "Prefer a capped phased validation effort, potentially using a partner where terms reduce exposure, rather than authorizing a full launch. Defer if the team cannot fund a reversible test while protecting runway and the existing business.",
+    "basis": "Demand is unvalidated, delivery effort is material, and the simulation offers no discriminating economic evidence."
+  },
+  "reversibility": {
+    "can_be_tested_cheaply": [
+      "Customer discovery and willingness-to-pay testing before substantial development.",
+      "A narrowly scoped pilot using existing tools and explicit customer expectations.",
+      "Partner diligence and a time-limited evaluation without exclusivity or long-term minimum commitments.",
+      "Technical and quality testing using appropriately authorized data."
+    ],
+    "lasting_downside": [
+      "Runway consumed by development and customer acquisition.",
+      "Engineering diversion that harms the existing SaaS product.",
+      "Long-term partner commitments, exclusivity, or difficult-to-replace integrations.",
+      "Customer promises and ongoing support obligations.",
+      "Reputational damage, data exposure, or liability from incorrect AI responses."
+    ]
+  },
+  "assumptions": [
+    "The decision includes whether to launch at all, so deferral or no launch is a credible alternative.",
+    "The supplied estimates are inputs rather than validated forecasts.",
+    "A pilot or partner evaluation is reversible only if spending, scope, customer obligations, and exit terms are explicitly capped.",
+    "The provisional preference is conditional on unresolved demand, economics, and risk evidence; it is not authorization for a launch."
+  ],
+  "questions": [
+    "What paid-demand evidence exists for a defined customer segment, and what pricing, revenue base for uplift, and churn period support the proposed unit economics?",
+    "What cash and engineering capacity can be committed without endangering the existing business, and what option-specific spending limits, success thresholds, and kill criteria will the decision owner approve?",
+    "What must the product reliably do, what data and liability obligations apply, and is there a credible partner whose economics, accountability, and exit terms materially reduce delivery risk?"
+  ]
+}

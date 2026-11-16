@@ -23,8 +23,8 @@ async def test_valid_proposal_passes_the_validator() -> None:
     assert result.validation.issues == []
     assert result.proposal.topic == "Should we launch the AI customer-service line?"
     assert result.stage.template_id == "mece.propose_tree"
-    assert result.stage.template_version == "1"
-    assert result.stage.contract_version == "1"
+    assert result.stage.template_version == "2"
+    assert result.stage.contract_version == "2"
 
 
 async def test_invalid_proposal_fails_the_validator() -> None:

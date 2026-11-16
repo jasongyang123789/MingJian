@@ -1,0 +1,68 @@
+{
+  "problem_statement": "A 20-person SaaS team with 6 engineers and 14 months of cash must decide whether to launch an AI customer-service line within the next 12 months, subject to its prohibition on bet-the-company moves and requirement for upfront kill criteria.",
+  "decision_question": "Should the team authorize the resources and financial exposure required to launch an AI customer-service line within the next 12 months, based on evidence across demand, delivery, economics, and risk?",
+  "engagement_type": "New product launch and portfolio allocation",
+  "audience": "The leadership team and the designated authority responsible for product investment and cash allocation.",
+  "constraints": [
+    "Team capacity is 20 people, including 6 engineers; existing commitments have not been specified.",
+    "Cash runway is 14 months, and the proposed launch horizon is the next 12 months.",
+    "No bet-the-company moves; kill criteria must be agreed upfront.",
+    "Treat the supplied MECE decomposition and its PASS validation verdict as given.",
+    "Preserve the supplied variable distributions and distinguish source-backed evidence from judgment estimates.",
+    "The supplied Monte Carlo ensemble contains 20 trials and reports identical baseline and strategy cash outcomes; its decision relevance requires clarification.",
+    "Use only evidence dated at or before 2026-11-16T01:50:12.085345Z, applying the supplied creation_time rule.",
+    "Do not introduce or recompute numerical assumptions during intake."
+  ],
+  "stakes": "standard",
+  "frameworks": [],
+  "wave_plan": {
+    "wave_A": {
+      "lead": "Engagement lead integrates the workstreams and confirms decision ownership, launch definition, and evaluation criteria.",
+      "workstreams": [
+        {
+          "owner": "Demand lead",
+          "mandate": "Establish the target customer, customer-service use case, buying evidence, and meaning of the uplift assumption."
+        },
+        {
+          "owner": "Delivery lead with the engineering lead",
+          "mandate": "Establish product scope, existing engineering commitments, dependencies, and the basis for dev_effort."
+        },
+        {
+          "owner": "Economics lead with the finance owner",
+          "mandate": "Document the revenue and cash model, variable definitions, source traceability, and how assumptions connect to simulation outputs."
+        },
+        {
+          "owner": "Risk lead",
+          "mandate": "Define the assessment of operational, customer, data, contractual, and financial exposure, including reversibility and kill-criteria requirements."
+        }
+      ],
+      "deliverable": "An agreed decision brief, evidence inventory, uncertainty register, and bounded mandates for subsequent option assessment."
+    },
+    "wave_B": {
+      "option_mandates": "Assign an accountable owner to each option mandate established after wave A. Option definitions remain pending intake findings.",
+      "common_requirements": [
+        "Evaluate each mandate against the same demand, delivery, economics, and risk criteria.",
+        "Specify resource commitments, cash exposure, dependencies, reversibility, and proposed kill criteria.",
+        "Apply the evidence cutoff and preserve traceability to the supplied assumptions."
+      ]
+    },
+    "verifier_panel": [
+      "Independent strategy reviewer to check decision framing and coverage.",
+      "Finance and model reviewer to verify assumptions, cash definitions, and simulation implementation.",
+      "Engineering reviewer to verify delivery scope and capacity assumptions.",
+      "Customer and demand reviewer to assess evidence quality.",
+      "Risk reviewer to assess exposure, reversibility, and kill criteria."
+    ]
+  },
+  "open_questions": [
+    "Which framework index should supply the permitted framework names? No index was provided, so frameworks is left empty.",
+    "Who holds final decision authority, and which stakeholders must approve the investment?",
+    "What constitutes launch, and which customer segment, geography, and product scope are intended?",
+    "What existing product obligations and engineering commitments must the team support?",
+    "What do uplift and churn measure, over what period, and against which baseline?",
+    "What are the units, time horizon, and mechanics of the cash metric, and how do the supplied variables feed into it?",
+    "What spending authority, minimum cash requirement, and kill criteria apply?",
+    "Would launch require material irreversible commitments that warrant classifying the engagement as deep?",
+    "Which underlying evidence sources satisfy the supplied cutoff and are available for review?"
+  ]
+}

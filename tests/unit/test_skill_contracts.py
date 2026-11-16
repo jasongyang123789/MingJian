@@ -54,7 +54,7 @@ FIXTURE_CONTRACTS = [
 
 def test_every_template_has_a_contract() -> None:
     assert set(CONTRACT_FOR_TEMPLATE) == set(TEMPLATES)
-    assert SKILL_CONTRACT_VERSION == "1"
+    assert SKILL_CONTRACT_VERSION == "2"
 
 
 @pytest.mark.parametrize("fixture_name,template_id", FIXTURE_CONTRACTS)
