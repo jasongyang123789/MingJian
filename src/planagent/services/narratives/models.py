@@ -46,6 +46,18 @@ class NarrativeError(ValueError):
         super().__init__(message)
 
 
+class DirectionError(ValueError):
+    """A client-visible direction-derivation/mapping failure.
+
+    Stable error code, same shape as :class:`NarrativeError`; the
+    routes map it to 400 with a ``{"code", "message"}`` detail.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
 # ---------------------------------------------------------------------------
 # Generation request
 # ---------------------------------------------------------------------------
@@ -93,12 +105,21 @@ class DirectionDefinition(BaseModel):
 
 
 class NarrativeGenerateRequest(BaseModel):
-    """Generate a decision-direction narrative for a run."""
+    """Generate a decision-direction narrative for a run.
+
+    ``directions`` is optional since Sprint 14: when omitted, the
+    service resolves direction definitions from the anchor run's
+    stored direction mappings (position order, capped at
+    ``MAX_DIRECTIONS``). Inline definitions always win over stored
+    mappings. An explicitly empty list is still refused, as before.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     topic: str | None = Field(default=None, max_length=500)
-    directions: list[DirectionDefinition] = Field(min_length=1, max_length=MAX_DIRECTIONS)
+    directions: list[DirectionDefinition] | None = Field(
+        default=None, min_length=1, max_length=MAX_DIRECTIONS
+    )
     loop_id: str | None = Field(default=None, max_length=36)
 
     @field_validator("topic", mode="before")
@@ -111,10 +132,156 @@ class NarrativeGenerateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_unique_names(self) -> NarrativeGenerateRequest:
+        if self.directions is None:
+            return self
         names = [direction.name for direction in self.directions]
         if len(set(names)) != len(names):
             raise ValueError("direction names must be unique within one narrative")
         return self
+
+
+# ---------------------------------------------------------------------------
+# Direction mappings (Sprint 14, Part D)
+# ---------------------------------------------------------------------------
+
+
+class DirectionMappingCreate(DirectionDefinition):
+    """Author one persisted direction definition for an anchor run.
+
+    Same shape and validation as an inline
+    :class:`DirectionDefinition`: the mapping is exactly a stored
+    definition, reusable across generations. The service validates
+    every reference (source run, ensemble, MECE branches,
+    deliberation pin) before any row is written.
+    """
+
+
+class DirectionMappingUpdate(BaseModel):
+    """Update a persisted direction mapping.
+
+    Every field is optional: omitted fields are left unchanged. An
+    explicitly supplied ``deliberation_id`` of null clears the pin;
+    an explicitly supplied empty ``mece_branches`` clears the trace.
+    Any successful update marks the mapping ``user_edited``, which
+    protects it from later derivation upserts (the no-clobber rule).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    source_run_id: str | None = Field(default=None, min_length=1, max_length=36)
+    arm: Literal["baseline", "strategy"] | None = None
+    mece_branches: list[str] | None = Field(default=None, max_length=20)
+    deliberation_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("mece_branches")
+    @classmethod
+    def _normalize_branches(cls, branches: list[str] | None) -> list[str] | None:
+        if branches is None:
+            return None
+        normalized = [branch.strip() for branch in branches]
+        if any(not branch for branch in normalized):
+            raise ValueError("mece_branches entries must be non-empty strings")
+        seen: list[str] = []
+        for branch in normalized:
+            if branch not in seen:
+                seen.append(branch)
+        return seen
+
+
+class DirectionMappingRead(BaseModel):
+    """One stored direction mapping."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    anchor_run_id: str
+    name: str
+    source_run_id: str
+    arm: Literal["baseline", "strategy"]
+    mece_branches: list[str] = Field(default_factory=list)
+    deliberation_id: str | None = None
+    origin: Literal["derived", "authored"]
+    rule_id: str | None = None
+    rules_version: str | None = None
+    rule_record: dict[str, Any] | None = None
+    user_edited: bool
+    position: int
+    created_at: str
+    updated_at: str
+
+
+class DirectionMappingListRead(BaseModel):
+    """Direction mappings for one anchor run, in position order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    mappings: list[DirectionMappingRead] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Derivation outcomes (Sprint 14, Part A)
+# ---------------------------------------------------------------------------
+
+#: Derivation rule identifiers, in evaluation order.
+DERIVATION_RULE_IDS = ("highest_p50", "most_robust", "baseline_control")
+
+#: Mechanical direction names produced by each rule. Renaming is the
+#: mapping layer's job (Part D); derivation never invents names.
+DERIVATION_RULE_NAMES = {
+    "highest_p50": "Highest P50",
+    "most_robust": "Most robust",
+    "baseline_control": "Baseline",
+}
+
+
+class DerivationRuleOutcome(BaseModel):
+    """One rule's outcome in a derivation run.
+
+    Every rule gets an outcome: ``produced`` (a direction was
+    selected), ``none`` (no candidate qualified, with the reason),
+    ``duplicate`` (the selected candidate was already taken by an
+    earlier rule), or ``skipped`` (persistence refused to overwrite
+    a user-edited mapping of the same name — the no-clobber rule).
+    The deciding statistics are pinned on produced outcomes so the
+    selection is auditable without re-running the derivation.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    rule_id: Literal["highest_p50", "most_robust", "baseline_control"]
+    status: Literal["produced", "none", "duplicate", "skipped"]
+    reason: str
+    direction_name: str | None = None
+    source_run_id: str | None = None
+    arm: Literal["baseline", "strategy"] | None = None
+    duplicate_of_rule: str | None = None
+    p50: float | None = None
+    p_loss: float | None = None
+    expected_shortfall: float | None = None
+    expected_shortfall_alpha: float | None = None
+
+
+class DerivationRead(BaseModel):
+    """A derivation run: rule outcomes plus the mappings it wrote."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    anchor_run_id: str
+    rules_version: str
+    derivation_hash: str
+    family_size: int
+    candidates_considered: int
+    outcomes: list[DerivationRuleOutcome] = Field(default_factory=list)
+    mappings: list[DirectionMappingRead] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +526,13 @@ class NarrativePolishRead(BaseModel):
 
 
 class DecisionNarrativeRead(BaseModel):
-    """A stored narrative version with its latest polish, if any."""
+    """A stored narrative version with its latest polish, if any.
+
+    ``direction_mapping_ids`` names the stored mappings the
+    generation resolved its directions from (Sprint 14); empty when
+    the request carried inline definitions, or for versions stored
+    before Sprint 14.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -372,6 +545,7 @@ class DecisionNarrativeRead(BaseModel):
     created_at: str
     body: NarrativeBody
     polish: NarrativePolishRead | None = None
+    direction_mapping_ids: list[str] = Field(default_factory=list)
 
 
 class DecisionNarrativeListRead(BaseModel):
@@ -384,6 +558,8 @@ class DecisionNarrativeListRead(BaseModel):
 
 
 __all__ = [
+    "DERIVATION_RULE_IDS",
+    "DERIVATION_RULE_NAMES",
     "MAX_CALIBRATION_FITS_IN_CONTEXT",
     "MAX_DIRECTIONS",
     "MAX_DRIVER_ROWS",
@@ -391,7 +567,14 @@ __all__ = [
     "CalibrationContextEntry",
     "DecisionNarrativeListRead",
     "DecisionNarrativeRead",
+    "DerivationRead",
+    "DerivationRuleOutcome",
     "DirectionDefinition",
+    "DirectionError",
+    "DirectionMappingCreate",
+    "DirectionMappingListRead",
+    "DirectionMappingRead",
+    "DirectionMappingUpdate",
     "DirectionNarrative",
     "DistributionSection",
     "DriverRow",
