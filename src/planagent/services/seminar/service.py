@@ -34,6 +34,13 @@ synthesizes to one seminar serialize on a per-seminar lock instead
 of refusing; agent-chair seminars (``chair_mode="agent"``) produce a
 stored chair brief on synthesize and accept a validated chair
 submission; every operation writes to the append-only audit log.
+
+Sprint 19 durability: the synthesize lock is an abstraction with
+two providers (per-process asyncio locks, or distributed DB leases
+— selected per seminar by config); the audit log gains an explicit
+retention purge endpoint (no background job); the near-duplicate
+pre-pass uses the upgraded similarity scorer (CJK-aware tokens,
+stemming, character bigrams, or a pluggable embedding scorer).
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ import time
 from collections.abc import Callable
 from typing import Any, NoReturn
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.config import Settings
@@ -69,6 +76,7 @@ from planagent.services.seminar.audit import (
     compute_diagnosis,
     ledger_totals,
     rollup_usage_by_model,
+    select_purge_victims,
 )
 from planagent.services.seminar.chair import build_chair_brief, run_cluster, run_synthesize
 from planagent.services.seminar.clustering import (
@@ -91,11 +99,20 @@ from planagent.services.seminar.engine import (
     run_verdict,
 )
 from planagent.services.seminar.instrumentation import BudgetTracker, InstrumentedPort
+from planagent.services.seminar.locks import (
+    LeaseLockProvider,
+    LockTimeoutError,
+    ProcessLockProvider,
+    SynthesizeLockProvider,
+)
 from planagent.services.seminar.metrics import compute_metrics
 from planagent.services.seminar.models import (
     AGENT_CHAIR_MODEL_ID,
     AdvanceModelRead,
     AdvanceRead,
+    AuditPurgeRead,
+    AuditPurgeRequest,
+    AuditRetentionRead,
     BoardRowRead,
     ChairBriefRead,
     ChairSynthesisRequest,
@@ -120,6 +137,11 @@ from planagent.services.seminar.models import (
     validate_seminar_transition,
 )
 from planagent.services.seminar.port import default_port_factory
+from planagent.services.seminar.similarity import (
+    ClaimSimilarity,
+    EmbeddingClaimSimilarity,
+    VectorProvider,
+)
 from planagent.services.seminar.snapshot import (
     fetch_calibration_fits,
     freeze_case_snapshot,
@@ -192,23 +214,80 @@ class SeminarService:
         self,
         settings: Settings,
         port_factory: PortFactory | None = None,
+        lease_session_factory: Callable[[], AsyncSession] | None = None,
+        vector_provider: VectorProvider | None = None,
     ) -> None:
         self.settings = settings
         self._port_factory = port_factory or default_port_factory(settings)
-        # Per-seminar synthesize locks (Sprint 18): concurrent
-        # synthesize/submission requests to one seminar serialize
-        # instead of refusing. The service instance is cached on app
-        # state (one per process), so this registry serializes across
-        # requests. Locks are never removed: one per seminar id, and
-        # seminar ids are never reused.
-        self._synthesize_locks: dict[str, asyncio.Lock] = {}
+        # Lease sessions (Sprint 19): lease transactions commit
+        # independently of the caller's session. Defaults lazily to
+        # the shared database; tests inject their own factory.
+        self._lease_session_factory = lease_session_factory
+        # Embedding vectors (Sprint 19): None means no embedding
+        # provider is wired — seminars requesting the embedding
+        # similarity provider refuse at creation.
+        self._vector_provider = vector_provider
+        # Per-seminar process locks (Sprint 18): the process lock
+        # provider holds the registry; locks are never removed.
+        self._process_lock_provider = ProcessLockProvider()
 
-    def _synthesize_lock(self, seminar_id: str) -> asyncio.Lock:
-        lock = self._synthesize_locks.get(seminar_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._synthesize_locks[seminar_id] = lock
-        return lock
+    def _lease_factory(self) -> Callable[[], AsyncSession]:
+        if self._lease_session_factory is not None:
+            return self._lease_session_factory
+        from planagent.db import get_database
+
+        return get_database().session
+
+    def _lock_provider(self, config: SeminarConfig) -> SynthesizeLockProvider:
+        """The synthesize lock provider for this seminar's config."""
+        if config.synthesize_lock_provider == "lease":
+            return LeaseLockProvider(
+                self._lease_factory(),
+                ttl_seconds=config.lease_ttl_seconds,
+                wait_timeout_seconds=config.lock_wait_timeout_seconds,
+            )
+        return self._process_lock_provider
+
+    def _similarity_scorer(self, config: SeminarConfig) -> ClaimSimilarity | None:
+        """The pre-pass scorer for this seminar's config.
+
+        Returns ``None`` for the default Jaccard scorer (the pre-pass
+        default). The embedding scorer requires a wired vector
+        provider — without one, the seminar refuses loudly instead
+        of silently falling back to Jaccard.
+        """
+        if config.similarity_provider == "jaccard":
+            return None
+        if self._vector_provider is None:
+            raise SeminarServiceError(
+                "seminar_similarity_provider_missing",
+                "This seminar requests the embedding similarity "
+                "provider, but no vector provider is configured on "
+                "the service. Wire one or use similarity_provider "
+                "'jaccard'.",
+            )
+        return EmbeddingClaimSimilarity(self._vector_provider)
+
+    async def _seminar_config(
+        self, session: AsyncSession, seminar_id: str
+    ) -> SeminarConfig:
+        """Read ONLY the frozen config, without attaching the row.
+
+        The synthesize lock must be chosen before any state is read
+        (the lock guards the state read), and the config is frozen
+        at creation — so a scalar config read before locking is
+        sound, while the mutable seminar row is always read fresh
+        under the lock. The scalar read keeps the row out of the
+        session's identity map, so the under-lock read cannot see a
+        stale cached instance.
+        """
+        result = await session.execute(
+            select(SeminarRecord.config).where(SeminarRecord.id == seminar_id)
+        )
+        stored = result.scalar_one_or_none()
+        if stored is None:
+            raise LookupError(f"Seminar {seminar_id} was not found.")
+        return SeminarConfig.model_validate(stored)
 
     # -- loading helpers -------------------------------------------------
 
@@ -401,6 +480,17 @@ class SeminarService:
             raise SeminarServiceError(
                 "seminar_duplicate_model_id",
                 "Roster model_ids must be unique within a seminar.",
+            )
+        # Embedding similarity requires a wired vector provider,
+        # checked BEFORE any row is written — a seminar that could
+        # never be synthesized must not be created.
+        if request.similarity_provider == "embedding" and self._vector_provider is None:
+            raise SeminarServiceError(
+                "seminar_similarity_provider_missing",
+                "This seminar requests the embedding similarity "
+                "provider, but no vector provider is configured on "
+                "the service. Wire one or use similarity_provider "
+                "'jaccard'.",
             )
         # Chair liveness (config-level, no network): in model mode the
         # chair port must resolve to a configured endpoint, checked
@@ -832,25 +922,39 @@ class SeminarService:
         """Synthesize a report — or, in agent-chair mode, a chair brief.
 
         Concurrent requests to one seminar SERIALIZE on the
-        per-seminar lock (Sprint 18): a second request waits for the
-        first, then proceeds on fresh state as a new version. The
-        lock is acquired before any state is read, so the waiter
-        always sees the outcome of the earlier request.
+        configured lock provider (Sprint 18/19): a second request
+        waits for the first, then proceeds on fresh state as a new
+        version. The frozen config is read before locking (to choose
+        the provider); all mutable state is read under the lock. A
+        lease waiter that times out refuses with a recorded refusal
+        event — the timeout is visible in the audit log.
         """
-        lock = self._synthesize_lock(seminar_id)
-        contended = lock.locked()
-        waited_since = time.monotonic()
-        await lock.acquire()
+        config = await self._seminar_config(session, seminar_id)
+        provider = self._lock_provider(config)
         try:
-            wait_ms = (time.monotonic() - waited_since) * 1000.0
-            return await self._synthesize_under_lock(
+            async with provider.acquire(seminar_id) as acquisition:
+                return await self._synthesize_under_lock(
+                    session,
+                    seminar_id,
+                    request,
+                    queue_wait_ms=acquisition.wait_ms if acquisition.contended else None,
+                    lease_takeover=(
+                        {
+                            "previous_holder_id": acquisition.previous_holder_id,
+                            "fencing_token": acquisition.fencing_token,
+                        }
+                        if acquisition.took_over_expired
+                        else None
+                    ),
+                )
+        except LockTimeoutError as exc:
+            await self._record_refusal(
                 session,
-                seminar_id,
-                request,
-                queue_wait_ms=wait_ms if contended else None,
+                seminar_id=seminar_id,
+                code="seminar_synthesize_lock_timeout",
+                message=str(exc),
             )
-        finally:
-            lock.release()
+            raise SeminarServiceError("seminar_synthesize_lock_timeout", str(exc)) from exc
 
     async def _refuse(
         self,
@@ -874,6 +978,7 @@ class SeminarService:
         request: SynthesizeRequest,
         *,
         queue_wait_ms: float | None,
+        lease_takeover: dict[str, Any] | None,
     ) -> SynthesizeRead | ChairBriefRead:
         seminar = await self._get_seminar(session, seminar_id)
         recorder = AuditRecorder()
@@ -881,6 +986,11 @@ class SeminarService:
             recorder.record(
                 AuditEventKind.QUEUE_WAIT,
                 detail={"wait_ms": queue_wait_ms, "trigger": "synthesize"},
+            )
+        if lease_takeover is not None:
+            recorder.record(
+                AuditEventKind.LEASE_TAKEOVER,
+                detail={**lease_takeover, "trigger": "synthesize"},
             )
         if seminar.status == SeminarStatus.SYNTHESIZING.value:
             # Stuck, not in flight: this request holds the lock, so no
@@ -1044,7 +1154,9 @@ class SeminarService:
             verdicts, round_no_by_model=round_no_by_model
         )
         prepass = deterministic_prepass(
-            items, near_duplicate_threshold=config.near_duplicate_threshold
+            items,
+            near_duplicate_threshold=config.near_duplicate_threshold,
+            similarity=self._similarity_scorer(config),
         )
         prepass["excluded_dissent_placeholders"] = excluded_placeholders
         final_model_ids = frozenset(entry["model_id"] for entry in verdicts)
@@ -1384,21 +1496,35 @@ class SeminarService:
 
         Serialized on the same per-seminar lock as synthesize: a
         submission waits for an in-flight synthesize and vice versa.
+        A lease waiter that times out refuses with a recorded
+        refusal event.
         """
-        lock = self._synthesize_lock(seminar_id)
-        contended = lock.locked()
-        waited_since = time.monotonic()
-        await lock.acquire()
+        config = await self._seminar_config(session, seminar_id)
+        provider = self._lock_provider(config)
         try:
-            wait_ms = (time.monotonic() - waited_since) * 1000.0
-            return await self._submit_under_lock(
+            async with provider.acquire(seminar_id) as acquisition:
+                return await self._submit_under_lock(
+                    session,
+                    seminar_id,
+                    request,
+                    queue_wait_ms=acquisition.wait_ms if acquisition.contended else None,
+                    lease_takeover=(
+                        {
+                            "previous_holder_id": acquisition.previous_holder_id,
+                            "fencing_token": acquisition.fencing_token,
+                        }
+                        if acquisition.took_over_expired
+                        else None
+                    ),
+                )
+        except LockTimeoutError as exc:
+            await self._record_refusal(
                 session,
-                seminar_id,
-                request,
-                queue_wait_ms=wait_ms if contended else None,
+                seminar_id=seminar_id,
+                code="seminar_synthesize_lock_timeout",
+                message=str(exc),
             )
-        finally:
-            lock.release()
+            raise SeminarServiceError("seminar_synthesize_lock_timeout", str(exc)) from exc
 
     async def _submit_under_lock(
         self,
@@ -1407,6 +1533,7 @@ class SeminarService:
         request: ChairSynthesisRequest,
         *,
         queue_wait_ms: float | None,
+        lease_takeover: dict[str, Any] | None,
     ) -> SynthesizeRead:
         seminar = await self._get_seminar(session, seminar_id)
         recorder = AuditRecorder()
@@ -1414,6 +1541,11 @@ class SeminarService:
             recorder.record(
                 AuditEventKind.QUEUE_WAIT,
                 detail={"wait_ms": queue_wait_ms, "trigger": "chair_synthesis"},
+            )
+        if lease_takeover is not None:
+            recorder.record(
+                AuditEventKind.LEASE_TAKEOVER,
+                detail={**lease_takeover, "trigger": "chair_synthesis"},
             )
         roster = [RosterEntry.model_validate(item) for item in seminar.roster]
         config = SeminarConfig.model_validate(seminar.config)
@@ -1676,6 +1808,9 @@ class SeminarService:
                 tokens_remaining=max(0, config.max_tokens - tokens_used),
             ).model_dump(mode="json"),
             diagnosis=compute_diagnosis(event_dicts).model_dump(mode="json"),
+            retention=(await self.get_audit_retention(session, seminar_id)).model_dump(
+                mode="json"
+            ),
         )
 
     async def list_audit_events(
@@ -1714,6 +1849,145 @@ class SeminarService:
             if (kind is None or row.kind == kind)
             and (model_id is None or row.model_id == model_id)
         ]
+
+    async def get_audit_retention(
+        self, session: AsyncSession, seminar_id: str
+    ) -> AuditRetentionRead:
+        """Retention status: surviving event count + seq range + policy."""
+        seminar = await self._get_seminar(session, seminar_id)
+        config = SeminarConfig.model_validate(seminar.config)
+        rows = await self._audit_rows(session, seminar_id)
+        return AuditRetentionRead(
+            seminar_id=seminar.id,
+            event_count=len(rows),
+            oldest_seq=rows[0].seq if rows else None,
+            newest_seq=rows[-1].seq if rows else None,
+            max_events=config.audit_retention_max_events,
+            max_age_days=config.audit_retention_max_age_days,
+        )
+
+    async def purge_audit_events(
+        self,
+        session: AsyncSession,
+        seminar_id: str,
+        request: AuditPurgeRequest,
+    ) -> AuditPurgeRead:
+        """Explicitly compact the audit log (Sprint 19).
+
+        Deletes the oldest events beyond the requested bounds, then
+        writes ONE ``retention_purged`` summary event in the same
+        transaction. The summary's seq continues monotonically from
+        the pre-purge max (even when every old event is deleted), so
+        seqs never restart. The summary carries the budget totals
+        of the purged events, so the budget ledger survives purges
+        (see :func:`ledger_totals`). Criteria below the seminar's
+        configured policy floor refuse with only a refusal event
+        written. Purge touches audit rows only — reports, rounds,
+        finals, and briefs are never modified. No scheduler or
+        background job ever calls this (Sprint 9 boundary).
+        """
+        seminar = await self._get_seminar(session, seminar_id)
+        config = SeminarConfig.model_validate(seminar.config)
+        if (
+            request.keep_last_n is not None
+            and config.audit_retention_max_events is not None
+            and request.keep_last_n < config.audit_retention_max_events
+        ):
+            message = (
+                f"keep_last_n={request.keep_last_n} would purge below the "
+                f"configured retention floor of {config.audit_retention_max_events} "
+                "events for this seminar."
+            )
+            await self._record_refusal(
+                session,
+                seminar_id=seminar.id,
+                code="seminar_retention_floor",
+                message=message,
+            )
+            raise SeminarServiceError("seminar_retention_floor", message)
+        if (
+            request.older_than_days is not None
+            and config.audit_retention_max_age_days is not None
+            and request.older_than_days < config.audit_retention_max_age_days
+        ):
+            message = (
+                f"older_than_days={request.older_than_days} would purge below "
+                f"the configured retention floor of "
+                f"{config.audit_retention_max_age_days} days for this seminar."
+            )
+            await self._record_refusal(
+                session,
+                seminar_id=seminar.id,
+                code="seminar_retention_floor",
+                message=message,
+            )
+            raise SeminarServiceError("seminar_retention_floor", message)
+        rows = await self._audit_rows(session, seminar_id)
+        event_dicts = [
+            {
+                "id": row.id,
+                "seq": row.seq,
+                "created_at": row.created_at,
+                "kind": row.kind,
+                "detail": row.detail or {},
+            }
+            for row in rows
+        ]
+        victims = select_purge_victims(
+            event_dicts,
+            keep_last_n=request.keep_last_n,
+            older_than_days=request.older_than_days,
+            now=utc_now(),
+        )
+        purged_calls, purged_tokens = ledger_totals(victims)
+        purged_by_kind: dict[str, int] = {}
+        for victim in victims:
+            kind = str(victim["kind"])
+            purged_by_kind[kind] = purged_by_kind.get(kind, 0) + 1
+        pre_purge_max_seq = max((row.seq for row in rows), default=0)
+        if victims:
+            await session.execute(
+                delete(SeminarAuditEventRecord).where(
+                    SeminarAuditEventRecord.id.in_([victim["id"] for victim in victims])
+                )
+            )
+        session.add(
+            SeminarAuditEventRecord(
+                id=generate_id(),
+                seminar_id=seminar.id,
+                seq=pre_purge_max_seq + 1,
+                model_id=None,
+                stage=None,
+                kind=AuditEventKind.RETENTION_PURGED,
+                detail={
+                    "deleted_count": len(victims),
+                    "deleted_oldest_seq": victims[0]["seq"] if victims else None,
+                    "deleted_newest_seq": victims[-1]["seq"] if victims else None,
+                    "keep_last_n": request.keep_last_n,
+                    "older_than_days": request.older_than_days,
+                    "policy": {
+                        "max_events": config.audit_retention_max_events,
+                        "max_age_days": config.audit_retention_max_age_days,
+                    },
+                    "purged_stage_calls": purged_calls,
+                    "purged_tokens": purged_tokens,
+                    "purged_by_kind": purged_by_kind,
+                },
+                round_no=None,
+                stage_call_id=None,
+                created_at=utc_now(),
+            )
+        )
+        await session.commit()
+        retention = await self.get_audit_retention(session, seminar_id)
+        return AuditPurgeRead(
+            seminar_id=seminar.id,
+            deleted_count=len(victims),
+            deleted_oldest_seq=victims[0]["seq"] if victims else None,
+            deleted_newest_seq=victims[-1]["seq"] if victims else None,
+            remaining_count=retention.event_count,
+            retention=retention,
+        )
 
     async def list_board(self, session: AsyncSession, seminar_id: str) -> list[BoardRowRead]:
         await self._get_seminar(session, seminar_id)
