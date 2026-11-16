@@ -568,8 +568,11 @@ chrome, honest empty states, two-step delete confirmation.
 - Docker Compose stack (no container runtime on this VM).
 - Live-LLM deliberation/polish quality (no live call in this
   sprint; the polish hook is fixture-driven, as in Sprint 13).
-- Real backend integration and cockpit views rendered against a
-  live backend (mocked-fetch tests only).
+- Cockpit views rendered against a live backend (mocked-fetch
+  tests only). Real backend integration over HTTP was verified
+  separately on 2026-11-16 (see
+  `~/workspace/verification/backend-integration-2026-11-16/REPORT.md`);
+  this sprint added no new verification of it.
 - Worker behavior under Postgres/Redis.
 - Concurrent derivation/mapping writes (see §6 position note).
 - Real-browser rendering of the directions view.

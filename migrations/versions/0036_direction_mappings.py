@@ -45,17 +45,11 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["anchor_run_id"], ["simulation_runs.id"]),
         sa.ForeignKeyConstraint(["source_run_id"], ["simulation_runs.id"]),
-        sa.UniqueConstraint(
-            "anchor_run_id", "name", name="uq_direction_mappings_anchor_name"
-        ),
+        sa.UniqueConstraint("anchor_run_id", "name", name="uq_direction_mappings_anchor_name"),
     )
-    op.create_index(
-        "ix_direction_mappings_anchor_run_id", "direction_mappings", ["anchor_run_id"]
-    )
+    op.create_index("ix_direction_mappings_anchor_run_id", "direction_mappings", ["anchor_run_id"])
     with op.batch_alter_table("decision_narratives", recreate="auto") as batch_op:
-        batch_op.add_column(
-            sa.Column("direction_mapping_ids", sa.JSON(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("direction_mapping_ids", sa.JSON(), nullable=True))
 
 
 def downgrade() -> None:
