@@ -1695,6 +1695,9 @@ export interface PrepassRead {
   near_duplicate_group_count: number
   near_duplicate_threshold: number
   item_count: number
+  // Added by _synthesis_inputs: dissent "None" placeholders excluded
+  // from clustering (auditable, not silent).
+  excluded_dissent_placeholders?: number
 }
 
 export interface ClusterSourceRead {
