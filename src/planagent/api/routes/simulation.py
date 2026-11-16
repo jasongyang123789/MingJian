@@ -49,6 +49,7 @@ from planagent.api.routes._deps import (
 )
 from planagent.services.debate._legacy import _command_from_legacy_request
 from planagent.services.mece import MeceValidationError
+from planagent.services.splits import SplitValidationError
 from planagent.services.variables import VariableTemplateError, VariableValidationError
 from planagent.services.startup import (
     build_startup_kpi_pack,
@@ -108,6 +109,19 @@ async def create_simulation_run(
         raise HTTPException(
             status_code=400,
             detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except SplitValidationError as exc:
+        # Split gate refusal: same dict-detail shape, carrying the full
+        # validation result so the caller can fix the structure and
+        # resubmit. Must precede the generic ValueError handler below
+        # (SplitValidationError subclasses ValueError).
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "split_validation_failed",
+                "message": "Split structure failed validation; simulation refused.",
+                "validation": exc.result.model_dump(mode="json"),
+            },
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,7 +17,7 @@ from planagent.services.simulation_branching import (
     MetricPolicy,
 )
 from planagent.simulation.domain_packs import registry
-from planagent.simulation.rules import RuleSpec
+from planagent.simulation.rules import RuleSpec, scaled_effect_value
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,105 @@ class SimulationImpactMixin:
                 )
             return shocks
 
+        if domain_id == "automotive":
+            # Automotive shocks (Phase 1): keyword nudges mirroring the
+            # automotive rules at smaller magnitude. Magnitudes are coarse
+            # assumption parameters, like the corporate/military shocks.
+            if any(keyword in lowered for keyword in ["chip", "semiconductor", "lead time", "mcu"]):
+                shocks.append(
+                    {
+                        "shock_type": "chip_shortage",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["chip", "semiconductor", "lead time", "mcu"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(
+                keyword in lowered
+                for keyword in ["purchase tax", "subsidy", "policy cliff", "trade-in"]
+            ):
+                shocks.append(
+                    {
+                        "shock_type": "policy_shift",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": [
+                                "purchase tax",
+                                "subsidy",
+                                "policy cliff",
+                                "trade-in",
+                            ],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(keyword in lowered for keyword in ["price war", "discount", "price cut"]):
+                shocks.append(
+                    {
+                        "shock_type": "price_war",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["price war", "discount", "price cut"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(keyword in lowered for keyword in ["inventory", "overstock", "destock"]):
+                shocks.append(
+                    {
+                        "shock_type": "inventory_build",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["inventory", "overstock", "destock"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(
+                keyword in lowered for keyword in ["demand surge", "strong retail", "record sales"]
+            ):
+                shocks.append(
+                    {
+                        "shock_type": "demand_surge",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["demand surge", "strong retail", "record sales"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(
+                keyword in lowered
+                for keyword in ["generation", "successor", "phase-out", "phase out"]
+            ):
+                shocks.append(
+                    {
+                        "shock_type": "generation_changeover",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["generation", "successor", "phase-out"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            if any(keyword in lowered for keyword in ["export", "overseas", "outbound"]):
+                shocks.append(
+                    {
+                        "shock_type": "export_boom",
+                        "summary": normalize_text(statement),
+                        "payload": {
+                            "matched_keywords": ["export", "overseas", "outbound"],
+                            "evidence_id": evidence_id,
+                        },
+                    }
+                )
+            return shocks
+
+        if domain_id != "military":
+            return shocks
+
         if any(keyword in lowered for keyword in ["supply", "bridge", "port", "convoy"]):
             shocks.append(
                 {
@@ -330,6 +430,47 @@ class SimulationImpactMixin:
                 state["churn_risk"] = state.get("churn_risk", 0.12) - 0.03
             return
 
+        if domain_id == "automotive":
+            # Automotive shocks (Phase 1): same keyword sets as
+            # _derive_shocks above. Magnitudes are coarse assumption
+            # parameters; driver-owned fields compose because drivers
+            # transform the post-shock state (self-referential drivers).
+            if any(keyword in lowered for keyword in ["chip", "semiconductor", "lead time", "mcu"]):
+                state["chip_supply_index"] = state.get("chip_supply_index", 1.0) - 0.05
+                state["production_volume"] = state.get("production_volume", 287.8) - 4.0
+                state["chip_lead_time_weeks"] = state.get("chip_lead_time_weeks", 26.2) + 2.0
+            if any(
+                keyword in lowered
+                for keyword in ["purchase tax", "subsidy", "policy cliff", "trade-in"]
+            ):
+                state["price_cut_expectation"] = state.get("price_cut_expectation", 0.45) + 0.03
+                state["promo_rate"] = state.get("promo_rate", 0.10) + 0.01
+            if any(keyword in lowered for keyword in ["price war", "discount", "price cut"]):
+                state["price_index"] = state.get("price_index", 1.0) - 0.01
+                state["promo_rate"] = state.get("promo_rate", 0.10) + 0.02
+                state["price_cut_expectation"] = state.get("price_cut_expectation", 0.45) + 0.03
+            if any(keyword in lowered for keyword in ["inventory", "overstock", "destock"]):
+                state["dealer_inventory_coef"] = state.get("dealer_inventory_coef", 1.35) + 0.05
+                state["production_volume"] = state.get("production_volume", 287.8) - 2.0
+            if any(
+                keyword in lowered for keyword in ["demand surge", "strong retail", "record sales"]
+            ):
+                state["sales_volume_retail"] = state.get("sales_volume_retail", 197.9) + 3.0
+                state["dealer_inventory_coef"] = state.get("dealer_inventory_coef", 1.35) - 0.03
+            if any(
+                keyword in lowered
+                for keyword in ["generation", "successor", "phase-out", "phase out"]
+            ):
+                state["generation_transition_index"] = (
+                    state.get("generation_transition_index", 0.0) + 0.03
+                )
+            if any(keyword in lowered for keyword in ["export", "overseas", "outbound"]):
+                state["export_volume"] = state.get("export_volume", 59.2) + 2.0
+            return
+
+        if domain_id != "military":
+            return
+
         if any(keyword in lowered for keyword in ["supply", "bridge", "port", "convoy"]):
             state["logistics_throughput"] = state.get("logistics_throughput", 1.0) - 0.12
             state["ammo"] = state.get("ammo", 1.0) - 0.06
@@ -371,6 +512,7 @@ class SimulationImpactMixin:
         calibration_context_text: str = "",
         session: AsyncSession | None = None,
         policies: dict[str, MetricPolicy] | None = None,
+        scale_scope: Mapping[str, float] | None = None,
     ) -> SelectedAction:
         evidence_window = self._build_evidence_window(active_claim, recent_claims)
         candidate = self._rank_action_candidates(
@@ -380,9 +522,10 @@ class SimulationImpactMixin:
             rules,
             action_history or [],
             policies=policies,
+            scale_scope=scale_scope,
         )
         if candidate is not None and candidate.total_score >= _DECISION_MIN_SCORE:
-            expected = self._aggregate_candidate_effect(candidate)
+            expected = self._aggregate_candidate_effect(candidate, scale_scope)
             return SelectedAction(
                 action_id=candidate.action_id,
                 why_selected=self._build_selection_explanation(candidate),
@@ -530,6 +673,7 @@ class SimulationImpactMixin:
         rules: list[RuleSpec],
         action_history: list[str],
         policies: dict[str, MetricPolicy] | None = None,
+        scale_scope: Mapping[str, float] | None = None,
     ) -> ActionCandidate | None:
         candidates: dict[str, ActionCandidate] = {}
         for distance, claim in enumerate(reversed(evidence_window)):
@@ -567,7 +711,7 @@ class SimulationImpactMixin:
             return None
 
         for candidate in candidates.values():
-            aggregated_effect = self._aggregate_candidate_effect(candidate)
+            aggregated_effect = self._aggregate_candidate_effect(candidate, scale_scope)
             candidate.state_adjustment = self._score_state_alignment(
                 domain_id,
                 state,
@@ -594,7 +738,11 @@ class SimulationImpactMixin:
         lowered = statement.lower()
         return tuple(keyword for keyword in rule.trigger_keywords if keyword.lower() in lowered)
 
-    def _aggregate_candidate_effect(self, candidate: ActionCandidate) -> dict[str, float]:
+    def _aggregate_candidate_effect(
+        self,
+        candidate: ActionCandidate,
+        scale_scope: Mapping[str, float] | None = None,
+    ) -> dict[str, float]:
         aggregated: dict[str, float] = {}
         seen_rules: set[str] = set()
         ranked_scores = sorted(candidate.rule_scores, key=lambda item: item.score, reverse=True)
@@ -606,7 +754,7 @@ class SimulationImpactMixin:
             else:
                 multiplier = 0.35
             seen_rules.add(score.rule.rule_id)
-            for target, value in self._effects_to_mapping(score.rule.effects).items():
+            for target, value in self._effects_to_mapping(score.rule.effects, scale_scope).items():
                 aggregated[target] = round(aggregated.get(target, 0.0) + (value * multiplier), 4)
 
         evidence_count = len({score.claim.evidence_item_id for score in ranked_scores})
@@ -733,12 +881,18 @@ class SimulationImpactMixin:
             return str(claim_id)
         return f"{claim.evidence_item_id}:{normalize_text(claim.statement).lower()}"
 
-    def _effects_to_mapping(self, effects: tuple[Any, ...]) -> dict[str, float]:
+    def _effects_to_mapping(
+        self,
+        effects: tuple[Any, ...],
+        scale_scope: Mapping[str, float] | None = None,
+    ) -> dict[str, float]:
         result: dict[str, float] = {}
         for effect in effects:
             if effect.op != "add":
                 continue
-            result[effect.target] = result.get(effect.target, 0.0) + float(effect.value)
+            result[effect.target] = result.get(effect.target, 0.0) + float(
+                scaled_effect_value(effect, scale_scope)
+            )
         return result
 
     def _fallback_effect(self, domain_id: str, state: dict[str, float]) -> dict[str, Any]:
@@ -838,6 +992,30 @@ class SimulationImpactMixin:
                 "action_id": "monitor",
                 "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
                 "effects": {"brand_index": 0.01, "pipeline": 0.01},
+            }
+
+        if domain_id == "automotive":
+            # Automotive fallback (Phase 1): inventory discipline above
+            # the CADA warning line, otherwise hold with NO state effects
+            # — the tick drivers move the state, so the fallback must not
+            # invent drift. Without this branch, automotive runs fell
+            # through to the military fallback (wrong actions + fields).
+            if state.get("dealer_inventory_coef", 1.35) > 1.5:
+                return {
+                    "action_id": "cut_production",
+                    "why_selected": (
+                        "Fallback policy cut production scheduling because the dealer "
+                        "inventory coefficient crossed the 1.5 warning line."
+                    ),
+                    "effects": {
+                        "production_volume": -3.0,
+                        "dealer_inventory_coef": -0.02,
+                    },
+                }
+            return {
+                "action_id": "hold_and_monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+                "effects": {},
             }
 
         if state.get("civilian_risk", 0.0) > 0.55:

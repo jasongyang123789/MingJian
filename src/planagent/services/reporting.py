@@ -35,6 +35,8 @@ class ReportService:
             return await self.generate_company_report(session, simulation_run)
         if simulation_run.domain_id == "military":
             return await self.generate_military_report(session, simulation_run)
+        if simulation_run.domain_id == "automotive":
+            return await self.generate_automotive_report(session, simulation_run)
         raise ValueError(f"Unsupported report domain: {simulation_run.domain_id}")
 
     async def generate_company_report(
@@ -168,6 +170,145 @@ class ReportService:
             tenant_id=simulation_run.tenant_id,
             preset_id=simulation_run.preset_id,
             title=f"{company.name} corporate {title_suffix}",
+            summary=summary,
+            report_format="markdown",
+            sections=sections,
+        )
+        session.add(report)
+        await session.flush()
+        return report
+
+    async def generate_automotive_report(
+        self,
+        session: AsyncSession,
+        simulation_run: SimulationRun,
+    ) -> GeneratedReport:
+        """Automotive baseline/scenario report (Phase 1).
+
+        Mirrors :meth:`generate_company_report` (same company subject,
+        same section skeleton) with the automotive indicator set and
+        recommendations. No LLM enhancement exists for this domain yet:
+        the deterministic summary and recommendations below are the
+        whole report, which keeps Phase 1 free of live-LLM paths.
+        """
+
+        company = await session.get(CompanyProfile, simulation_run.company_id)
+        if company is None:
+            raise LookupError(f"Company {simulation_run.company_id} was not found.")
+
+        decision_records, state_snapshots = await self._load_run_materials(
+            session, simulation_run.id
+        )
+        scenario_branch = (
+            await session.scalars(
+                select(ScenarioBranchRecord).where(ScenarioBranchRecord.run_id == simulation_run.id)
+            )
+        ).first()
+        child_branches = list(
+            (
+                await session.scalars(
+                    select(ScenarioBranchRecord)
+                    .where(ScenarioBranchRecord.parent_run_id == simulation_run.id)
+                    .order_by(ScenarioBranchRecord.created_at.asc())
+                )
+            ).all()
+        )
+        initial_state = state_snapshots[0].state if state_snapshots else {}
+        final_state = state_snapshots[-1].state if state_snapshots else {}
+        actions = [record.action_id for record in decision_records]
+        leading_indicators = self._build_indicator_changes(
+            initial_state,
+            final_state,
+            [
+                "production_volume",
+                "sales_volume_retail",
+                "sales_volume_wholesale",
+                "export_volume",
+                "capacity_utilization",
+                "dealer_inventory_coef",
+                "inventory_warning",
+                "price_index",
+                "promo_rate",
+                "price_cut_expectation",
+                "nev_penetration",
+                "chip_supply_index",
+                "material_cost_index",
+                "annual_cut_rate",
+                "payment_terms_months",
+                "tier1_gross_margin",
+                "generation_transition_index",
+                "cash",
+            ],
+        )
+        matched_rules = simulation_run.summary.get("matched_rules", [])
+        startup_kpi_pack = build_startup_kpi_pack(
+            simulation_run,
+            initial_state,
+            final_state,
+            matched_rules,
+        )
+        title_suffix = "scenario report" if scenario_branch is not None else "baseline report"
+
+        summary = (
+            f"{company.name} completed {simulation_run.tick_count} automotive ticks (months) with "
+            f"{len(actions)} recorded decisions. Final production is {final_state.get('production_volume', 'n/a')} "
+            f"(10k vehicles/month), retail is {final_state.get('sales_volume_retail', 'n/a')}, "
+            f"the dealer inventory coefficient is {final_state.get('dealer_inventory_coef', 'n/a')}, "
+            f"and Tier-1 gross margin is {final_state.get('tier1_gross_margin', 'n/a')}."
+        )
+        recommendations = self._build_automotive_recommendations(final_state)
+        why_this_happened = {
+            "key_evidence": simulation_run.summary.get("evidence_statements", []),
+            "rules_hit": matched_rules,
+            "actions_taken": actions,
+            "metric_changes": self._metrics_by_name(leading_indicators),
+        }
+        if scenario_branch is not None:
+            why_this_happened["scenario_assumptions"] = scenario_branch.assumptions
+            why_this_happened["decision_deltas"] = scenario_branch.decision_deltas
+
+        sections = {
+            "executive_summary": summary,
+            "evidence_summary": simulation_run.summary.get("evidence_statements", []),
+            "audit": dict(simulation_run.summary.get("evidence_audit", {})),
+            "timeline": [
+                {
+                    "tick": record.tick,
+                    "action_id": record.action_id,
+                    "why_selected": record.why_selected,
+                }
+                for record in decision_records
+            ],
+            "current_signals": matched_rules,
+            "scenario_tree": {
+                "baseline_only": scenario_branch is None and not child_branches,
+                "branch_id": scenario_branch.id if scenario_branch is not None else None,
+                "parent_run_id": scenario_branch.parent_run_id
+                if scenario_branch is not None
+                else None,
+                "child_branch_ids": [branch.id for branch in child_branches],
+            },
+            "decision_chain": self._build_decision_chain(decision_records),
+            "leading_indicators": leading_indicators,
+            "scenario_compare": scenario_branch.kpi_trajectory
+            if scenario_branch is not None
+            else [],
+            "strategy_recommendations": recommendations,
+            "why_this_happened": why_this_happened,
+            "startup_kpi_pack": startup_kpi_pack.model_dump()
+            if startup_kpi_pack is not None
+            else None,
+        }
+
+        await self._embed_debate_analysis(sections, simulation_run.id, session)
+
+        report = GeneratedReport(
+            run_id=simulation_run.id,
+            company_id=company.id,
+            scenario_id=scenario_branch.id if scenario_branch is not None else None,
+            tenant_id=simulation_run.tenant_id,
+            preset_id=simulation_run.preset_id,
+            title=f"{company.name} automotive {title_suffix}",
             summary=summary,
             report_format="markdown",
             sections=sections,
@@ -600,6 +741,42 @@ class ReportService:
         if float(final_state.get("delivery_velocity", 1.0)) < 0.95:
             recommendations.append(
                 "Recover delivery velocity with scoped releases and operational cleanup."
+            )
+        if not recommendations:
+            recommendations.append(
+                "Maintain the current pace and monitor for fresh external shocks."
+            )
+        return recommendations
+
+    def _build_automotive_recommendations(self, final_state: dict) -> list[str]:
+        recommendations: list[str] = []
+        if float(final_state.get("dealer_inventory_coef", 1.35)) > 1.5:
+            recommendations.append(
+                "Cut production scheduling and destock: the dealer inventory coefficient is above the 1.5 warning line."
+            )
+        if float(final_state.get("capacity_utilization", 0.662)) < 0.70:
+            recommendations.append(
+                "Capacity utilization is below the 2021-24 range; consolidate scheduling before adding capacity."
+            )
+        if float(final_state.get("tier1_gross_margin", 0.191)) < 0.15:
+            recommendations.append(
+                "Defend Tier-1 margin before accepting further annual cuts or longer payment terms."
+            )
+        if float(final_state.get("chip_supply_index", 1.0)) < 0.9:
+            recommendations.append(
+                "Restore chip supply resilience (buffer stock, second sources) before committing additional volume."
+            )
+        if float(final_state.get("price_cut_expectation", 0.45)) > 0.5:
+            recommendations.append(
+                "A majority of buyers now wait for price cuts; convert demand with targeted incentives rather than broad discounting."
+            )
+        if float(final_state.get("promo_rate", 0.10)) > 0.15:
+            recommendations.append(
+                "Promotion spend is running hot; reimpose promotion discipline before it resets price expectations."
+            )
+        if float(final_state.get("annual_cut_rate", 0.04)) >= 0.10:
+            recommendations.append(
+                "Annual-cut demands are in the stressed 10%+ regime; negotiate scope and volume commitments in exchange."
             )
         if not recommendations:
             recommendations.append(

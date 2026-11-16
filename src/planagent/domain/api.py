@@ -15,6 +15,7 @@ from planagent.domain.enums import (
 )
 from planagent.domain.types import GeneratedReportModel
 from planagent.services.mece.models import DecompositionTree
+from planagent.services.splits.models import SplitStructure
 from planagent.services.variables.models import VariableSet
 
 
@@ -169,6 +170,13 @@ class SimulationRunCreate(APIModel):
     # configuration, so it enters the Sprint 3 input hash and replays
     # reproduce the same evidence set.
     decision_time: datetime | None = None
+    # Optional bottom-layer split structure (Phase 1, automotive track).
+    # When attached, run creation validates the OEM → nameplate →
+    # generation → trim → product → supplier-share tree and REFUSES to
+    # run on failure — there is no bypass, mirroring the MECE gate. Only
+    # automotive runs accept a split structure. When absent, runs behave
+    # exactly as before.
+    split_structure: SplitStructure | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":
@@ -179,6 +187,12 @@ class SimulationRunCreate(APIModel):
         if self.domain_id == "military":
             if not self.force_id or not self.force_name:
                 raise ValueError("Military simulation requires force_id and force_name.")
+            return self
+        if self.domain_id == "automotive":
+            # Automotive runs reuse the company subject (the OEM or
+            # Tier-1 supplier under simulation), like corporate runs.
+            if not self.company_id or not self.company_name:
+                raise ValueError("Automotive simulation requires company_id and company_name.")
             return self
         raise ValueError(f"Unsupported domain_id: {self.domain_id}.")
 

@@ -53,6 +53,7 @@ from planagent.services.living_loop.models import (
 )
 from planagent.services.mece import MeceValidationError
 from planagent.services.simulation.living_loop import LoopError
+from planagent.services.splits import SplitValidationError
 from planagent.services.variables import VariableTemplateError, VariableValidationError
 
 router = APIRouter()
@@ -276,6 +277,15 @@ async def resimulate_loop_iteration(
         raise HTTPException(
             status_code=400,
             detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except SplitValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "split_validation_failed",
+                "message": "Split structure failed validation; re-simulation refused.",
+                "validation": exc.result.model_dump(mode="json"),
+            },
         ) from exc
     except LoopError as exc:
         raise _loop_error(exc) from exc

@@ -97,6 +97,7 @@ from planagent.services.living_loop.monitoring import (
 )
 from planagent.services.living_loop.triggers import evaluate_triggers, select_window
 from planagent.services.mece.models import DecompositionTree
+from planagent.services.splits.models import SplitStructure
 from planagent.services.variables.models import VariableSet
 from planagent.simulation.domain_packs import registry
 from planagent.workers.base import public_worker_error
@@ -992,6 +993,17 @@ class SimulationLivingLoopMixin:
                 )
             decomposition = DecompositionTree.model_validate(mece_fragment["decomposition"])
 
+        split_structure = None
+        split_fragment = configuration.get("split_structure")
+        if split_fragment is not None:
+            if not isinstance(split_fragment, dict) or "structure" not in split_fragment:
+                raise LoopError(
+                    "loop_corrupt_baseline_fragment",
+                    "Baseline run carries a malformed split-structure fragment; "
+                    "refusing to re-simulate rather than silently drop it.",
+                )
+            split_structure = SplitStructure.model_validate(split_fragment["structure"])
+
         variables_fragment = configuration.get("variables")
         template_id: str | None = None
         variable_set: VariableSet | None = None
@@ -1046,8 +1058,9 @@ class SimulationLivingLoopMixin:
             "variable_template_id": template_id,
             "variable_set": variable_set,
             "decision_time": decision_time,
+            "split_structure": split_structure,
         }
-        if baseline.domain_id == "corporate":
+        if baseline.domain_id in ("corporate", "automotive"):
             company = (
                 await session.get(CompanyProfile, baseline.company_id)
                 if baseline.company_id

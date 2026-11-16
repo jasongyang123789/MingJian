@@ -323,7 +323,7 @@ class SimulationDomainPacksMixin:
         }
 
     async def _subject_terms(self, session: AsyncSession, run: SimulationRun) -> list[str]:
-        if run.domain_id == "corporate" and run.company_id:
+        if run.domain_id in ("corporate", "automotive") and run.company_id:
             company = await session.get(CompanyProfile, run.company_id)
             if company is None:
                 return []

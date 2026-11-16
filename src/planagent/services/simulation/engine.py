@@ -32,10 +32,16 @@ from planagent.services.distributions import (
     determinism_input_fragment,
     resolve_run_values,
     state_hash,
+    tick_driver_formulas,
 )
 from planagent.services.mece import MeceValidationResult, validate_or_raise
+from planagent.services.splits.models import SplitValidationIssue, SplitValidationResult
+from planagent.services.splits.validator import (
+    SplitValidationError,
+    validate_or_raise as validate_split_or_raise,
+)
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
-from planagent.services.variables.formulas import validate_formulas
+from planagent.services.variables.formulas import evaluate_tick_drivers, validate_formulas
 from planagent.services.variables.models import VariableSet, VariableValidationResult
 from planagent.services.variables.presets import (
     resolve_policies,
@@ -73,6 +79,26 @@ def _mece_configuration_fragment(
         "mece": {
             "decomposition": payload.decomposition.model_dump(mode="json"),
             "validation": mece_result.model_dump(mode="json"),
+        }
+    }
+
+
+def _split_configuration_fragment(
+    payload: SimulationRunCreate,
+    split_result: SplitValidationResult | None,
+) -> dict[str, Any]:
+    """Audit-trail fragment for a validated split structure.
+
+    Stored inside ``SimulationRun.configuration`` (existing JSON column),
+    so no schema migration is needed. Returns {} when no split structure
+    was attached. Mirrors :func:`_mece_configuration_fragment`.
+    """
+    if split_result is None or payload.split_structure is None:
+        return {}
+    return {
+        "split_structure": {
+            "structure": payload.split_structure.model_dump(mode="json"),
+            "validation": split_result.model_dump(mode="json"),
         }
     }
 
@@ -134,6 +160,7 @@ class SimulationEngineMixin:
                 variables=template.variables,
                 formulas=template.formulas,
                 internal=template.internal,
+                assumption_data=template.assumption_data,
             )
         inline_set = payload.variable_set
         if base_set is not None and inline_set is not None:
@@ -199,6 +226,28 @@ class SimulationEngineMixin:
         # Variable gate (Sprint 2, PRD deltas D2/D3): resolves the attached
         # template and bindings; invalid bindings refuse run creation.
         variables_fragment = await self._resolve_variable_bindings(session, payload)
+        # Split gate (Phase 1, automotive track): an attached split
+        # structure that fails validation refuses run creation entirely —
+        # no run row is written, mirroring the MECE/variables gates.
+        # Split structures are automotive-only.
+        split_result: SplitValidationResult | None = None
+        if payload.split_structure is not None:
+            if payload.domain_id != "automotive":
+                raise SplitValidationError(
+                    SplitValidationResult(
+                        is_valid=False,
+                        issues=[
+                            SplitValidationIssue(
+                                kind="split_structure_requires_automotive_domain",
+                                message=(
+                                    "Split structures are only supported for automotive "
+                                    f"runs; domain is {payload.domain_id!r}."
+                                ),
+                            )
+                        ],
+                    )
+                )
+            split_result = validate_split_or_raise(payload.split_structure)
         execution_mode = payload.execution_mode or (
             ExecutionMode.INLINE
             if self.settings.inline_simulation_default
@@ -211,6 +260,15 @@ class SimulationEngineMixin:
         elif payload.domain_id == "military":
             run = await self._create_military_run(
                 session, payload, execution_mode, mece_result, variables_fragment
+            )
+        elif payload.domain_id == "automotive":
+            run = await self._create_automotive_run(
+                session,
+                payload,
+                execution_mode,
+                mece_result,
+                variables_fragment,
+                split_result,
             )
         else:
             raise ValueError(f"Domain {payload.domain_id} is not implemented yet.")
@@ -379,6 +437,60 @@ class SimulationEngineMixin:
         await self._ensure_geo_assets_for_run(session, run, force)
         return run
 
+    async def _create_automotive_run(
+        self,
+        session: AsyncSession,
+        payload: SimulationRunCreate,
+        execution_mode: ExecutionMode,
+        mece_result: MeceValidationResult | None = None,
+        variables_fragment: dict[str, Any] | None = None,
+        split_result: SplitValidationResult | None = None,
+    ) -> SimulationRun:
+        # Automotive runs reuse the company subject (the OEM or Tier-1
+        # supplier under simulation), mirroring _create_corporate_run,
+        # plus the validated split-structure fragment. Tick = 1 month.
+        company = await self._upsert_company(session, payload)
+        tick_count = payload.tick_count or self.settings.default_automotive_ticks
+        configuration = {
+            "initial_state": payload.initial_state,
+            "market": payload.market,
+            **startup_preset_config(payload.tenant_id, payload.preset_id),
+            **_mece_configuration_fragment(payload, mece_result),
+            **(variables_fragment or {}),
+            **_split_configuration_fragment(payload, split_result),
+            **_firewall_configuration_fragment(payload),
+        }
+        # Sprint 3: hash the run inputs at creation (determinism audit trail).
+        configuration["determinism"] = determinism_input_fragment(
+            domain_id="automotive",
+            actor_template=payload.actor_template,
+            tick_count=tick_count,
+            seed=payload.seed,
+            company_id=company.id,
+            force_id=None,
+            tenant_id=normalize_tenant_id(payload.tenant_id),
+            preset_id=payload.preset_id,
+            configuration=configuration,
+        )
+        run = SimulationRun(
+            company_id=company.id,
+            force_id=None,
+            tenant_id=normalize_tenant_id(payload.tenant_id),
+            preset_id=payload.preset_id,
+            domain_id="automotive",
+            actor_template=payload.actor_template,
+            military_use_mode=None,
+            execution_mode=execution_mode.value,
+            status=SimulationRunStatus.PENDING.value,
+            tick_count=tick_count,
+            seed=payload.seed,
+            configuration=configuration,
+            summary={},
+        )
+        session.add(run)
+        await session.flush()
+        return run
+
     async def _execute_run(self, session: AsyncSession, run: SimulationRun) -> None:
         run.status = SimulationRunStatus.PROCESSING.value
         run.updated_at = utc_now()
@@ -403,6 +515,14 @@ class SimulationEngineMixin:
         initial_state.update(
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
+        # Phase 1: the per-tick variable scope. Sampled + initial derived
+        # values are fixed for the run; tick drivers evaluate against
+        # this scope overlaid with the current state, and variable-scaled
+        # rule effects read it at selection time. Runs without bindings
+        # get an empty scope and behave exactly as before.
+        variable_scope = {**sampled_values, **derived_values}
+        driver_formulas = tick_driver_formulas(run.configuration)
+        state_field_names = {field.name for field in pack.state_fields}
         effective_policies = resolve_policies(run.domain_id, run.configuration)
         # Sprint 5: hindsight firewall — resolve the decision-time cutoff
         # from the run's stored configuration and filter claim reads to
@@ -453,6 +573,7 @@ class SimulationEngineMixin:
                 calibration_context_text=calibration_ctx["context_text"],
                 session=session,
                 policies=effective_policies,
+                scale_scope=variable_scope,
             )
             matched_rules.extend(selected.rule_ids)
             actual_effect = selected.actual_effect
@@ -504,6 +625,26 @@ class SimulationEngineMixin:
                         },
                     }
                 )
+            if driver_formulas:
+                # Phase 1: per-tick variable drivers, applied AFTER the
+                # action effects and BEFORE the decision record and
+                # snapshot, so the snapshot (and its hash) captures the
+                # driven state. Drivers evaluate over the run's sampled +
+                # initial derived values, the current (post-rule) state,
+                # and the tick index, in stored list order; outputs whose
+                # id names a pack state field overwrite that field.
+                # Self-referential drivers transform the post-rule state,
+                # so rule effects compose instead of being overwritten.
+                # Deterministic: same seed + same bindings + same tick
+                # index reproduce the same values, so Sprint 3 replay
+                # still matches tick by tick. A driver failure fails the
+                # run loudly (never silently skipped).
+                driver_updates = evaluate_tick_drivers(
+                    driver_formulas, variable_scope, current_state, tick
+                )
+                for key, value in driver_updates.items():
+                    if key in state_field_names:
+                        current_state[key] = value
             action_history.append(selected.action_id)
             decision_record = DecisionRecordRecord(
                 run_id=run.id,
