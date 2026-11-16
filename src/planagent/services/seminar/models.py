@@ -20,6 +20,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from planagent.config.openai import TARGET_NAMES
+from planagent.services.seminar.locks import (
+    DEFAULT_LEASE_TTL_SECONDS,
+    DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS,
+)
 
 MAX_ROSTER_MODELS = 10
 MAX_SEMINAR_ROUNDS = 10
@@ -45,6 +49,13 @@ DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 
 #: Default Jaccard threshold for near-duplicate pre-pass grouping.
 DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.8
+
+#: Default audit retention policy floor (Sprint 19): a purge may
+#: never retain fewer than 1000 events or drop events younger than
+#: 90 days unless the seminar was created with a looser policy
+#: (including None = no floor on that dimension).
+DEFAULT_AUDIT_RETENTION_MAX_EVENTS = 1000
+DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS = 90
 
 
 def _strip_text(value: object) -> object:
@@ -148,6 +159,16 @@ class SeminarConfig(_StripMixin):
     near_duplicate_threshold: float = Field(
         default=DEFAULT_NEAR_DUPLICATE_THRESHOLD, gt=0.0, le=1.0
     )
+    similarity_provider: Literal["jaccard", "embedding"] = "jaccard"
+    synthesize_lock_provider: Literal["process", "lease"] = "process"
+    lease_ttl_seconds: float = Field(default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0)
+    lock_wait_timeout_seconds: float = Field(
+        default=DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS, gt=0.0, le=600.0
+    )
+    audit_retention_max_events: int | None = Field(default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1)
+    audit_retention_max_age_days: int | None = Field(
+        default=DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS, ge=1
+    )
 
     @model_validator(mode="after")
     def _mode_matches_pipeline(self) -> SeminarConfig:
@@ -189,6 +210,16 @@ class SeminarCreateRequest(_StripMixin):
     retry_backoff_seconds: float = Field(default=DEFAULT_RETRY_BACKOFF_SECONDS, ge=0.0, le=60.0)
     near_duplicate_threshold: float = Field(
         default=DEFAULT_NEAR_DUPLICATE_THRESHOLD, gt=0.0, le=1.0
+    )
+    similarity_provider: Literal["jaccard", "embedding"] = "jaccard"
+    synthesize_lock_provider: Literal["process", "lease"] = "process"
+    lease_ttl_seconds: float = Field(default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0)
+    lock_wait_timeout_seconds: float = Field(
+        default=DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS, gt=0.0, le=600.0
+    )
+    audit_retention_max_events: int | None = Field(default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1)
+    audit_retention_max_age_days: int | None = Field(
+        default=DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS, ge=1
     )
 
     @model_validator(mode="after")
@@ -232,6 +263,12 @@ class SeminarCreateRequest(_StripMixin):
             max_retries=self.max_retries,
             retry_backoff_seconds=self.retry_backoff_seconds,
             near_duplicate_threshold=self.near_duplicate_threshold,
+            similarity_provider=self.similarity_provider,
+            synthesize_lock_provider=self.synthesize_lock_provider,
+            lease_ttl_seconds=self.lease_ttl_seconds,
+            lock_wait_timeout_seconds=self.lock_wait_timeout_seconds,
+            audit_retention_max_events=self.audit_retention_max_events,
+            audit_retention_max_age_days=self.audit_retention_max_age_days,
         )
 
 
@@ -507,6 +544,67 @@ class SeminarDetailRead(BaseModel):
     reports: list[SeminarReportSummary] = Field(default_factory=list)
     budgets: dict[str, Any] = Field(default_factory=dict)
     diagnosis: dict[str, Any] = Field(default_factory=dict)
+    retention: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditRetentionRead(BaseModel):
+    """Audit-log retention status (Sprint 19).
+
+    ``oldest_seq``/``newest_seq`` expose the surviving seq range —
+    after a purge the oldest seq is > 1, which is how a reader
+    knows history was compacted. ``max_events``/``max_age_days``
+    are the seminar's configured policy floor (None = no floor on
+    that dimension).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    seminar_id: str
+    event_count: int
+    oldest_seq: int | None = None
+    newest_seq: int | None = None
+    max_events: int | None = None
+    max_age_days: int | None = None
+
+
+class AuditPurgeRequest(BaseModel):
+    """An explicit audit-retention purge (Sprint 19).
+
+    At least one criterion is required. An event survives only if
+    it satisfies EVERY given bound (among the newest
+    ``keep_last_n`` AND younger than ``older_than_days``). Criteria
+    that would purge below the seminar's configured policy floor
+    refuse (``seminar_retention_floor``): ``keep_last_n`` below the
+    policy's max events, or ``older_than_days`` below the policy's
+    max age. No scheduler or background job ever purges — this
+    endpoint is the only purge path (Sprint 9 boundary).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    keep_last_n: int | None = Field(default=None, ge=0)
+    older_than_days: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _at_least_one_criterion(self) -> AuditPurgeRequest:
+        if self.keep_last_n is None and self.older_than_days is None:
+            raise ValueError(
+                "A purge requires at least one criterion: 'keep_last_n' and/or 'older_than_days'."
+            )
+        return self
+
+
+class AuditPurgeRead(BaseModel):
+    """The outcome of an explicit audit-retention purge."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seminar_id: str
+    deleted_count: int
+    deleted_oldest_seq: int | None = None
+    deleted_newest_seq: int | None = None
+    remaining_count: int
+    retention: AuditRetentionRead
 
 
 class SeminarSummaryRead(BaseModel):
@@ -575,6 +673,8 @@ class ReportDetailRead(BaseModel):
 
 __all__ = [
     "AGENT_CHAIR_MODEL_ID",
+    "DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS",
+    "DEFAULT_AUDIT_RETENTION_MAX_EVENTS",
     "DEFAULT_MAX_RETRIES",
     "DEFAULT_MAX_STAGE_CALLS",
     "DEFAULT_MAX_TOKENS",
@@ -584,6 +684,9 @@ __all__ = [
     "MAX_SEMINAR_ROUNDS",
     "AdvanceModelRead",
     "AdvanceRead",
+    "AuditPurgeRead",
+    "AuditPurgeRequest",
+    "AuditRetentionRead",
     "BoardDigest",
     "BoardRowRead",
     "ChairBriefRead",

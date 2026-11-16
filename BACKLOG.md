@@ -592,6 +592,36 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   retention policy; cockpit seminar views + live smoke still
   queued.
 
+## Sprint 19 — seminar durability: distributed synthesize lock, audit retention, similarity upgrade (done)
+
+- Delivered on `strategy-engine/sprint19-seminar-durability` (see
+  SPRINT19.md), from S18 tip `e35c0ce`, per Ho's directives of
+  2026-11-16 15:36 (close the S18 limits: per-process lock, no audit
+  retention, Jaccard-only similarity). No LLM call anywhere; no
+  scheduler/worker (Sprint 9 boundary). New: a lock abstraction with
+  two providers selected per seminar by config — `process` (S18
+  asyncio-Lock behavior, default) and `lease` (distributed DB leases,
+  migration 0040 `seminar_synthesize_leases`, SQLite+Postgres-neutral
+  SQL, holder-keyed expiry takeover with fencing tokens, backoff
+  polling + configurable wait timeout, `lease_takeover` audit events,
+  `seminar_synthesize_lock_timeout` refusal); an explicit audit
+  retention policy (`audit_retention_max_events` /
+  `audit_retention_max_age_days`, defaults 1000/90, policy-floor
+  refusal, `POST /seminars/{id}/audit/purge` writing one
+  `retention_purged` summary with monotonic seq and budget-ledger
+  roll-forward, `GET /audit/retention` + `retention` on GET detail,
+  `GET /audit` shape unchanged); a similarity upgrade (CJK-aware
+  tokenization, char-bigram Jaccard combined by MAX with token-set
+  Jaccard at the 0.8 threshold, conservative stdlib stemming, zero
+  re-pinning of existing tests) plus a pluggable embedding seam
+  (`ClaimSimilarity` / `VectorProvider` protocols, fake provider in
+  tests, config switch, no real provider). Backend 1743 → 1819
+  tests, 0 failed; smoke PASS; ruff zero new findings; mypy clean;
+  migration 0040 drill verified by hand. Limits: no lease renewal
+  (600s TTL + stuck-state check); lease provider opt-in per seminar;
+  diagnosis reflects surviving events only (budgets roll forward);
+  lease path verified on SQLite only; no real embedding provider.
+
 ## Sprint 20 — cockpit seminar views: list/create + detail, board/rounds/finals, versioned reports, audit log, agent-chair brief + submission (done, frontend only)
 
 - Delivered on `strategy-engine/sprint20-cockpit-seminar` (see

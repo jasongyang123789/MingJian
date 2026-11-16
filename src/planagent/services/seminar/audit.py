@@ -46,6 +46,16 @@ Event kinds:
   recorded alongside the rollback transition.
 * ``refusal`` — a request was refused before any state change:
   the error code + message. Refusals write ONLY the audit event.
+* ``lease_takeover`` — a synthesize waiter took over a crashed
+  holder's expired lease (Sprint 19): the previous holder id and
+  the new fencing token. The takeover is never silent: the audit
+  log names exactly which holder was replaced.
+* ``retention_purged`` — an explicit retention purge deleted old
+  events (Sprint 19): how many, which seq range, the criteria, the
+  policy floor, and the budget totals the purged events carried
+  (so budgets survive purges — see :func:`ledger_totals`).
+  The summary event is written AFTER the deletion in the same
+  transaction and is never purged by its own purge call.
 
 Events are collected in memory by :class:`AuditRecorder` during an
 operation and flushed into the same transaction as the state change
@@ -62,6 +72,7 @@ sections — the same discipline as board ``seq`` assignment.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -87,6 +98,8 @@ class AuditEventKind:
     REPORT_WRITTEN = "report_written"
     SYNTHESIS_FAILED = "synthesis_failed"
     REFUSAL = "refusal"
+    LEASE_TAKEOVER = "lease_takeover"
+    RETENTION_PURGED = "retention_purged"
 
     ALL: frozenset[str] = frozenset(
         {
@@ -103,6 +116,8 @@ class AuditEventKind:
             REPORT_WRITTEN,
             SYNTHESIS_FAILED,
             REFUSAL,
+            LEASE_TAKEOVER,
+            RETENTION_PURGED,
         }
     )
 
@@ -235,6 +250,8 @@ class DiagnosisSummary(BaseModel):
     queue_waits: int = 0
     queue_wait_total_ms: float = 0.0
     refusals: int = 0
+    lease_takeovers: int = 0
+    events_purged: int = 0
 
 
 class BudgetRead(BaseModel):
@@ -250,23 +267,84 @@ class BudgetRead(BaseModel):
     tokens_remaining: int
 
 
+def _as_aware(moment: datetime) -> datetime:
+    """Treat a naive timestamp read from the DB as UTC (SQLite
+    returns naive datetimes; Postgres returns aware ones)."""
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment
+
+
 def ledger_totals(events: list[dict[str, Any]]) -> tuple[int, int]:
     """Stage-call attempts + tokens consumed, from audit event dicts.
 
     Counts ``stage_call_finished`` events (one per attempt) and sums
     their reported total tokens. Events without usage contribute zero
     tokens — usage is only counted when a port reported it.
+
+    Retention roll-forward (Sprint 19): ``retention_purged`` summary
+    events carry the stage-call/token totals of the events they
+    purged (including totals rolled forward from earlier summaries
+    among the victims), so purging never resets the budget ledger —
+    budgets hold across purges exactly as they hold across waves
+    and restarts.
     """
     calls = 0
     tokens = 0
     for event in events:
-        if event.get("kind") != AuditEventKind.STAGE_CALL_FINISHED:
-            continue
-        calls += 1
         detail = event.get("detail") or {}
-        usage = detail.get("usage") or {}
-        tokens += int(usage.get("total_tokens") or 0)
+        if event.get("kind") == AuditEventKind.STAGE_CALL_FINISHED:
+            calls += 1
+            usage = detail.get("usage") or {}
+            tokens += int(usage.get("total_tokens") or 0)
+        elif event.get("kind") == AuditEventKind.RETENTION_PURGED:
+            calls += int(detail.get("purged_stage_calls") or 0)
+            tokens += int(detail.get("purged_tokens") or 0)
     return calls, tokens
+
+
+def select_purge_victims(
+    events: list[dict[str, Any]],
+    *,
+    keep_last_n: int | None,
+    older_than_days: int | None,
+    now: datetime,
+) -> list[dict[str, Any]]:
+    """Select the audit events a purge deletes (pure, deterministic).
+
+    ``events`` are ``{"seq": int, "created_at": datetime}`` dicts
+    (extra keys ignored). An event survives only if it satisfies
+    EVERY given bound: among the newest ``keep_last_n`` by seq AND
+    younger than ``older_than_days``. Bounds left as ``None`` do not
+    apply; with no bounds at all nothing is purged. Age is strict:
+    an event exactly at the cutoff is kept. Victims return in seq
+    order (oldest first). The caller deletes exactly these rows and
+    then writes one ``retention_purged`` summary event.
+    """
+    if keep_last_n is None and older_than_days is None:
+        return []
+    if keep_last_n is not None and keep_last_n < 0:
+        raise ValueError(f"keep_last_n must be >= 0; got {keep_last_n}.")
+    if older_than_days is not None and older_than_days < 0:
+        raise ValueError(f"older_than_days must be >= 0; got {older_than_days}.")
+    ordered = sorted(events, key=lambda event: int(event["seq"]))
+    cutoff = (
+        _as_aware(now) - timedelta(days=older_than_days) if older_than_days is not None else None
+    )
+    keep_seqs: set[int] = set()
+    if keep_last_n is not None:
+        keep_seqs = (
+            {int(event["seq"]) for event in ordered[-keep_last_n:]} if keep_last_n > 0 else set()
+        )
+    victims: list[dict[str, Any]] = []
+    for event in ordered:
+        seq = int(event["seq"])
+        if keep_last_n is not None and seq not in keep_seqs:
+            victims.append(event)
+            continue
+        if cutoff is not None and _as_aware(event["created_at"]) < cutoff:
+            victims.append(event)
+    return victims
 
 
 def rollup_usage_by_model(events: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
@@ -303,6 +381,8 @@ def compute_diagnosis(events: list[dict[str, Any]]) -> DiagnosisSummary:
     queue_waits = 0
     queue_wait_ms = 0.0
     refusals = 0
+    lease_takeovers = 0
+    events_purged = 0
     for event in events:
         kind = event.get("kind")
         detail = event.get("detail") or {}
@@ -335,6 +415,10 @@ def compute_diagnosis(events: list[dict[str, Any]]) -> DiagnosisSummary:
                 error_counts[error_kind] = error_counts.get(error_kind, 0) + 1
         elif kind == AuditEventKind.REFUSAL:
             refusals += 1
+        elif kind == AuditEventKind.LEASE_TAKEOVER:
+            lease_takeovers += 1
+        elif kind == AuditEventKind.RETENTION_PURGED:
+            events_purged += int(detail.get("deleted_count") or 0)
     return DiagnosisSummary(
         error_counts=error_counts,
         total_tokens=total_tokens,
@@ -348,6 +432,8 @@ def compute_diagnosis(events: list[dict[str, Any]]) -> DiagnosisSummary:
         queue_waits=queue_waits,
         queue_wait_total_ms=queue_wait_ms,
         refusals=refusals,
+        lease_takeovers=lease_takeovers,
+        events_purged=events_purged,
     )
 
 
@@ -361,4 +447,5 @@ __all__ = [
     "compute_diagnosis",
     "ledger_totals",
     "rollup_usage_by_model",
+    "select_purge_victims",
 ]

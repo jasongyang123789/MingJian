@@ -22,6 +22,12 @@
   versioned report (201).
 - ``GET /seminars/{seminar_id}/audit`` serves the append-only audit
   log in seq order, filterable by kind and model_id.
+- ``POST /seminars/{seminar_id}/audit/purge`` explicitly compacts
+  the audit log under the seminar's retention policy floor and
+  writes one retention summary event (200). No background job ever
+  purges.
+- ``GET /seminars/{seminar_id}/audit/retention`` serves the
+  retention status (event count, surviving seq range, policy).
 - GET endpoints serve stored seminar state: detail, board, rounds,
   finals, report versions, one composed report, and a run's seminars.
 
@@ -40,6 +46,9 @@ from planagent.db import get_session
 from planagent.services.seminar.audit import AuditEventRead
 from planagent.services.seminar.models import (
     AdvanceRead,
+    AuditPurgeRead,
+    AuditPurgeRequest,
+    AuditRetentionRead,
     BoardRowRead,
     ChairBriefRead,
     ChairSynthesisRequest,
@@ -213,6 +222,43 @@ async def get_seminar_audit_endpoint(
         raise HTTPException(
             status_code=400, detail={"code": exc.code, "message": str(exc)}
         ) from exc
+
+
+@router.post(
+    "/seminars/{seminar_id}/audit/purge",
+    response_model=AuditPurgeRead,
+)
+async def purge_seminar_audit_endpoint(
+    seminar_id: str,
+    payload: AuditPurgeRequest,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AuditPurgeRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.purge_audit_events(session, seminar_id, payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SeminarServiceError as exc:
+        raise HTTPException(
+            status_code=400, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+
+
+@router.get(
+    "/seminars/{seminar_id}/audit/retention",
+    response_model=AuditRetentionRead,
+)
+async def get_seminar_audit_retention_endpoint(
+    seminar_id: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AuditRetentionRead:
+    service = get_seminar_service(request)
+    try:
+        return await service.get_audit_retention(session, seminar_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/seminars/{seminar_id}", response_model=SeminarDetailRead)

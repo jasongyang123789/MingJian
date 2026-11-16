@@ -2047,3 +2047,34 @@ class SeminarChairBriefRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class SeminarSynthesizeLeaseRecord(Base):
+    """One distributed synthesize lease (Sprint 19).
+
+    At most one row per seminar (``seminar_id`` is the primary key):
+    the row's existence means the seminar's synthesize lock is held.
+    ``holder_id`` is a fresh uuid per acquisition — release deletes
+    only when the holder matches, so a stale holder can never release
+    another holder's lease. ``fencing_token`` orders successive
+    holders of a contended row (incremented on expiry takeover; a
+    fresh insert after a release starts at 1). ``expires_at`` is the
+    crash backstop: a holder that dies without releasing stops
+    blocking waiters once the lease expires, and the takeover is
+    audited. No renewal exists in Sprint 19 — the TTL must cover a
+    full synthesis; the ``synthesizing`` stuck-state check is the
+    second line of defense if a slow holder is taken over.
+    """
+
+    __tablename__ = "seminar_synthesize_leases"
+
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), primary_key=True, nullable=False
+    )
+    holder_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    holder_label: Mapped[str | None] = mapped_column(String(120), nullable=True)

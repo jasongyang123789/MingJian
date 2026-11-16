@@ -12,10 +12,14 @@ Pure functions over stored final verdicts — no LLM, no I/O:
   detection.
 * :func:`deterministic_prepass` groups items by normalized text into
   exact-duplicate groups, and additionally groups exact groups whose
-  wordings are near-duplicates (Sprint 18): deterministic normalized
-  token-set similarity, no LLM. Near-duplicate groups are ADVISORY —
-  they are shown to the chair (model or agent) as merge candidates;
-  the deterministic fallback never merges distinct wordings.
+  wordings are near-duplicates (Sprint 18, upgraded Sprint 19):
+  deterministic similarity over normalized text — CJK-aware
+  tokenization + conservative stemming + character bigrams, or a
+  pluggable embedding scorer (see
+  :mod:`planagent.services.seminar.similarity`). No LLM.
+  Near-duplicate groups are ADVISORY — they are shown to the chair
+  (model or agent) as merge candidates; the deterministic fallback
+  never merges distinct wordings.
 * :func:`expand_clusters` validates an LLM clustering against the
   pre-pass (every item id in exactly one claim) and expands each
   source with the item's stored facts, building the auditable merge
@@ -40,6 +44,12 @@ import string
 from typing import Any
 
 from planagent.services.seminar.contracts import ClaimClusters
+from planagent.services.seminar.similarity import (
+    DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    ClaimSimilarity,
+    JaccardClaimSimilarity,
+    jaccard_similarity,
+)
 
 #: Verdict fields whose list items are clusterable claims, in the
 #: order items are collected (fixed, so item ids are stable).
@@ -66,30 +76,16 @@ def normalize_claim_text(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", stripped).strip()
 
 
-#: Default Jaccard threshold for near-duplicate grouping (Sprint 18).
-#: Two wordings group when their normalized token sets are at least
-#: this similar. Configurable per seminar; pinned by tests.
-DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.8
-
-
 def token_set(normalized_text: str) -> frozenset[str]:
-    """The normalized token set of a claim: whitespace-split words."""
-    return frozenset(normalized_text.split())
+    """The normalized token set of a claim: whitespace-split words.
 
-
-def jaccard_similarity(left: frozenset[str], right: frozenset[str]) -> float:
-    """Jaccard similarity of two token sets.
-
-    Two empty sets are identical (1.0) — both wordings normalized to
-    nothing (pure punctuation); an empty set against a non-empty one
-    is 0.0. Empty wordings share one exact group anyway, so this edge
-    only matters for grouping across exact groups.
+    This is the RAW splitter (Sprint 18): no stemming, no CJK
+    handling. Similarity scoring uses
+    :func:`planagent.services.seminar.similarity.similarity_tokens`
+    instead; this function stays for exact-group bookkeeping and
+    backward compatibility.
     """
-    if not left and not right:
-        return 1.0
-    if not left or not right:
-        return 0.0
-    return len(left & right) / len(left | right)
+    return frozenset(normalized_text.split())
 
 
 def group_near_duplicates(
@@ -97,32 +93,36 @@ def group_near_duplicates(
     items_by_id: dict[str, dict[str, Any]],
     *,
     threshold: float,
+    similarity: ClaimSimilarity | None = None,
 ) -> list[list[str]]:
     """Group exact groups into near-duplicate groups, deterministically.
 
     Single-pass greedy grouping in first-appearance order: each exact
     group joins the FIRST earlier near-duplicate group whose
-    representative (the first exact group's token set) is at least
-    ``threshold`` similar; otherwise it starts a new group. The
-    representative never moves, so grouping is stable and order
-    independent of later arrivals — identical inputs always produce
-    identical groups. Returns item-id lists (exact groups flattened,
-    in order); singleton groups are included so every exact group
-    appears exactly once.
+    representative (the first exact group's normalized text) scores
+    at least ``threshold`` under ``similarity``; otherwise it starts
+    a new group. The representative never moves, so grouping is
+    stable and order independent of later arrivals — identical inputs
+    always produce identical groups. ``similarity`` defaults to the
+    combined Jaccard scorer; an embedding scorer may be injected.
+    Returns item-id lists (exact groups flattened, in order);
+    singleton groups are included so every exact group appears
+    exactly once.
     """
-    representatives: list[frozenset[str]] = []
+    scorer = similarity or JaccardClaimSimilarity()
+    representatives: list[str] = []
     groups: list[list[str]] = []
     for exact_group in exact_groups:
         first_item = items_by_id[exact_group[0]]
-        tokens = token_set(str(first_item["normalized_text"]))
+        normalized = str(first_item["normalized_text"])
         placed = False
         for index, representative in enumerate(representatives):
-            if jaccard_similarity(tokens, representative) >= threshold:
+            if scorer.similarity(normalized, representative) >= threshold:
                 groups[index].extend(exact_group)
                 placed = True
                 break
         if not placed:
-            representatives.append(tokens)
+            representatives.append(normalized)
             groups.append(list(exact_group))
     return groups
 
@@ -172,25 +172,31 @@ def deterministic_prepass(
     items: list[dict[str, Any]],
     *,
     near_duplicate_threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    similarity: ClaimSimilarity | None = None,
 ) -> dict[str, Any]:
     """Group items by normalized text into exact-duplicate groups, plus
-    near-duplicate groups over the exact groups (Sprint 18).
+    near-duplicate groups over the exact groups (Sprint 18, upgraded
+    Sprint 19).
 
     Returns ``{"items": [...], "exact_groups": [[item_ids...], ...],
     "exact_duplicate_groups": n, "near_duplicate_groups":
     [[item_ids...], ...], "near_duplicate_group_count": m,
-    "near_duplicate_threshold": t, "item_count": len(items)}``. Groups
-    are ordered by first appearance; items within a group keep
-    collection order. Fully deterministic: identical inputs produce
-    byte-identical output under canonical JSON. Near-duplicate groups
-    are advisory merge candidates for the chair; they never change
-    the exact grouping, and the deterministic fallback clusters on
-    exact groups only.
+    "near_duplicate_threshold": t, "similarity_provider": name,
+    "item_count": len(items)}``. Groups are ordered by first
+    appearance; items within a group keep collection order. Fully
+    deterministic: identical inputs produce byte-identical output
+    under canonical JSON. Near-duplicate groups are advisory merge
+    candidates for the chair; they never change the exact grouping,
+    and the deterministic fallback clusters on exact groups only.
+    ``similarity`` selects the scorer (default: the combined
+    Jaccard scorer); its name is recorded in the output so the
+    chair brief discloses which similarity produced the groups.
     """
     if not 0.0 < near_duplicate_threshold <= 1.0:
         raise ValueError(
             f"near_duplicate_threshold must be in (0, 1]; got {near_duplicate_threshold}."
         )
+    scorer = similarity or JaccardClaimSimilarity()
     groups: dict[str, list[str]] = {}
     order: list[str] = []
     for item in items:
@@ -202,7 +208,10 @@ def deterministic_prepass(
     exact_groups = [groups[key] for key in order]
     items_by_id = {str(item["item_id"]): item for item in items}
     near_groups = group_near_duplicates(
-        exact_groups, items_by_id, threshold=near_duplicate_threshold
+        exact_groups,
+        items_by_id,
+        threshold=near_duplicate_threshold,
+        similarity=scorer,
     )
     return {
         "items": [dict(item) for item in items],
@@ -211,6 +220,7 @@ def deterministic_prepass(
         "near_duplicate_groups": near_groups,
         "near_duplicate_group_count": sum(1 for group in near_groups if len(group) > 1),
         "near_duplicate_threshold": near_duplicate_threshold,
+        "similarity_provider": scorer.name,
         "item_count": len(items),
     }
 
@@ -375,8 +385,8 @@ def render_quoted_claims(prepass: dict[str, Any]) -> str:
 def render_prepass_groups(prepass: dict[str, Any]) -> str:
     """Render the exact-duplicate and near-duplicate groups for the
     cluster prompt. Near-duplicate groups are advisory merge
-    candidates (deterministic token-set similarity, Sprint 18): the
-    chair adjudicates whether they are the same claim."""
+    candidates (deterministic similarity, Sprint 18/19): the chair
+    adjudicates whether they are the same claim."""
     lines: list[str] = []
     exact = [group for group in prepass["exact_groups"] if len(group) > 1]
     if exact:
@@ -391,9 +401,11 @@ def render_prepass_groups(prepass: dict[str, Any]) -> str:
         and not any(set(group) == set(exact_group) for exact_group in exact)
     ]
     threshold = prepass.get("near_duplicate_threshold", DEFAULT_NEAR_DUPLICATE_THRESHOLD)
+    provider = prepass.get("similarity_provider", "jaccard")
     if near:
         lines.append(
-            f"Near-duplicate candidate groups (Jaccard >= {threshold}, advisory only):"
+            f"Near-duplicate candidate groups ({provider} similarity >= {threshold}, "
+            "advisory only):"
         )
         for group in near:
             lines.append("Near-duplicate candidate group: " + ", ".join(group))
