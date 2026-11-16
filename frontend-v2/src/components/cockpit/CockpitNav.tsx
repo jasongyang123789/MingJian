@@ -9,6 +9,7 @@ const TABS = [
   { label: '活战略循环', path: '/cockpit/loops' },
   { label: '决策方向', path: '/cockpit/directions' },
   { label: '模板出处', path: '/cockpit/templates' },
+  { label: '汽车推演', path: '/cockpit/automotive' },
 ]
 
 export function CockpitNav() {
