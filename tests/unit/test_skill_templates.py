@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 
 from planagent.services.skills.templates import (
+    JSON_CONTRACT_MAX_TOKENS,
     TEMPLATES,
     get_template,
     list_templates,
@@ -53,6 +54,17 @@ def test_every_template_carries_provenance_and_version() -> None:
 
 def test_registry_slot_validation_passes() -> None:
     validate_registry()
+
+
+def test_every_template_uses_the_shared_loose_output_cap() -> None:
+    # Fix batch 2: one unified cap, 8000 tokens — 3.3x the largest
+    # legitimate contract output observed live (2408 tokens). No
+    # per-template tuning: the cap is a ceiling, not a target.
+    assert JSON_CONTRACT_MAX_TOKENS == 8000
+    assert len(list_templates()) == 17
+    for template in list_templates():
+        assert template.max_tokens == JSON_CONTRACT_MAX_TOKENS
+        assert template.max_tokens == 8000
 
 
 def test_flingjie_template_records_the_missing_license() -> None:

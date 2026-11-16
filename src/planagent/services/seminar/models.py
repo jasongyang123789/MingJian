@@ -357,8 +357,9 @@ class RoundError(BaseModel):
     """A recorded round failure: taxonomy kind + stage + message.
 
     ``kind`` is an :class:`~planagent.services.seminar.errors.ErrorKind`
-    value (timeout / contract / unavailable / budget_exhausted /
-    cancelled / error), formalized in Sprint 18 (design §10.2).
+    value (timeout / contract / truncated / unavailable /
+    budget_exhausted / cancelled / error), formalized in Sprint 18
+    (design §10.2); ``truncated`` added in fix batch 2.
     """
 
     model_config = ConfigDict(extra="forbid")

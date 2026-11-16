@@ -23,6 +23,19 @@ The v2 prompts specify the exact shape of every output key, and the
 framework index from the McKinsey skill source is rendered into the
 intake prompt from :data:`FRAMEWORK_INDEX`. Prompt semantics are
 otherwise unchanged.
+
+Fix batch 2 (output caps): every template's ``max_tokens`` is the
+shared loose cap :data:`JSON_CONTRACT_MAX_TOKENS`. A live seminar run
+on 2026-11-16 proved the old 1500 cap is a cliff: one provider
+enforced it exactly (finish_reason="length", output cut mid-string,
+misreported as a contract failure) while another ignored it and
+returned up to 2408 completion tokens for a legitimate contract
+output. The cap is a ceiling, not a target — a loose cap costs
+nothing on normal outputs — so it is set with multiples of headroom
+over the largest observed legitimate output, and the seminar budget
++ timeout remain the real guards against runaway output. The cap is
+a call parameter, not prompt content: changing it is parameter-only,
+so the template version stays "2" (see FIX-BATCH-2.md).
 """
 
 from __future__ import annotations
@@ -32,6 +45,17 @@ from dataclasses import dataclass
 from string import Formatter
 
 _TEMPLATE_VERSION = "2"
+
+# One loose output cap for every JSON-contract stage in the codebase
+# (skill templates, seminar templates, debate positions, Jarvis
+# reviews, structured-output helpers, provider defaults). Anchor: the
+# largest legitimate contract output observed live (2408 completion
+# tokens, market-map stage, 2026-11-16); 8000 is 3.3x that, so no
+# legitimate contract output can hit it. Only outputs whose shape is
+# proven tiny (e.g. one-word classifications) keep small caps, set at
+# their own call sites. Imported by the seminar registry, debate,
+# Jarvis, provider, and polish modules: one value, one definition.
+JSON_CONTRACT_MAX_TOKENS = 8000
 
 # Placeholders use ``{slot}``; literal braces in template text use the
 # ``str.format`` escapes ``{{`` and ``}}``.
@@ -58,7 +82,7 @@ class SkillTemplate:
     system_prompt: str
     user_template: str
     slots: tuple[str, ...]
-    max_tokens: int = 1500
+    max_tokens: int = JSON_CONTRACT_MAX_TOKENS
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +275,7 @@ def _template(
     system_prompt: str,
     user_template: str,
     slots: tuple[str, ...],
-    max_tokens: int = 1500,
+    max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
 ) -> SkillTemplate:
     return SkillTemplate(
         id=template_id,
@@ -902,6 +926,7 @@ validate_registry()
 __all__ = [
     "DECISION_CRITERIA",
     "FRAMEWORK_INDEX",
+    "JSON_CONTRACT_MAX_TOKENS",
     "LENS_BRIEFS",
     "LENS_QUESTIONS",
     "OPTION_MANDATES",

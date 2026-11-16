@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from planagent.config import Settings
 from planagent.domain.api import OpenAIStatusResponse, OpenAITestResponse
 from planagent.services.pipeline import normalize_text
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 TargetRole = Literal[
     "primary",
@@ -57,6 +58,20 @@ def resolve_openclaw_model_selector(selector: str) -> str:
         if normalized.startswith(prefix):
             return normalized[len(prefix) :]
     return normalized
+
+
+def _choice_finish_reason(response: object) -> str | None:
+    """Read the first choice's finish reason off an SDK response.
+
+    Fix batch 2: ``"length"`` means the provider cut the output at
+    the token cap. Missing choices / missing attribute report None
+    (not reported), never a fabricated value.
+    """
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    reason = getattr(choices[0], "finish_reason", None)
+    return str(reason) if reason else None
 
 
 class ExtractedClaimPayload(BaseModel):
@@ -260,7 +275,7 @@ class OpenAIService:
                     "Only return grounded claims. Keep summaries compact and factual."
                 ),
                 prompt=prompt,
-                max_output_tokens=1200,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="evidence_extraction_failed",
             ),
         )
@@ -343,7 +358,7 @@ class OpenAIService:
                     "Do not invent data that is not present in the prompt."
                 ),
                 prompt="\n".join(prompt_lines),
-                max_output_tokens=900,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="report_enhancement_failed",
             ),
         )
@@ -636,7 +651,7 @@ class OpenAIService:
                     "Return concise reasoning steps that summarize why the conclusion follows from the evidence."
                 ),
                 prompt=prompt,
-                max_output_tokens=1400,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="analysis_failed",
             ),
         )
@@ -662,7 +677,7 @@ class OpenAIService:
                     "Prefer canonical x.com URLs."
                 ),
                 prompt=prompt,
-                max_output_tokens=1400,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="x_search_failed",
             ),
         )
@@ -700,7 +715,7 @@ class OpenAIService:
                     "Do not invent data that is not present in the prompt."
                 ),
                 prompt=prompt,
-                max_output_tokens=900,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="panel_discussion_failed",
             ),
         )
@@ -748,7 +763,7 @@ class OpenAIService:
                     "Be concise. Only select from the listed available actions."
                 ),
                 prompt=prompt,
-                max_output_tokens=500,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="action_decision_failed",
             ),
         )
@@ -837,7 +852,7 @@ class OpenAIService:
                 schema=DebatePositionPayload,
                 instructions=role_instruction,
                 prompt=prompt,
-                max_output_tokens=1000,
+                max_output_tokens=JSON_CONTRACT_MAX_TOKENS,
                 error_prefix="debate_position_failed",
             ),
         )
@@ -880,7 +895,7 @@ class OpenAIService:
         target: str,
         system_prompt: str,
         user_content: str,
-        max_tokens: int = 1000,
+        max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         client = self.clients.get(cast(TargetRole, target))
         if client is None:
@@ -900,13 +915,21 @@ class OpenAIService:
                 response_format={"type": "json_object"},
             )
             text = response.choices[0].message.content or "{}"
+            # Fix batch 2: surface the SDK finish reason in meta so
+            # callers can tell truncation ("length") from malformed
+            # output. Read defensively: a response without choices
+            # reports None rather than failing the whole call.
+            finish_reason = _choice_finish_reason(response)
             try:
                 parsed = json.loads(self._extract_json_payload(text))
             except json.JSONDecodeError:
                 parsed = None
-            return {"model": model, "api_mode": "chat.completions.json"}, parsed if isinstance(
-                parsed, dict
-            ) else None
+            meta: dict[str, Any] = {
+                "model": model,
+                "api_mode": "chat.completions.json",
+                "finish_reason": finish_reason,
+            }
+            return meta, parsed if isinstance(parsed, dict) else None
         except Exception:
             return None, None
 

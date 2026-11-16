@@ -52,7 +52,7 @@ from planagent.services.seminar.templates import (
     get_seminar_template,
     render_template,
 )
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.orchestration import (
     AdvisoryBoardResult,
     SkillLLMPort,
@@ -76,8 +76,9 @@ async def run_seminar_stage(
     Mirrors :func:`planagent.services.skills.orchestration.run_stage`
     over the seminar template registry and seminar contracts
     (version 1). Raises :class:`SkillLLMUnavailable` when no LLM is
-    configured, and :class:`SkillContractError` when the response is
-    empty or malformed.
+    configured, :class:`SkillTruncatedError` when the response was
+    cut at the token cap (``finish_reason="length"``), and
+    :class:`SkillContractError` when the response is empty or malformed.
     """
     template = get_seminar_template(template_id)
     system_prompt, user_content = render_template(template, inputs)
@@ -95,6 +96,15 @@ async def run_seminar_stage(
     )
     duration_ms = (time.monotonic() - started) * 1000.0
     if response.payload is None:
+        if response.finish_reason == "length":
+            # Truncation, not malformation: the model was cut at the
+            # cap mid-output. Classified distinctly (fix batch 2).
+            raise SkillTruncatedError(
+                template_id,
+                max_tokens=template.max_tokens,
+                contract_version=SEMINAR_CONTRACT_VERSION,
+                contract_family="seminar",
+            )
         raise SkillContractError(
             template_id,
             [
@@ -134,6 +144,11 @@ def classify_error(exc: BaseException) -> str:
         return ErrorKind.BUDGET_EXHAUSTED.value
     if isinstance(exc, SkillLLMUnavailable):
         return ErrorKind.UNAVAILABLE.value
+    # Truncation BEFORE contract: SkillTruncatedError subclasses
+    # SkillContractError (so existing handlers keep catching it), but
+    # the taxonomy must report the true cause (fix batch 2).
+    if isinstance(exc, SkillTruncatedError):
+        return ErrorKind.TRUNCATED.value
     if isinstance(exc, SkillContractError):
         return ErrorKind.CONTRACT.value
     if is_timeout_exception(exc):

@@ -64,6 +64,51 @@ class SkillContractError(RuntimeError):
         )
 
 
+class SkillTruncatedError(SkillContractError):
+    """A stage's LLM output was cut at the token cap (fix batch 2).
+
+    Raised when the port reports ``finish_reason="length"`` and no
+    usable JSON arrived: the model was still writing when the cap
+    stopped it, so the JSON is incomplete by construction. This is a
+    DISTINCT failure from a malformed response — a live run on
+    2026-11-16 was misreported as a generic contract failure exactly
+    because truncation was unobservable — so the seminar taxonomy
+    classifies it as ``truncated`` (see
+    :func:`planagent.services.seminar.engine.classify_error`, which
+    checks this class BEFORE :class:`SkillContractError`).
+
+    It subclasses :class:`SkillContractError` deliberately: every
+    existing handler (the skills 502 mapping, the seminar failure
+    isolation) keeps catching it, while the classifier and the
+    message name the true cause. The message always names the
+    truncation and the cap that cut the output.
+    """
+
+    def __init__(
+        self,
+        template_id: str,
+        max_tokens: int,
+        contract_version: str = SKILL_CONTRACT_VERSION,
+        contract_family: str = "skills",
+    ) -> None:
+        self.max_tokens = max_tokens
+        self.finish_reason = "length"
+        super().__init__(
+            template_id,
+            [
+                {
+                    "loc": ("root",),
+                    "msg": (
+                        f"response truncated at the max_tokens cap of {max_tokens} tokens "
+                        "(finish_reason='length'); the JSON output is incomplete"
+                    ),
+                }
+            ],
+            contract_version=contract_version,
+            contract_family=contract_family,
+        )
+
+
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -484,6 +529,7 @@ __all__ = [
     "PreMortem",
     "Shortlist",
     "SkillContractError",
+    "SkillTruncatedError",
     "Synthesis",
     "TournamentJudgment",
     "WarGame",

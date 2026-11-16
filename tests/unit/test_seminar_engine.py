@@ -23,10 +23,11 @@ from planagent.services.seminar.engine import (
     derive_model_status,
     evaluate_convergence,
     round_summary_from_stored,
+    run_seminar_stage,
 )
 from planagent.services.seminar.models import validate_seminar_transition
-from planagent.services.skills.contracts import SkillContractError
-from planagent.services.skills.orchestration import SkillLLMUnavailable
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
+from planagent.services.skills.orchestration import SkillLLMResponse, SkillLLMUnavailable
 
 
 def summary(
@@ -365,3 +366,65 @@ def test_seminar_transitions_refuse_backward_steps() -> None:
     ):
         with pytest.raises(ValueError, match="Illegal seminar transition"):
             validate_seminar_transition(current, target)
+
+
+# ---------------------------------------------------------------------------
+# Seminar stage truncation (fix batch 2)
+# ---------------------------------------------------------------------------
+
+
+class _TruncatingPort:
+    """A port that always answers payload None + finish_reason length."""
+
+    def is_available(self) -> bool:
+        return True
+
+    async def generate_json(self, **kwargs: object) -> SkillLLMResponse:
+        return SkillLLMResponse(model="fake-model", payload=None, finish_reason="length")
+
+
+class _EmptyPort:
+    """A port that answers payload None with no finish reason."""
+
+    def is_available(self) -> bool:
+        return True
+
+    async def generate_json(self, **kwargs: object) -> SkillLLMResponse:
+        return SkillLLMResponse(model="fake-model", payload=None)
+
+
+_REFLECT_INPUTS = {
+    "topic": "T",
+    "case_context": "C",
+    "own_history": "H",
+    "board_snapshot": "B",
+    "output_language": "English",
+}
+
+
+async def test_run_seminar_stage_truncation_raises_truncated_error_with_seminar_family() -> None:
+    with pytest.raises(SkillTruncatedError, match="truncated") as excinfo:
+        await run_seminar_stage(
+            _TruncatingPort(),  # type: ignore[arg-type]
+            stage="reflection",
+            template_id="seminar.reflect",
+            inputs=dict(_REFLECT_INPUTS),
+        )
+    assert "8000" in str(excinfo.value)
+    assert "seminar-v1" in str(excinfo.value)
+    assert excinfo.value.max_tokens == 8000
+    assert classify_error(excinfo.value) == "truncated"
+
+
+async def test_run_seminar_stage_empty_response_stays_a_plain_contract_error() -> None:
+    # No finish reason reported: the generic contract error stands,
+    # and it classifies as contract, not truncated.
+    with pytest.raises(SkillContractError) as excinfo:
+        await run_seminar_stage(
+            _EmptyPort(),  # type: ignore[arg-type]
+            stage="reflection",
+            template_id="seminar.reflect",
+            inputs=dict(_REFLECT_INPUTS),
+        )
+    assert not isinstance(excinfo.value, SkillTruncatedError)
+    assert classify_error(excinfo.value) == "contract"

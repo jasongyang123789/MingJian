@@ -27,6 +27,12 @@ class ScriptedSkillPort:
     call order alongside the payloads, so tests can pin token
     accounting end to end. Queues shorter than the payload queues
     yield ``None`` usage for the remaining calls.
+
+    ``finish_reason_script`` (fix batch 2) is the same idea for the
+    SDK finish reason: a parallel queue of scripted finish reasons
+    per template id, so tests can pin truncation classification.
+    Queues shorter than the payload queues yield ``None`` (not
+    reported) for the remaining calls.
     """
 
     def __init__(
@@ -35,10 +41,14 @@ class ScriptedSkillPort:
         *,
         available: bool = True,
         usage_script: dict[str, list[TokenUsage]] | None = None,
+        finish_reason_script: dict[str, list[str | None]] | None = None,
     ) -> None:
         self._script = {key: [copy.deepcopy(item) for item in queue] for key, queue in script.items()}
         self._usage_script = {
             key: list(queue) for key, queue in (usage_script or {}).items()
+        }
+        self._finish_reason_script = {
+            key: list(queue) for key, queue in (finish_reason_script or {}).items()
         }
         self._available = available
         self.calls: list[dict[str, str]] = []
@@ -67,7 +77,11 @@ class ScriptedSkillPort:
             raise AssertionError(f"No scripted response left for template {template_id!r}.")
         usage_queue = self._usage_script.get(template_id) or []
         usage = usage_queue.pop(0) if usage_queue else None
-        return SkillLLMResponse(model="fixture", payload=queue.pop(0), usage=usage)
+        finish_queue = self._finish_reason_script.get(template_id) or []
+        finish_reason = finish_queue.pop(0) if finish_queue else None
+        return SkillLLMResponse(
+            model="fixture", payload=queue.pop(0), usage=usage, finish_reason=finish_reason
+        )
 
     def assert_exhausted(self) -> None:
         remaining = {key: len(queue) for key, queue in self._script.items() if queue}

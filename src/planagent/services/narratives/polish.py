@@ -19,12 +19,16 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.orchestration import SkillLLMPort, SkillLLMUnavailable
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 POLISH_TEMPLATE_ID = "narrative.polish"
 POLISH_TEMPLATE_VERSION = "1"
-POLISH_MAX_TOKENS = 4096
+# Fix batch 2: the polish output is a full rewrite of the input
+# markdown, whose length scales with the direction count — so it uses
+# the shared loose JSON-contract cap, not a polish-specific value.
+POLISH_MAX_TOKENS = JSON_CONTRACT_MAX_TOKENS
 
 POLISH_SYSTEM_PROMPT = (
     "You rewrite a deterministic decision brief for readability. "
@@ -54,7 +58,9 @@ async def polish_markdown(
 ) -> tuple[PolishOutput, str | None]:
     """Run one polish pass. Returns (output, model name).
 
-    Raises :class:`SkillLLMUnavailable` when no LLM is configured and
+    Raises :class:`SkillLLMUnavailable` when no LLM is configured,
+    :class:`SkillTruncatedError` when the response was cut at the
+    token cap (``finish_reason="length"``), and
     :class:`SkillContractError` when the output fails the contract.
     Nothing is fabricated: an empty or malformed response is a
     structured failure, never a silent pass-through.
@@ -68,6 +74,8 @@ async def polish_markdown(
         max_tokens=max_tokens,
     )
     if response.payload is None:
+        if response.finish_reason == "length":
+            raise SkillTruncatedError(POLISH_TEMPLATE_ID, max_tokens=max_tokens)
         raise SkillContractError(
             POLISH_TEMPLATE_ID,
             [

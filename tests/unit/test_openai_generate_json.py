@@ -18,9 +18,18 @@ from planagent.services.openai_client import OpenAIService
 
 
 class _FakeCompletions:
-    def __init__(self, content: str | None, *, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        content: str | None,
+        *,
+        error: Exception | None = None,
+        finish_reason: str | None = None,
+        report_finish_reason: bool = False,
+    ) -> None:
         self.content = content
         self.error = error
+        self.finish_reason = finish_reason
+        self.report_finish_reason = report_finish_reason
         self.calls: list[dict[str, Any]] = []
 
     async def create(self, **kwargs: Any) -> SimpleNamespace:
@@ -28,22 +37,47 @@ class _FakeCompletions:
         if self.error is not None:
             raise self.error
         message = SimpleNamespace(content=self.content)
-        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+        choice_kwargs: dict[str, Any] = {"message": message}
+        if self.report_finish_reason:
+            choice_kwargs["finish_reason"] = self.finish_reason
+        return SimpleNamespace(choices=[SimpleNamespace(**choice_kwargs)])
 
 
 class _FakeClient:
-    def __init__(self, content: str | None, *, error: Exception | None = None) -> None:
-        self.completions = _FakeCompletions(content, error=error)
+    def __init__(
+        self,
+        content: str | None,
+        *,
+        error: Exception | None = None,
+        finish_reason: str | None = None,
+        report_finish_reason: bool = False,
+    ) -> None:
+        self.completions = _FakeCompletions(
+            content,
+            error=error,
+            finish_reason=finish_reason,
+            report_finish_reason=report_finish_reason,
+        )
         self.chat = SimpleNamespace(completions=self.completions)
 
 
 def _service_with_fake_client(
-    content: str | None, *, model: str = "fake-model", error: Exception | None = None
+    content: str | None,
+    *,
+    model: str = "fake-model",
+    error: Exception | None = None,
+    finish_reason: str | None = None,
+    report_finish_reason: bool = False,
 ) -> tuple[OpenAIService, _FakeClient]:
     settings = Settings(_env_file=None)
     settings.openai.primary.model = model
     service = OpenAIService(settings)
-    fake = _FakeClient(content, error=error)
+    fake = _FakeClient(
+        content,
+        error=error,
+        finish_reason=finish_reason,
+        report_finish_reason=report_finish_reason,
+    )
     service.clients["primary"] = fake  # type: ignore[dict-item]
     return service, fake
 
@@ -53,7 +87,13 @@ async def test_valid_json_object_returns_dict_and_meta() -> None:
     meta, parsed = await service.generate_json_for_target(
         target="primary", system_prompt="sys", user_content="user", max_tokens=500
     )
-    assert meta == {"model": "fake-model", "api_mode": "chat.completions.json"}
+    # Fix batch 2: meta carries finish_reason (None here — the fake
+    # response reports none, and absence is reported, not fabricated).
+    assert meta == {
+        "model": "fake-model",
+        "api_mode": "chat.completions.json",
+        "finish_reason": None,
+    }
     assert parsed == {"wave_plan": ["a"], "n": 1}
     assert len(fake.completions.calls) == 1
     call = fake.completions.calls[0]
@@ -155,3 +195,46 @@ async def test_client_error_returns_none_none() -> None:
     )
     assert meta is None
     assert parsed is None
+
+
+async def test_truncated_response_reports_length_in_meta_and_none_payload() -> None:
+    # Fix batch 2 regression shape: content cut mid-string at the cap
+    # (the live 2026-11-16 diagnose output ended mid-string at
+    # "Undefined product scope"). The payload is unusable AND the meta
+    # says why — the combination the old code could not observe.
+    truncated = '{"findings": ["a", "b"], "barriers": ["Undefined product scope'
+    service, _fake = _service_with_fake_client(
+        truncated, finish_reason="length", report_finish_reason=True
+    )
+    meta, parsed = await service.generate_json_for_target(
+        target="primary", system_prompt="sys", user_content="user", max_tokens=1500
+    )
+    assert parsed is None
+    assert meta is not None
+    assert meta["finish_reason"] == "length"
+
+
+async def test_stop_finish_reason_reported_in_meta() -> None:
+    service, _fake = _service_with_fake_client(
+        '{"a": 1}', finish_reason="stop", report_finish_reason=True
+    )
+    meta, parsed = await service.generate_json_for_target(
+        target="primary", system_prompt="sys", user_content="user"
+    )
+    assert parsed == {"a": 1}
+    assert meta is not None
+    assert meta["finish_reason"] == "stop"
+
+
+async def test_default_max_tokens_is_the_shared_loose_cap() -> None:
+    # Fix batch 2: callers that omit max_tokens get the shared 8000
+    # cap, not the old 1000 default (a cliff for any JSON contract).
+    from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
+
+    service, fake = _service_with_fake_client('{"a": 1}')
+    await service.generate_json_for_target(
+        target="primary", system_prompt="sys", user_content="user"
+    )
+    assert len(fake.completions.calls) == 1
+    assert fake.completions.calls[0]["max_tokens"] == 8000
+    assert fake.completions.calls[0]["max_tokens"] == JSON_CONTRACT_MAX_TOKENS

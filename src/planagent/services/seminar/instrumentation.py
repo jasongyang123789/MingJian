@@ -22,7 +22,9 @@ flow through ``generate_json``. It provides, in one place:
   ``stage_call_started`` / ``stage_call_finished`` event pair (plus
   a ``retry`` event when a retry is scheduled) into the shared
   :class:`~planagent.services.seminar.audit.AuditRecorder`, with
-  duration, token usage, outcome, and the budget position. The
+  duration, token usage, outcome, the finish reason where the port
+  reports it (fix batch 2: ``"length"`` on a finished call means the
+  output was cut at the token cap), and the budget position. The
   recorder flushes with the operation's state change.
 * **Attempt accounting**: the returned response carries
   ``attempts`` (total attempts the logical call took) and the
@@ -230,6 +232,7 @@ class InstrumentedPort:
                     "duration_ms": duration_ms,
                     "outcome": "ok",
                     "usage": usage,
+                    "finish_reason": response.finish_reason,
                     "budget": self._tracker.position(),
                 },
                 round_no=self._round_no,

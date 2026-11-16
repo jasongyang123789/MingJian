@@ -19,6 +19,7 @@ from planagent.domain.models import (
 from planagent.services.openai_client import OpenAIService
 from planagent.services.openai_client import DebatePositionPayload
 from planagent.services.providers import AnthropicProvider
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 from .contracts import ClaimRelationContext, DebateStreamEvent, DebateStreamPreparation
 from .prompts import build_round_plan
@@ -215,7 +216,7 @@ class LLMDebateAdapter:
                     "Return valid JSON only. "
                     f"Target schema: {DebatePositionPayload.model_json_schema()}"
                 ),
-                max_tokens=1000,
+                max_tokens=JSON_CONTRACT_MAX_TOKENS,
             )
             position = self._parse_debate_position_payload(parsed)
             if position is not None:
@@ -264,7 +265,7 @@ class LLMDebateAdapter:
                 system_prompt=self._debate_role_instruction(role),
                 user_prompt=prompt,
                 schema=DebatePositionPayload.model_json_schema(),
-                max_tokens=1000,
+                max_tokens=JSON_CONTRACT_MAX_TOKENS,
                 temperature=0.3,
             )
             return self._parse_debate_position_payload(parsed)
@@ -347,7 +348,7 @@ class LLMDebateAdapter:
                     system_prompt=self._debate_role_instruction(role),
                     user_prompt=prompt,
                     schema=DebatePositionPayload.model_json_schema(),
-                    max_tokens=1000,
+                    max_tokens=JSON_CONTRACT_MAX_TOKENS,
                     temperature=0.3,
                 )
                 return self._parse_debate_position_payload(parsed)
@@ -371,7 +372,7 @@ class LLMDebateAdapter:
                         {"role": "system", "content": self._debate_role_instruction(role)},
                         {"role": "user", "content": f"{prompt}\n\nReturn valid JSON only."},
                     ],
-                    max_tokens=1000,
+                    max_tokens=JSON_CONTRACT_MAX_TOKENS,
                     temperature=0.3,
                     response_format={"type": "json_object"},
                 )

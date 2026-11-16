@@ -17,6 +17,7 @@ from planagent.services.seminar.templates import (
     render_template,
     validate_seminar_registry,
 )
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 EXPECTED_TEMPLATE_IDS = [
     "seminar.reflect",
@@ -45,6 +46,19 @@ def test_seminar_templates_start_at_version_1_with_provenance() -> None:
 
 def test_registry_slot_validation_passes() -> None:
     validate_seminar_registry()
+
+
+def test_every_seminar_template_uses_the_shared_loose_output_cap() -> None:
+    # Fix batch 2: the seminar registry shares the unified 8000-token
+    # cap (reflect/final used the old 1500 default; cluster/synthesize
+    # had an unevidenced 3000). The version stays "1": the cap is a
+    # call parameter, not prompt content.
+    assert JSON_CONTRACT_MAX_TOKENS == 8000
+    assert len(list_seminar_templates()) == 4
+    for template in list_seminar_templates():
+        assert template.version == "1"
+        assert template.max_tokens == JSON_CONTRACT_MAX_TOKENS
+        assert template.max_tokens == 8000
 
 
 def test_unknown_seminar_template_raises_with_known_ids() -> None:

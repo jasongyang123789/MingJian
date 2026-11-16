@@ -61,6 +61,7 @@ from planagent.services.skills.contracts import (
     PreMortem,
     Shortlist,
     SkillContractError,
+    SkillTruncatedError,
     Synthesis,
     TournamentJudgment,
     WarGame,
@@ -130,6 +131,11 @@ class SkillLLMResponse:
     payload: dict[str, Any] | None
     usage: TokenUsage | None = None
     attempts: int = 1
+    # SDK finish reason where the port reports it (fix batch 2):
+    # "length" means the output was cut at the token cap, which the
+    # stage runners classify distinctly from a malformed response.
+    # None means "not reported" — never a fabricated value.
+    finish_reason: str | None = None
 
 
 class SkillLLMPort(Protocol):
@@ -176,9 +182,11 @@ class OpenAIServiceSkillPort:
             max_tokens=max_tokens,
         )
         model = meta.get("model") if isinstance(meta, dict) else None
+        finish_reason = meta.get("finish_reason") if isinstance(meta, dict) else None
         return SkillLLMResponse(
             model=str(model) if model else None,
             payload=parsed if isinstance(parsed, dict) else None,
+            finish_reason=str(finish_reason) if finish_reason else None,
         )
 
 
@@ -223,7 +231,9 @@ async def run_stage(
 ) -> StageRecord:
     """Render, call, and contract-validate one stage.
 
-    Raises :class:`SkillLLMUnavailable` when no LLM is configured, and
+    Raises :class:`SkillLLMUnavailable` when no LLM is configured,
+    :class:`SkillTruncatedError` when the response was cut at the
+    token cap (``finish_reason="length"``), and
     :class:`SkillContractError` when the response is empty or malformed.
     """
     template = get_template(template_id)
@@ -242,6 +252,11 @@ async def run_stage(
     )
     duration_ms = (time.monotonic() - started) * 1000.0
     if response.payload is None:
+        if response.finish_reason == "length":
+            # Truncation, not malformation: the model was cut at the
+            # cap mid-output. Classified distinctly (fix batch 2) so
+            # it is never again misreported as a contract failure.
+            raise SkillTruncatedError(template_id, max_tokens=template.max_tokens)
         raise SkillContractError(
             template_id,
             [

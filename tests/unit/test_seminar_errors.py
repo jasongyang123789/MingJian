@@ -19,7 +19,7 @@ from planagent.services.seminar.errors import (
     is_retryable_error,
     is_timeout_exception,
 )
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.orchestration import SkillLLMUnavailable
 
 
@@ -27,6 +27,7 @@ def test_taxonomy_kinds_are_exactly_the_design_set() -> None:
     assert {kind.value for kind in ErrorKind} == {
         "timeout",
         "contract",
+        "truncated",
         "unavailable",
         "budget_exhausted",
         "cancelled",
@@ -46,6 +47,10 @@ def test_classify_error_maps_each_failure_class() -> None:
         == "timeout"
     )
     assert classify_error(SkillContractError("t", [{"loc": (), "msg": "bad"}])) == "contract"
+    # Truncation classifies distinctly even though SkillTruncatedError
+    # subclasses SkillContractError (fix batch 2): the check order in
+    # classify_error is the whole point.
+    assert classify_error(SkillTruncatedError("t", max_tokens=8000)) == "truncated"
     assert classify_error(SkillLLMUnavailable("none")) == "unavailable"
     assert (
         classify_error(BudgetExhaustedError(budget="max_tokens", used=10, limit=10))
@@ -54,6 +59,20 @@ def test_classify_error_maps_each_failure_class() -> None:
     assert classify_error(asyncio.CancelledError()) == "cancelled"
     assert classify_error(ValueError("boom")) == "error"
     assert classify_error(RuntimeError("boom")) == "error"
+
+
+def test_truncation_error_names_truncation_and_the_cap() -> None:
+    # The message must name the true cause AND the cap, so a reader of
+    # the audit never has to guess why the JSON was incomplete.
+    exc = SkillTruncatedError("mckinsey.diagnose", max_tokens=8000)
+    assert "truncated" in str(exc)
+    assert "8000" in str(exc)
+    assert exc.max_tokens == 8000
+    assert exc.finish_reason == "length"
+    assert exc.template_id == "mckinsey.diagnose"
+    # Subclassing is deliberate: existing contract-error handlers
+    # (skills 502 mapping, seminar failure isolation) keep catching it.
+    assert isinstance(exc, SkillContractError)
 
 
 def test_only_timeouts_are_retryable() -> None:
@@ -67,6 +86,9 @@ def test_only_timeouts_are_retryable() -> None:
         is True
     )
     assert is_retryable_error(SkillContractError("t", [{"loc": (), "msg": "bad"}])) is False
+    # Truncation is never retried under the current policy: the same
+    # capped call would truncate again (fix batch 2).
+    assert is_retryable_error(SkillTruncatedError("t", max_tokens=8000)) is False
     assert is_retryable_error(SkillLLMUnavailable("none")) is False
     assert (
         is_retryable_error(BudgetExhaustedError(budget="max_tokens", used=10, limit=10))

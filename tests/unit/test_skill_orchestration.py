@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.orchestration import (
     OpenAIServiceSkillPort,
     SkillLLMUnavailable,
@@ -209,6 +209,33 @@ async def test_run_stage_empty_response_is_a_contract_error() -> None:
         )
 
 
+async def test_run_stage_truncated_response_is_a_truncation_error_naming_the_cap() -> None:
+    # Fix batch 2 regression: payload None + finish_reason "length"
+    # (the live 2026-11-16 diagnose shape) raises the DISTINCT
+    # truncation error, naming the truncation and the 8000 cap —
+    # never the generic "no usable JSON" contract message.
+    port = ScriptedSkillPort(
+        {"mckinsey.diagnose": [None]},  # type: ignore[list-item]
+        finish_reason_script={"mckinsey.diagnose": ["length"]},
+    )
+    with pytest.raises(SkillTruncatedError, match="truncated") as excinfo:
+        await run_stage(
+            port,
+            stage="diagnose",
+            template_id="mckinsey.diagnose",
+            inputs={
+                "topic": "T",
+                "decision_question": "Q",
+                "context": "C",
+                "intake": "{}",
+                "output_language": "English",
+            },
+        )
+    assert "8000" in str(excinfo.value)
+    assert excinfo.value.max_tokens == 8000
+    assert excinfo.value.template_id == "mckinsey.diagnose"
+
+
 async def test_openai_service_port_maps_meta_and_payload() -> None:
     class StubOpenAI:
         def is_configured(self, target: str) -> bool:
@@ -216,8 +243,8 @@ async def test_openai_service_port_maps_meta_and_payload() -> None:
 
         async def generate_json_for_target(self, **kwargs):  # type: ignore[no-untyped-def]
             assert kwargs["target"] == "primary"
-            assert kwargs["max_tokens"] == 1500
-            return {"model": "stub-model"}, {"findings": ["x"]}
+            assert kwargs["max_tokens"] == 8000
+            return {"model": "stub-model", "finish_reason": "stop"}, {"findings": ["x"]}
 
     port = OpenAIServiceSkillPort(StubOpenAI())  # type: ignore[arg-type]
     assert port.is_available() is True
@@ -225,10 +252,12 @@ async def test_openai_service_port_maps_meta_and_payload() -> None:
         template_id="mckinsey.diagnose",
         system_prompt="s",
         user_content="u",
-        max_tokens=1500,
+        max_tokens=8000,
     )
     assert response.model == "stub-model"
     assert response.payload == {"findings": ["x"]}
+    # Fix batch 2: the port threads the SDK finish reason through.
+    assert response.finish_reason == "stop"
 
 
 # ---------------------------------------------------------------------------

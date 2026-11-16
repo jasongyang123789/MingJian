@@ -7,11 +7,15 @@ port's generate_json is exercised through the fake-port seminar tests.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 from planagent.config import Settings
 from planagent.config.openai import OpenAIConfig, OpenAITargetConfig
 from planagent.services.seminar.models import EndpointConfig, ModelPortConfig
 from planagent.services.seminar.port import (
     ParameterizedSkillPort,
+    ResolvedEndpoint,
     default_port_factory,
     resolve_endpoint,
 )
@@ -134,3 +138,103 @@ def test_endpoint_config_rejects_mixed_and_empty_forms() -> None:
         EndpointConfig(target="not_a_target")
     with pytest.raises(ValidationError):
         EndpointConfig(api_key_env="K")  # inline without model
+
+
+# ---------------------------------------------------------------------------
+# Finish-reason threading (fix batch 2): the port reads the SDK finish
+# reason off the response and carries it on SkillLLMResponse, so a
+# truncated response (payload None + "length") is classifiable. The
+# fake client is injected the same way fix batch 1 injected one into
+# OpenAIService: no network, no LLM call.
+# ---------------------------------------------------------------------------
+
+
+class _FakePortCompletions:
+    def __init__(
+        self,
+        content: str,
+        *,
+        finish_reason: str | None,
+        usage: SimpleNamespace | None = None,
+    ) -> None:
+        self.content = content
+        self.finish_reason = finish_reason
+        self.usage = usage
+        self.calls: list[dict[str, Any]] = []
+
+    async def create(self, **kwargs: Any) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        message = SimpleNamespace(content=self.content)
+        choice_kwargs: dict[str, Any] = {"message": message}
+        if self.finish_reason is not None:
+            choice_kwargs["finish_reason"] = self.finish_reason
+        return SimpleNamespace(
+            choices=[SimpleNamespace(**choice_kwargs)],
+            usage=self.usage,
+        )
+
+
+class _FakePortClient:
+    def __init__(self, completions: _FakePortCompletions) -> None:
+        self.chat = SimpleNamespace(completions=completions)
+
+
+def _port_with_fake_client(completions: _FakePortCompletions) -> ParameterizedSkillPort:
+    resolved = ResolvedEndpoint(
+        base_url="https://fake.example/v1",
+        api_key="fake-key",
+        model="fake-model",
+        temperature=0.3,
+        timeout_seconds=180.0,
+    )
+    port = ParameterizedSkillPort(resolved)
+    port._client = _FakePortClient(completions)  # type: ignore[assignment]
+    return port
+
+
+async def test_port_reports_length_and_none_payload_on_truncated_json() -> None:
+    truncated = '{"critique": [{"weak_point": "x", "reason": "y"}], "responses": ["cut'
+    completions = _FakePortCompletions(
+        truncated,
+        finish_reason="length",
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=8000, total_tokens=8100),
+    )
+    port = _port_with_fake_client(completions)
+    response = await port.generate_json(
+        template_id="seminar.reflect",
+        system_prompt="s",
+        user_content="u",
+        max_tokens=8000,
+    )
+    assert response.payload is None
+    assert response.finish_reason == "length"
+    assert response.model == "fake-model"
+    assert response.usage is not None
+    assert response.usage.completion_tokens == 8000
+    assert completions.calls[0]["max_tokens"] == 8000
+
+
+async def test_port_reports_stop_and_parsed_payload_on_complete_json() -> None:
+    completions = _FakePortCompletions('{"a": 1}', finish_reason="stop")
+    port = _port_with_fake_client(completions)
+    response = await port.generate_json(
+        template_id="seminar.reflect",
+        system_prompt="s",
+        user_content="u",
+        max_tokens=8000,
+    )
+    assert response.payload == {"a": 1}
+    assert response.finish_reason == "stop"
+
+
+async def test_port_reports_no_finish_reason_when_sdk_omits_it() -> None:
+    completions = _FakePortCompletions('{"a": 1}', finish_reason=None)
+    port = _port_with_fake_client(completions)
+    response = await port.generate_json(
+        template_id="seminar.reflect",
+        system_prompt="s",
+        user_content="u",
+        max_tokens=8000,
+    )
+    assert response.payload == {"a": 1}
+    assert response.finish_reason is None
