@@ -1,12 +1,15 @@
-"""Decision-direction narrative endpoints (Sprint 13).
+"""Decision-direction narrative endpoints (Sprint 13) + direction
+derivation and mappings (Sprint 14).
 
 Generation is deterministic: no LLM call happens on the generate
 path. The polish endpoint is the only LLM touchpoint, strictly
 separated — it stores its output alongside the artifact and never
-mutates it. Error mapping follows the Sprint 9/11 pattern:
-``NarrativeError`` → 400 with a ``{"code", "message"}`` detail
-(polish availability/contract failures map to 503/502),
-``LookupError`` → 404.
+mutates it. Derivation is deterministic too: versioned rules over
+stored ensembles, explicit trigger only, never creating runs.
+Error mapping follows the Sprint 9/11 pattern:
+``NarrativeError``/``DirectionError`` → 400 with a ``{"code",
+"message"}`` detail (polish availability/contract failures map to
+503/502), ``LookupError`` → 404.
 """
 
 from __future__ import annotations
@@ -19,6 +22,12 @@ from planagent.db import get_session
 from planagent.services.narratives.models import (
     DecisionNarrativeListRead,
     DecisionNarrativeRead,
+    DerivationRead,
+    DirectionError,
+    DirectionMappingCreate,
+    DirectionMappingListRead,
+    DirectionMappingRead,
+    DirectionMappingUpdate,
     NarrativeError,
     NarrativeGenerateRequest,
     NarrativePolishRead,
@@ -35,6 +44,10 @@ _POLISH_STATUS_CODES = {
 def _narrative_error(exc: NarrativeError) -> HTTPException:
     status = _POLISH_STATUS_CODES.get(exc.code, 400)
     return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+def _direction_error(exc: DirectionError) -> HTTPException:
+    return HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)})
 
 
 def _not_found(exc: LookupError) -> HTTPException:
@@ -110,5 +123,101 @@ async def polish_narrative(
         return await service.polish(session, run_id, narrative_id)
     except NarrativeError as exc:
         raise _narrative_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Direction derivation + mappings (Sprint 14)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/directions/derive",
+    response_model=DerivationRead,
+)
+async def derive_directions(
+    run_id: str,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DerivationRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.derive(session, run_id)
+    except DirectionError as exc:
+        raise _direction_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.get(
+    "/runs/{run_id}/directions/mappings",
+    response_model=DirectionMappingListRead,
+)
+async def list_direction_mappings(
+    run_id: str,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DirectionMappingListRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.list_mappings(session, run_id)
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.post(
+    "/runs/{run_id}/directions/mappings",
+    response_model=DirectionMappingRead,
+    status_code=201,
+)
+async def create_direction_mapping(
+    run_id: str,
+    payload: DirectionMappingCreate,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DirectionMappingRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.create_mapping(session, run_id, payload)
+    except DirectionError as exc:
+        raise _direction_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.put(
+    "/runs/{run_id}/directions/mappings/{mapping_id}",
+    response_model=DirectionMappingRead,
+)
+async def update_direction_mapping(
+    run_id: str,
+    mapping_id: str,
+    payload: DirectionMappingUpdate,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DirectionMappingRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.update_mapping(session, run_id, mapping_id, payload)
+    except DirectionError as exc:
+        raise _direction_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.delete(
+    "/runs/{run_id}/directions/mappings/{mapping_id}",
+    status_code=204,
+)
+async def delete_direction_mapping(
+    run_id: str,
+    mapping_id: str,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    service = get_narrative_service(http_request)
+    try:
+        await service.delete_mapping(session, run_id, mapping_id)
     except LookupError as exc:
         raise _not_found(exc) from exc

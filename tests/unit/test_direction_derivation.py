@@ -15,6 +15,11 @@ from planagent.services.narratives.derivation import (
     DerivationCandidate,
     derive_directions,
 )
+from planagent.services.narratives.service import _lower_tail_shortfall
+from planagent.services.robustness.models import (
+    ExpectedShortfallDetail,
+    ExpectedShortfallResult,
+)
 
 RUN_A = "run-a"
 RUN_B = "run-b"
@@ -201,3 +206,39 @@ def test_derive_outcomes_cover_every_rule_in_order() -> None:
         "most_robust",
         "baseline_control",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Lower-tail shortfall extraction (service helper, pure)
+# ---------------------------------------------------------------------------
+
+
+def _shortfall_result(tail: str) -> ExpectedShortfallResult:
+    detail = ExpectedShortfallDetail(value=-3.5, threshold=-3.0, tail_count=1, n=5)
+    strategy = ExpectedShortfallDetail(value=-1.5, threshold=-1.0, tail_count=1, n=5)
+    return ExpectedShortfallResult(
+        run_id=RUN_A,
+        ensemble_id="ens-x",
+        metric="cash",
+        alpha=0.1,
+        tail=tail,  # type: ignore[arg-type]
+        baseline=detail,
+        strategy=strategy,
+        paired=detail,
+        trial_values_hash="sha256:x",
+        protocol="p1",
+    )
+
+
+def test_lower_tail_shortfall_returns_value_and_alpha() -> None:
+    assert _lower_tail_shortfall(_shortfall_result("lower"), "baseline") == (-3.5, 0.1)
+    assert _lower_tail_shortfall(_shortfall_result("lower"), "strategy") == (-1.5, 0.1)
+
+
+def test_lower_tail_shortfall_ignores_upper_tail() -> None:
+    assert _lower_tail_shortfall(_shortfall_result("upper"), "baseline") == (None, None)
+    assert _lower_tail_shortfall(_shortfall_result("upper"), "strategy") == (None, None)
+
+
+def test_lower_tail_shortfall_absent_without_result() -> None:
+    assert _lower_tail_shortfall(None, "baseline") == (None, None)

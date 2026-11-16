@@ -9,8 +9,11 @@ pins this with ``content_hash``).
 
 Direction-derivation rules (see SPRINT13.md §2 for the full design):
 
-1. Directions come ONLY from the request's direction definitions.
-   Nothing is invented from options, branches, or deliberations.
+1. Directions come ONLY from direction definitions: explicit
+   definitions in the generation request, or (since Sprint 14)
+   stored direction mappings resolved by the service when the
+   request omits them. Nothing is invented from options, branches,
+   or deliberations.
 2. Each direction's distribution is its source run's stored
    ensemble, chosen arm. No ensemble means the service refuses
    before composing; the composer never sees an ensemble-less

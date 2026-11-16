@@ -162,8 +162,11 @@ class DirectionMappingUpdate(BaseModel):
     Every field is optional: omitted fields are left unchanged. An
     explicitly supplied ``deliberation_id`` of null clears the pin;
     an explicitly supplied empty ``mece_branches`` clears the trace.
-    Any successful update marks the mapping ``user_edited``, which
-    protects it from later derivation upserts (the no-clobber rule).
+    Explicit nulls for ``name``, ``source_run_id``, ``arm``, or
+    ``mece_branches`` are refused (422): use omission to leave a
+    field unchanged. Any successful update marks the mapping
+    ``user_edited``, which protects it from later derivation
+    upserts (the no-clobber rule).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -194,6 +197,13 @@ class DirectionMappingUpdate(BaseModel):
             if branch not in seen:
                 seen.append(branch)
         return seen
+
+    @model_validator(mode="after")
+    def _reject_explicit_nulls(self) -> DirectionMappingUpdate:
+        for field_name in ("name", "source_run_id", "arm", "mece_branches"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} must not be null; omit it to leave unchanged")
+        return self
 
 
 class DirectionMappingRead(BaseModel):
