@@ -76,6 +76,15 @@ class FormulaDefinition(BaseModel):
     pure validator (:mod:`formulas`), so malformed expressions surface as
     structured validation issues at the gate instead of 422s — the same
     discipline as missing units and provenance on variables.
+
+    ``tick_driver`` (Phase 1, automotive track) marks a formula that is
+    evaluated on EVERY tick instead of once per run: the executor skips it
+    at run start and re-evaluates it per tick over the sampled values, the
+    initial derived values, the current state, and the tick index. A tick
+    driver may reference its own output id (the current state value) and
+    the reserved ``tick`` reference; see :mod:`formulas` for the exact
+    scope rules. ``False`` (the default) keeps the Sprint 4 once-per-run
+    semantics exactly.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -83,6 +92,7 @@ class FormulaDefinition(BaseModel):
     output: str = Field(min_length=1, max_length=120)
     expression: Any
     description: str = Field(default="", max_length=2000)
+    tick_driver: bool = False
 
     @field_validator("output", "description", mode="before")
     @classmethod
@@ -188,6 +198,14 @@ class VariableSet(BaseModel):
     ``formulas`` (Sprint 4) is the formula graph: derived variables computed
     from the sampled variables, evaluated in list order (the topological
     order — a formula may only reference variables and earlier formulas).
+
+    ``assumption_data`` (Phase 1, automotive track) is opaque template-bound
+    JSON consumed by domain helpers, not by the sampler or the formula
+    graph: lookup tables and assumption parameters that travel with the
+    bindings so a run's audit trail pins exactly which assumptions it ran
+    under (e.g. the automotive price-band × energy fitment priors). Merging
+    replaces whole top-level keys (see :func:`merge_variable_sets`); the
+    validator treats the content as opaque and never inspects it.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -196,6 +214,7 @@ class VariableSet(BaseModel):
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
+    assumption_data: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -328,6 +347,7 @@ class VariableTemplate(BaseModel):
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
+    assumption_data: dict[str, Any] = Field(default_factory=dict)
     is_builtin: bool = False
 
     @field_validator("id", "name", "domain_id", "description", mode="before")
@@ -357,6 +377,7 @@ class VariableTemplateCreate(BaseModel):
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
+    assumption_data: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name", "domain_id", "description", mode="before")
     @classmethod
@@ -388,6 +409,7 @@ class VariableTemplateUpdate(BaseModel):
     variables: list[VariableDefinition] | None = None
     formulas: list[FormulaDefinition] | None = None
     internal: dict[str, str] | None = None
+    assumption_data: dict[str, Any] | None = None
 
     @field_validator("name", "description", mode="before")
     @classmethod

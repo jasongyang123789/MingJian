@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import math
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,33 @@ class RuleEffect:
     target: str
     op: str
     value: float
+    # Phase 1 (automotive track): optional id of a sampled variable or
+    # derived formula value the effect scales with. When set, the applied
+    # effect is ``value * scope[scale_by]`` where scope is the run's
+    # sampled + initial derived values; when the id is absent from the
+    # scope (a run without that binding), the factor falls back to 1.0
+    # and the effect applies at its base value. None keeps the fixed
+    # constant semantics exactly.
+    scale_by: str | None = None
+
+
+def scaled_effect_value(effect: RuleEffect, scope: Mapping[str, float] | None) -> float:
+    """The value of a rule effect under variable scaling.
+
+    ``scope`` carries the run's sampled + initial derived values. An
+    effect without ``scale_by`` returns its base value unchanged; an
+    effect with ``scale_by`` multiplies the base value by the scope
+    value for that id, falling back to a factor of 1.0 when the id is
+    missing from the scope or the scope value is not finite. Pure and
+    deterministic.
+    """
+
+    if effect.scale_by is None or scope is None:
+        return float(effect.value)
+    factor = scope.get(effect.scale_by)
+    if factor is None or not math.isfinite(float(factor)):
+        return float(effect.value)
+    return float(effect.value) * float(factor)
 
 
 @dataclass(frozen=True)
@@ -184,6 +212,7 @@ class RuleRegistry:
                 target=effect["target"],
                 op=effect.get("op", "add"),
                 value=float(effect["value"]),
+                scale_by=_parse_scale_by(effect),
             )
             for effect in raw_rule.get("effects", [])
         )
@@ -222,6 +251,23 @@ class RuleRegistry:
                 continue
             importlib.import_module(module_name)
             self._loaded_python_modules.add(module_name)
+
+
+def _parse_scale_by(effect: dict[str, Any]) -> str | None:
+    """Parse an effect's optional ``scale_by`` variable id.
+
+    Absent means a fixed constant effect. A present value must be a
+    non-empty string naming a sampled variable or derived formula id;
+    anything else fails rule loading loudly, like the existing strict
+    ``float(value)`` parse, instead of silently scaling by garbage.
+    """
+
+    raw = effect.get("scale_by")
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"Rule effect scale_by must be a non-empty string id, got {raw!r}.")
+    return raw.strip()
 
 
 def _configured_rule_modules() -> list[str]:

@@ -19,7 +19,7 @@ when a run carries both a decomposition tree and variable bindings.
 
 from __future__ import annotations
 
-from .formulas import validate_formulas
+from .formulas import TICK_REFERENCE, validate_formulas
 from .models import (
     MAX_VARIABLES,
     DistributionType,
@@ -159,6 +159,15 @@ def validate_variable_set(variable_set: VariableSet) -> VariableValidationResult
                 )
             )
         seen_ids.add(variable.id)
+
+        if variable.id == TICK_REFERENCE:
+            issues.append(
+                _issue(
+                    "reserved_tick_id",
+                    "Variable id 'tick' is reserved for the tick-driver tick reference.",
+                    variable.id,
+                )
+            )
 
         if not variable.unit:
             issues.append(
@@ -365,6 +374,8 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
     in place, and new override variables are appended in override order. The
     internal tables merge with override values winning per key. Formulas
     merge with the same discipline: the override wins per output id.
+    Assumption data merges per top-level key, override wins; nested values
+    are replaced wholesale, never deep-merged.
     """
 
     merged: list[VariableDefinition] = list(base.variables)
@@ -388,4 +399,5 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
         variables=merged,
         formulas=merged_formulas,
         internal={**base.internal, **override.internal},
+        assumption_data={**base.assumption_data, **override.assumption_data},
     )

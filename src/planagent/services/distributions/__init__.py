@@ -35,6 +35,7 @@ from .sampler import (
     resolve_run_values,
     rng_for_seed,
     sample_variable_set,
+    tick_driver_formulas,
 )
 
 __all__ = [
@@ -66,4 +67,5 @@ __all__ = [
     "sha256_hash",
     "state_hash",
     "summarize_samples",
+    "tick_driver_formulas",
 ]

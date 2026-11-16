@@ -29,7 +29,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from planagent.services.variables.formulas import evaluate_formulas
-from planagent.services.variables.models import DistributionType, VariableSet
+from planagent.services.variables.models import (
+    DistributionType,
+    FormulaDefinition,
+    VariableSet,
+)
 from planagent.services.variables.validator import validate_variable_set
 
 #: Configuration key holding the Monte Carlo fragment on a trial run.
@@ -176,11 +180,13 @@ def resolve_run_values(
     replacing drawn values after the draw is consumed). Formulas then
     evaluate over the post-lever sampled values, in list order, so
     strategy levers propagate through derived values — the reference's
-    evaluation order. Returns ``(sampled, derived, applied)``: every
-    sampled value, every derived value, and the subset of both whose id
-    matches a state field (the values the executor applies to the initial
-    state, with the same precedence as sampled values). Runs without
-    bindings or formulas resolve nothing.
+    evaluation order. Tick-driver formulas are SKIPPED here: they do not
+    exist at run start and are evaluated per tick by the executor (see
+    :func:`tick_driver_formulas`). Returns ``(sampled, derived,
+    applied)``: every sampled value, every initial derived value, and the
+    subset of both whose id matches a state field (the values the executor
+    applies to the initial state, with the same precedence as sampled
+    values). Runs without bindings or formulas resolve nothing.
     """
 
     variable_set, levers = _read_bindings_and_levers(configuration)
@@ -190,7 +196,26 @@ def resolve_run_values(
     sampled: dict[str, float] = {}
     if variable_set.variables:
         sampled = sample_variable_set(variable_set, rng_for_seed(seed), levers)
-    derived = evaluate_formulas(variable_set.formulas, sampled) if variable_set.formulas else {}
+    initial_formulas = [formula for formula in variable_set.formulas if not formula.tick_driver]
+    derived = evaluate_formulas(initial_formulas, sampled) if initial_formulas else {}
     combined = {**sampled, **derived}
     applied = {key: value for key, value in combined.items() if key in state_keys}
     return sampled, derived, applied
+
+
+def tick_driver_formulas(
+    configuration: Mapping[str, Any] | None,
+) -> list[FormulaDefinition]:
+    """A run's tick-driver formulas, in stored list order.
+
+    Reads the ``variables`` fragment (bindings) from the run's
+    configuration and returns the formulas flagged ``tick_driver`` — the
+    formulas the executor evaluates on every tick. Returns [] for runs
+    without bindings or without drivers; such runs behave exactly as
+    before tick drivers existed.
+    """
+
+    variable_set, _ = _read_bindings_and_levers(configuration)
+    if variable_set is None:
+        return []
+    return [formula for formula in variable_set.formulas if formula.tick_driver]

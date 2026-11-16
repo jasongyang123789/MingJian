@@ -22,6 +22,19 @@ raise at evaluation time, exactly as in the reference; authors guard
 denominators with ``max(denominator, epsilon)``. A formula whose evaluation
 fails fails the run loudly; it is never silently skipped.
 
+Tick drivers (Phase 1, automotive track): a formula flagged
+``tick_driver`` is NOT evaluated once per run. The executor skips it at
+run start and re-evaluates it on every tick over the sampled values, the
+initial derived values, the current state, and the tick index (see
+:func:`evaluate_tick_drivers`). A tick driver may reference its own output
+id — that reads the field's current state value, so drivers compose with
+rule effects instead of overwriting them — and the reserved ``tick``
+reference (the 1-based tick index). An initial (non-driver) formula may
+not reference a driver output (drivers do not exist at run start), may
+not reference itself, and may not reference ``tick``. The id ``tick`` is
+reserved: no variable and no formula output may use it, so the tick
+reference can never collide with sampled data.
+
 Pure and deterministic: no LLM, no randomness, no I/O.
 """
 
@@ -40,6 +53,10 @@ from .models import (
     VariableDefinition,
     VariableValidationIssue,
 )
+
+#: Reserved reference naming the 1-based tick index inside tick-driver
+#: expressions. No variable id or formula output may use this name.
+TICK_REFERENCE = "tick"
 
 _FORMULA_OPERATORS = frozenset({"add", "subtract", "multiply", "divide", "min", "max"})
 
@@ -211,7 +228,12 @@ def validate_formulas(
         if variable.distribution.type is DistributionType.FIXED
         and variable.distribution.value is not None
     }
-    known_ids = set(variable_ids)
+    # Two visibility sets: initial formulas see sampled ids plus EARLIER
+    # initial outputs only (driver outputs do not exist at run start), while
+    # tick drivers additionally see earlier driver outputs, their own
+    # output id (the current state value), and the reserved tick reference.
+    known_initial_ids = set(variable_ids)
+    known_driver_ids = set(variable_ids)
     seen_outputs: set[str] = set()
     for formula in formulas:
         if formula.output in seen_outputs:
@@ -222,7 +244,13 @@ def validate_formulas(
                     formula.output,
                 )
             )
-        elif formula.output in variable_ids:
+        elif formula.output in variable_ids and not formula.tick_driver:
+            # Initial formulas must not collide with sampled ids (the
+            # derived value would silently overwrite the sampled value).
+            # Tick drivers are EXEMPT: a driver output that names a
+            # sampled variable is intentional — the sampled value seeds
+            # the initial state and the driver evolves it per tick, at
+            # different evaluation times with documented precedence.
             issues.append(
                 _issue(
                     "formula_output_collides_with_variable",
@@ -230,7 +258,19 @@ def validate_formulas(
                     formula.output,
                 )
             )
+        if formula.output == TICK_REFERENCE:
+            issues.append(
+                _issue(
+                    "reserved_tick_id",
+                    f"Formula output {formula.output!r} uses the reserved tick reference name.",
+                    formula.output,
+                )
+            )
         seen_outputs.add(formula.output)
+        if formula.tick_driver:
+            known_ids = known_driver_ids | {formula.output, TICK_REFERENCE}
+        else:
+            known_ids = known_initial_ids
         issues.extend(
             _expression_issues(
                 formula.expression,
@@ -241,8 +281,12 @@ def validate_formulas(
             )
         )
         # The output becomes known only AFTER its own expression is checked,
-        # so a formula cannot reference itself or any later formula.
-        known_ids.add(formula.output)
+        # so an initial formula cannot reference itself or any later
+        # formula. Driver outputs join the driver-visible set only: an
+        # initial formula listed after a driver must not reference it.
+        known_driver_ids.add(formula.output)
+        if not formula.tick_driver:
+            known_initial_ids.add(formula.output)
 
     checks: list[VariableCheckRecord] = []
     if formulas:
@@ -316,5 +360,42 @@ def evaluate_formulas(
         if not math.isfinite(result):
             raise FormulaEvaluationError(formula.output, "Evaluation produced a non-finite value.")
         resolved[formula.output] = result
+        derived[formula.output] = result
+    return derived
+
+
+def evaluate_tick_drivers(
+    formulas: list[FormulaDefinition],
+    base_values: Mapping[str, float],
+    state: Mapping[str, float],
+    tick: int,
+) -> dict[str, float]:
+    """Evaluate tick-driver formulas for one tick, in list order.
+
+    The evaluation scope is the sampled values plus the initial derived
+    values (``base_values``), overlaid with the current ``state`` — the
+    state wins on id collisions, because it is the current truth — plus
+    the reserved ``tick`` reference carrying the 1-based tick index.
+    Drivers chain within the tick: a later driver sees earlier drivers'
+    outputs from the same tick. Each output is rounded to 4 decimals,
+    matching the executor's ``_apply_effects`` rounding, so chained
+    drivers and the stored state agree exactly.
+
+    Returns only the driver outputs; the caller applies the subset whose
+    id matches a state field. Raises :class:`FormulaEvaluationError` on a
+    missing reference, division by zero, or a non-finite result — a
+    driver failure fails the run loudly, never silently skipped. The
+    caller must pass only formulas flagged ``tick_driver``; validation
+    guarantees the scope rules above hold for validated sets.
+    """
+
+    scope: dict[str, float] = {**base_values, **state, TICK_REFERENCE: float(tick)}
+    derived: dict[str, float] = {}
+    for formula in formulas:
+        result = _evaluate_expression(formula.expression, scope, formula.output)
+        if not math.isfinite(result):
+            raise FormulaEvaluationError(formula.output, "Evaluation produced a non-finite value.")
+        result = round(result, 4)
+        scope[formula.output] = result
         derived[formula.output] = result
     return derived

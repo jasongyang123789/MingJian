@@ -5,7 +5,13 @@ import the models without pulling in the pack registry or the database layer.
 Import ``presets`` and ``store`` from their submodules directly.
 """
 
-from .formulas import FormulaEvaluationError, evaluate_formulas, validate_formulas
+from .formulas import (
+    TICK_REFERENCE,
+    FormulaEvaluationError,
+    evaluate_formulas,
+    evaluate_tick_drivers,
+    validate_formulas,
+)
 from .models import (
     MAX_FORMULA_DEPTH,
     MAX_FORMULAS,
@@ -41,6 +47,7 @@ __all__ = [
     "MAX_FORMULAS",
     "MAX_FORMULA_DEPTH",
     "MAX_VARIABLES",
+    "TICK_REFERENCE",
     "DistributionType",
     "FormulaDefinition",
     "FormulaEvaluationError",
@@ -61,6 +68,7 @@ __all__ = [
     "VariableValidationIssue",
     "VariableValidationResult",
     "evaluate_formulas",
+    "evaluate_tick_drivers",
     "merge_variable_sets",
     "validate_formulas",
     "validate_or_raise",
