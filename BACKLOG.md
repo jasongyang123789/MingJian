@@ -293,6 +293,54 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   evaluation rows, ordering-guard version suppression, joint
   multivariate threshold fitting, automatic weight restore.
 
+## Sprint 14 — direction auto-derivation + persisted mappings (done)
+
+- Delivered on `strategy-engine/sprint14-direction-derivation`
+  (see SPRINT14.md): Ho chose options A + D together after the
+  design discussion. A pure deterministic derivation
+  (`derivation-rules-v1`, no LLM, no new runs) applies three
+  rules in fixed order over the anchor run's scenario family
+  (Sprint 10 family rule): highest P50, most robust (loss
+  probability, then lower-tail expected shortfall), baseline
+  control — with exact documented tie-breaks, per-rule outcomes
+  (produced/none/duplicate/skipped), dedup, and byte-identical
+  results (canonical JSON + SHA-256, asserted by test).
+  Derivation is an explicit POST only; it upserts mappings
+  by name and NEVER overwrites a user-edited mapping
+  (no-clobber rule). Persisted direction mappings live in a new
+  `direction_mappings` table (migration 0036, revises 0035;
+  unique names per anchor run in code + DB constraint; explicit
+  position order) with list/create/update/delete endpoints and
+  refuse-before-write reference validation. Narrative
+  generation resolves directions from stored mappings when the
+  request omits them (inline definitions win; cap 4; mapping
+  ids pinned in the inputs hash and on the row); neither
+  directions nor mappings refuses naming the derive endpoint.
+  The derive path reads the expected-shortfall sub-fragment
+  directly and is NOT affected by the known Sprint 13
+  robustness/gates fragment bug (verified 2026-11-16, fix on
+  its own branch after Sprint 14; generation from mappings
+  inherits the refusal on enriched runs, pinned by test).
+  Cockpit `/cockpit/directions` gains a derive button with
+  outcomes display, a mappings list with inline rename/re-point
+  editing and two-step-confirm delete, generate-from-stored
+  with the mappings-used line. Backend 1231 → 1265 tests (34
+  new), frontend 206 → 212 (6 new), lint 0, build passes, mypy
+  clean (204 files), migration upgrade → downgrade →
+  re-upgrade verified, Sprint 0 smoke re-run PASS. Docker
+  stack, live-LLM quality, and live backend integration
+  remain UNVERIFIED.
+- NOT built (deferred, not done): directions as variable
+  overrides (option B), LLM-proposed directions with grounding
+  validation (option C), polished-text verification,
+  loop/deliberation-pin controls in the cockpit form, mapping
+  version history, narrative deletion/retention, alerting on
+  fired triggers, event-driven evaluation, retention policy
+  for evaluation rows, ordering-guard version suppression,
+  joint multivariate threshold fitting, automatic weight
+  restore, the Sprint 13 fragment-bug fix (own branch, after
+  Sprint 14).
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
