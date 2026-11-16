@@ -403,6 +403,47 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   done; later-stage templates fixed by inspection only,
   stages 2+ still unobserved live.
 
+## Phase 1 — automotive domain pack + per-tick drivers + split gates (done)
+
+- Delivered on `strategy-engine/phase1-auto-pack` (see
+  PHASE1-AUTO-PACK.md), from Sprint 15 tip `ad92029`, as Ho
+  directed on 2026-11-16 ("做就行"; full-chain skeleton at
+  once, dynamics coarse first; China market; production
+  volume spine incl. Audi; bottom layer OEM → nameplate →
+  generation → trim → product → supplier share; simulated
+  industry-average values authorized, labeled). Design
+  authority: the auto-model synthesis (Parts B + C + Ho
+  answers). No LLM call anywhere; no cockpit UI changes.
+  New: the `automotive` domain pack (27 state fields with
+  synthesis §C1 defaults, 10 sales-strategy actions, 6
+  event types incl. policy-calendar + DMS switch, 3 actor
+  templates with empty overrides, 12-tick default); 10
+  keyword-only rules for the §C2 chain; per-tick variable
+  drivers (flagged formulas evaluated every tick after
+  rule effects, scope = sampled + initial derived + current
+  state + `tick`, replay-stable); variable-scaled rule
+  effects (`scale_by`, fallback factor 1.0, fixed rules
+  unchanged); the built-in automotive template (24
+  variables, 8 formulas — 3 initial + 5 drivers — sparse
+  B2 fitment-lookup assumption data, replaceable via the
+  template mechanism with zero code change); split gates
+  (sum-to-1 at nameplate/generation/trim/supplier levels +
+  one-host backstop, refuse-before-compute, 400
+  `split_validation_failed`, zero rows); automotive report
+  generation; loop re-simulation inherits the split
+  fragment. Wiring proof: moving the
+  consumer-confidence-proxy mode 1.0 → 1.2 moves the retail
+  ensemble P50 186.87 → 191.52 (+2.48%); same-seed reruns
+  byte-identical; the 10% tax lever cuts retail P50 by
+  exactly the 0.9375 level factor. Backend 1349 → 1430
+  tests, 0 failed; mypy clean; ruff zero new findings vs
+  baseline; migration 0037 up/down/re-up verified; Sprint 0
+  smoke PASS. Limits: dynamics coarse by design (literal
+  coefficients, no public elasticities); one global
+  generation index; S-layer not engine-wired; income/LPR/
+  materials links and NEV/ICE dual-track dynamics not
+  modeled; cockpit has no automotive views.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
