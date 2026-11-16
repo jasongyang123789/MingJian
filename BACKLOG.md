@@ -555,6 +555,43 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   holds 9 facts by design; one-host backstop {P01, P04} still
   pending Ho's confirmation.
 
+## Sprint 18 — seminar hardening: retries, budgets, token accounting, near-duplicate pre-pass, synthesize queue, observability + audit log, agent-chair mode (done)
+
+- Delivered on `strategy-engine/sprint18-seminar-hardening` (see
+  SPRINT18.md), from merge commit `0ff7642`, per Ho's directives
+  of 2026-11-16 14:50 (Glint himself is the chair model; add the
+  missing retries + budgets + token accounting; pre-pass beyond
+  exact-string matching; concurrent synthesize queues instead of
+  refusing; observability + audit logs so any problem is
+  locatable). Design authority: the seminar mechanism design
+  (§10 error taxonomy/retries/budgets, §16 S18 row), SPRINT16.md,
+  SPRINT17.md. No LLM call anywhere. New: agent-chair mode
+  (`chair_mode` model/agent; synthesize produces a stored
+  versioned chair brief with HTTP 200, no model chair call;
+  `POST /chair-synthesis` accepts ClaimClusters + SeminarSynthesis
+  under the same contracts and merge-map coverage rule, reports
+  with `production_path` `agent_chair` and chair `glint-agent`);
+  timeout-only retries (max 2, fixed backoff, per-seminar config);
+  per-seminar budgets (`max_stage_calls` 200, `max_tokens`
+  1,000,000, seeded from the audit ledger, `budget_exhausted`
+  kind); token accounting (scripted usage in fixtures, SDK usage
+  on the real port, stage records + rollups + report appendix);
+  near-duplicate pre-pass (Jaccard token-set similarity, pinned
+  0.8 threshold, single-pass greedy, no chaining, advisory only);
+  synthesize queue (per-seminar lock, `queue_wait` events, the
+  in-flight refusal removed, stuck state named); the append-only
+  `seminar_audit_events` table + `seminar_chair_briefs` table
+  (migration 0039, up/down/re-up drilled), 13 event kinds,
+  `GET /audit` with kind/model filters, diagnosis summary on GET
+  detail, and a formalized six-kind error taxonomy. Backend
+  1665 → 1743 tests, 0 failed; smoke PASS; ruff zero new findings;
+  mypy clean. Limits: live port path untested (fixture-pinned
+  only); the Sprint 6 port returns no usage; the synthesize lock
+  is per-process; near-duplicate similarity is token-set Jaccard
+  only; version max+1 has no unique constraint; no audit
+  retention policy; cockpit seminar views + live smoke still
+  queued.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
