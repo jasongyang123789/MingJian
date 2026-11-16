@@ -20,7 +20,7 @@ from planagent.services.seminar.models import (
     SeminarCreateRequest,
     SynthesizeRequest,
 )
-from planagent.services.seminar.service import SeminarServiceError, SeminarService
+from planagent.services.seminar.service import SeminarServiceError
 from planagent.services.skills.orchestration import SkillLLMResponse, TokenUsage
 from tests.skill_fixtures import ScriptedSkillPort, strategy_team_script
 from tests.test_seminar_service import (

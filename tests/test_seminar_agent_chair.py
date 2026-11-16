@@ -19,7 +19,6 @@ from planagent.db import get_database
 from planagent.domain.models import (
     SeminarAuditEventRecord,
     SeminarChairBriefRecord,
-    SeminarReportRecord,
 )
 from planagent.services.seminar.models import (
     AGENT_CHAIR_MODEL_ID,

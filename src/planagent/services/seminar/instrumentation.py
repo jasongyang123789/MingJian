@@ -178,7 +178,7 @@ class InstrumentedPort:
                     user_content=user_content,
                     max_tokens=max_tokens,
                 )
-            except BaseException as exc:  # noqa: BLE001 — outcome recorded, then re-raised
+            except BaseException as exc:  # outcome recorded, then re-raised below
                 duration_ms = (time.monotonic() - started) * 1000.0
                 outcome = _outcome_of(exc)
                 self._tracker.record_completed_call(total_tokens=0)

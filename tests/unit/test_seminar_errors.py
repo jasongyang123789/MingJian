@@ -36,7 +36,9 @@ def test_taxonomy_kinds_are_exactly_the_design_set() -> None:
 
 def test_classify_error_maps_each_failure_class() -> None:
     assert classify_error(TimeoutError("slow")) == "timeout"
-    assert classify_error(asyncio.TimeoutError()) == "timeout"
+    # asyncio.TimeoutError is an alias of TimeoutError since 3.11;
+    # the alias spelling is pinned deliberately.
+    assert classify_error(asyncio.TimeoutError()) == "timeout"  # noqa: UP041
     assert (
         classify_error(
             APITimeoutError(request=httpx.Request("POST", "https://example.invalid/v1"))
@@ -56,7 +58,8 @@ def test_classify_error_maps_each_failure_class() -> None:
 
 def test_only_timeouts_are_retryable() -> None:
     assert is_retryable_error(TimeoutError("slow")) is True
-    assert is_retryable_error(asyncio.TimeoutError()) is True
+    # Alias spelling pinned deliberately (see above).
+    assert is_retryable_error(asyncio.TimeoutError()) is True  # noqa: UP041
     assert (
         is_retryable_error(
             APITimeoutError(request=httpx.Request("POST", "https://example.invalid/v1"))
