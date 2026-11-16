@@ -14,6 +14,15 @@ the workflow structure with original wording and says so.
 Template versions are part of the audit trail: every stored stage output
 records the template id + version that produced it, so a prompt change
 never silently rewrites history.
+
+Sprint 15 (templates v2): live runs on 2026-11-16 showed prompt prose
+inviting JSON shapes the contracts forbid (an object where a list of
+strings is required, nested objects where flat strings are required),
+and the intake prompt referenced a framework index it never supplied.
+The v2 prompts specify the exact shape of every output key, and the
+framework index from the McKinsey skill source is rendered into the
+intake prompt from :data:`FRAMEWORK_INDEX`. Prompt semantics are
+otherwise unchanged.
 """
 
 from __future__ import annotations
@@ -118,6 +127,120 @@ _DECISION_CRITERIA = "attractiveness, feasibility, risk, economics, strategic fi
 # Public name: the default criteria string passed to filter/tournament stages.
 DECISION_CRITERIA = _DECISION_CRITERIA
 
+# Framework index adapted from the McKinsey skill's "Framework index"
+# section (SKILL.md; MIT — adapted with attribution, same license note
+# as the templates that consume it). Sprint 15: the v1 intake prompt
+# referenced "the index" without supplying it, so a live model
+# returned an empty frameworks list and asked which index to use. The
+# index is now rendered into the intake prompt verbatim from this
+# constant; framework names must be copied exactly.
+FRAMEWORK_INDEX: tuple[tuple[str, str, str], ...] = (
+    # (name, group, when to use)
+    (
+        "situation-assessment",
+        "Diagnosis & framing",
+        "Factual baseline before any direction; almost always wave 1.",
+    ),
+    (
+        "growth-barriers",
+        "Diagnosis & framing",
+        "Growth is stuck; leadership debates symptoms.",
+    ),
+    (
+        "assumption-audit",
+        "Diagnosis & framing",
+        "Strategy leans on possibly weak beliefs; also the verify-assumptions panel lens.",
+    ),
+    (
+        "market-mapping",
+        "Market & competition",
+        "Size and segment the market; find white space.",
+    ),
+    ("competitive-intel", "Market & competition", "Predict what rivals will do."),
+    (
+        "customer-segmentation",
+        "Market & competition",
+        "Sharper customer groups for the decision.",
+    ),
+    (
+        "profit-pool-analysis",
+        "Market & competition",
+        "Where value is created and captured.",
+    ),
+    (
+        "strategic-options",
+        "Strategic choice & economics",
+        "Alternatives and criteria before commitment; core for merger/choice.",
+    ),
+    (
+        "pricing-strategy",
+        "Strategic choice & economics",
+        "Pricing power, discounting, or monetization unclear.",
+    ),
+    (
+        "business-case-builder",
+        "Strategic choice & economics",
+        "Decision needs economics, sensitivities, risks.",
+    ),
+    ("portfolio-review", "Strategic choice & economics", "Allocate resources across bets."),
+    (
+        "operating-model-design",
+        "Operating model & execution",
+        "Translate strategy into how work runs.",
+    ),
+    (
+        "initiative-prioritizer",
+        "Operating model & execution",
+        "Too many initiatives competing for attention.",
+    ),
+    (
+        "transformation-roadmap",
+        "Operating model & execution",
+        "Strategy becomes phased execution with owners.",
+    ),
+    (
+        "war-gaming",
+        "Risk, performance & value governance",
+        "Stress-test strategy before launch; the verify-wargame panel lens (loops in deep mode).",
+    ),
+    (
+        "risk-and-mitigation",
+        "Risk, performance & value governance",
+        "Strategic risk gets an owner and a response plan.",
+    ),
+    (
+        "kpi-architect",
+        "Risk, performance & value governance",
+        "Metrics are noisy, lagging, or performative.",
+    ),
+    (
+        "value-realization",
+        "Risk, performance & value governance",
+        "Benefits must be tracked after launch.",
+    ),
+    (
+        "stakeholder-alignment",
+        "Alignment & executive communication",
+        "Pre-wire the recommendation before the meeting.",
+    ),
+    (
+        "narrative-builder",
+        "Alignment & executive communication",
+        "The story must land in 60 seconds (Pyramid/SCQA); the synthesis step.",
+    ),
+    (
+        "decision-memo",
+        "Alignment & executive communication",
+        "A clear recommendation in writing; the deliverable.",
+    ),
+)
+
+_FRAMEWORK_INDEX_BLOCK = (
+    "Framework index — copy framework names EXACTLY from this list; "
+    "do not invent framework names:\n"
+    + "\n".join(f"- {name} [{group}]: {when}" for name, group, when in FRAMEWORK_INDEX)
+)
+
 
 def _template(
     template_id: str,
@@ -180,15 +303,21 @@ _register(
         "Strategic question (one line): {topic}\n"
         "Decision question: {decision_question}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
+        + _FRAMEWORK_INDEX_BLOCK
+        + "\n\n"
         "Produce the engagement plan as JSON with keys: problem_statement "
-        "(1-2 lines), decision_question (1-2 lines), engagement_type "
-        "(e.g. growth stalled, merger/M&A, pricing, new market, portfolio "
-        "allocation), audience, constraints (list), stakes (standard or "
-        "deep — deep only when the decision is hard to reverse or "
-        "bet-the-company), frameworks (the framework names from the "
-        "index that fit this engagement), wave_plan (who runs in wave A, "
-        "which option mandates run in wave B, who sits on the verifier "
-        "panel), open_questions (list).\n\n" + _JSON_ONLY,
+        "(a single string, 1-2 lines), decision_question (a single string, "
+        "1-2 lines), engagement_type (a single string, e.g. growth stalled, "
+        "merger/M&A, pricing, new market, portfolio allocation), audience "
+        "(a single string), constraints (a list of strings), stakes "
+        "(standard or deep — deep only when the decision is hard to reverse "
+        "or bet-the-company), frameworks (a list of strings: framework "
+        "names copied exactly from the index above that fit this "
+        "engagement; choose at least one when any fits), wave_plan (a list "
+        "of strings, one string per assignment: who runs in wave A, which "
+        "option mandates run in wave B, who sits on the verifier panel — "
+        "write each assignment as one plain string, never a nested "
+        "object), open_questions (a list of strings).\n\n" + _JSON_ONLY,
         ("topic", "decision_question", "context", "output_language"),
     )
 )
@@ -235,9 +364,12 @@ _register(
         "Decision question: {decision_question}\n\n"
         "Engagement plan:\n{intake}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce the market map as JSON with keys: summary (2-3 lines), "
-        "segments (list), competitors (list, each with likely move), "
-        "white_space (list), profit_pools (list), threats (list).\n\n" + _JSON_ONLY,
+        "Produce the market map as JSON with keys: summary (a single "
+        "string, 2-3 lines), segments (a list of strings), competitors (a "
+        "list of strings; each string names one competitor and its likely "
+        "move in a single line — never return objects), white_space (a "
+        "list of strings), profit_pools (a list of strings), threats (a "
+        "list of strings).\n\n" + _JSON_ONLY,
         ("topic", "decision_question", "context", "intake", "output_language"),
     )
 )
@@ -294,10 +426,12 @@ _register(
         "Decision criteria: {criteria}\n\n"
         "Generated option sets:\n{option_sets}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce the shortlist as JSON with keys: ranked (list, each with "
-        "name, description, scores (one 0-10 number per criterion), "
-        "rationale), dropped (list of option names dropped, each with a "
-        "one-line reason).\n\n" + _JSON_ONLY,
+        "Produce the shortlist as JSON with keys: ranked (a list of "
+        "objects, each with name (a string), description (a string), "
+        "scores (an object mapping each criterion name to one 0-10 "
+        "number), rationale (a string)), dropped (a list of objects, each "
+        "with name (a string: the dropped option name) and reason (a "
+        "string: one line)).\n\n" + _JSON_ONLY,
         ("topic", "decision_question", "context", "option_sets", "criteria", "output_language"),
     )
 )
@@ -320,12 +454,14 @@ _register(
         "Diagnosis:\n{diagnosis}\n\n"
         "Market map:\n{market_map}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce the draft as JSON with keys: governing_thought, "
-        "arguments (list, each with claim and backing), recommended_option "
-        "(name from the shortlist), load_bearing_assumptions (list — "
-        "every assumption the recommendation rests on), "
-        "alternatives_considered (list of shortlist names not recommended, "
-        "each with a one-line reason).\n\n" + _JSON_ONLY,
+        "Produce the draft as JSON with keys: governing_thought (a single "
+        "string), arguments (a list of objects, each with claim (a string) "
+        "and backing (a string)), recommended_option (a single string: a "
+        "name from the shortlist), load_bearing_assumptions (a list of "
+        "strings — every assumption the recommendation rests on), "
+        "alternatives_considered (a list of strings; each string names one "
+        "shortlist option not recommended and gives its one-line reason — "
+        "never return objects).\n\n" + _JSON_ONLY,
         (
             "topic",
             "decision_question",
@@ -356,7 +492,8 @@ _register(
         "Draft recommendation under attack:\n{draft}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
         "Produce the audit as JSON with keys: assumptions (list, each "
-        "with assumption, category, importance (1-5), evidence_strength "
+        "with assumption, category, importance (an integer from 1 to 5), "
+        "evidence_strength "
         "(strong/moderate/weak/speculative), risk), load_bearing (list of "
         "the assumptions that carry the recommendation), tests (list of "
         "concrete validation tests for weak load-bearing assumptions), "
@@ -437,9 +574,10 @@ _register(
         "Option A:\n{option_a}\n\n"
         "Option B:\n{option_b}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce the judgment as JSON with keys: winner (the winning "
-        "option name, exactly as given), loser, rationale, "
-        "criteria_scores (one 0-10 number per criterion — the winner's "
+        "Produce the judgment as JSON with keys: winner (a single string: "
+        "the winning option name, exactly as given), loser (a single "
+        "string), rationale (a single string), criteria_scores (an object "
+        "mapping each criterion name to one 0-10 number — the winner's "
         "absolute scores).\n\n" + _JSON_ONLY,
         (
             "topic",
@@ -471,12 +609,19 @@ _register(
         "Decision: {decision}\n"
         "Options offered: {options}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce the intake as JSON with keys: decision, options (list), "
-        "context, evidence (known facts and important unknowns), "
-        "economics, constraints (list), success (measurable outcome and "
-        "deadline), current_preference, reversibility (what can be "
-        "tested cheaply vs what creates lasting downside), assumptions "
-        "(list), questions (at most 3).\n\n" + _JSON_ONLY,
+        "Produce the intake as JSON with keys: decision (a single "
+        "string), options (a list of strings: plain option names only, no "
+        "descriptions and no nested objects), context (a single flat "
+        "string, never a nested object), evidence (a single flat string "
+        "covering known facts and important unknowns, never a nested "
+        "object), economics (a single flat string, never a nested object), "
+        "constraints (a list of strings), success (a single flat string "
+        "stating the measurable outcome and deadline, never a nested "
+        "object), current_preference (a single flat string, never a nested "
+        "object), reversibility (a single flat string covering what can be "
+        "tested cheaply vs what creates lasting downside, never a nested "
+        "object), assumptions (a list of strings), questions (a list of "
+        "strings, at most 3).\n\n" + _JSON_ONLY,
         ("decision", "options", "context", "output_language"),
     )
 )
@@ -502,13 +647,15 @@ _register(
         "Options: {options}\n\n"
         "Intake:\n{intake}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce your position as JSON with keys: lens, option_scores "
-        "(one 0-10 number per option), confidence (low, medium, or high), "
-        "decisive_evidence, primary_upside, primary_failure_mode, "
-        "opening_recommendation, risk_veto (null, or an object with "
-        "failure_path, evidence, severity, mitigation — only for a "
-        "credible ruin risk that cannot be averaged away; speculative "
-        "fear is not a veto).\n\n" + _JSON_ONLY,
+        "Produce your position as JSON with keys: lens (a single string), "
+        "option_scores (an object mapping each option name to one 0-10 "
+        "number), confidence (low, medium, or high), decisive_evidence (a "
+        "single string), primary_upside (a single string), "
+        "primary_failure_mode (a single string), opening_recommendation "
+        "(a single string), risk_veto (null, or an object with "
+        "failure_path, evidence, severity, mitigation — each a string — "
+        "only for a credible ruin risk that cannot be averaged away; "
+        "speculative fear is not a veto).\n\n" + _JSON_ONLY,
         (
             "decision",
             "options",
@@ -541,10 +688,12 @@ _register(
         "Your Round 1 position:\n{own_position}\n\n"
         "Forced debate:\n{debate}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
-        "Produce your revision as JSON with keys: lens, final_option, "
-        "revised_scores (one 0-10 number per option), confidence (low, "
-        "medium, or high), what_changed, required_conditions (list), "
-        "kill_criterion, unresolved_objection.\n\n" + _JSON_ONLY,
+        "Produce your revision as JSON with keys: lens (a single string), "
+        "final_option (a single string), revised_scores (an object "
+        "mapping each option name to one 0-10 number), confidence (low, "
+        "medium, or high), what_changed (a single string), "
+        "required_conditions (a list of strings), kill_criterion (a "
+        "single string), unresolved_objection (a single string).\n\n" + _JSON_ONLY,
         (
             "decision",
             "options",
@@ -608,11 +757,15 @@ _register(
         "Risk vetoes raised:\n{vetoes}\n\n"
         "Context (facts from the decision engine — treat as given):\n{context}\n\n"
         "Produce the decision contract as JSON with keys: verdict "
-        "(choose, reject, or validate_first), why_now, conditions (list), "
-        "minority_report, cheapest_validation_test, go_threshold, "
-        "kill_criterion, owner, deadline, review_date, next_action, "
-        "do_not_do, lens_weights (relevance 1-3 per lens), assumptions "
-        "(list).\n\n" + _JSON_ONLY,
+        "(choose, reject, or validate_first), why_now (a single string), "
+        "conditions (a list of strings), minority_report (a single "
+        "string), cheapest_validation_test (a single string), go_threshold "
+        "(a single string), kill_criterion (a single string), owner (a "
+        "single string), deadline (a single string), review_date (a "
+        "single string), next_action (a single string), do_not_do (a "
+        "single string), lens_weights (an object mapping each lens name "
+        "to a relevance integer from 1 to 3), assumptions (a list of "
+        "strings).\n\n" + _JSON_ONLY,
         (
             "decision",
             "options",
@@ -748,6 +901,7 @@ validate_registry()
 
 __all__ = [
     "DECISION_CRITERIA",
+    "FRAMEWORK_INDEX",
     "LENS_BRIEFS",
     "LENS_QUESTIONS",
     "OPTION_MANDATES",
