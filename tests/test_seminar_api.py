@@ -71,7 +71,9 @@ def disable_openai(monkeypatch) -> None:
 
 
 def setup_app(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PLANAGENT_DATABASE_URL", build_database_url(tmp_path / "planagent-seminar.db"))
+    monkeypatch.setenv(
+        "PLANAGENT_DATABASE_URL", build_database_url(tmp_path / "planagent-seminar.db")
+    )
     monkeypatch.setenv("PLANAGENT_EVENT_BUS_BACKEND", "memory")
     monkeypatch.setenv("PLANAGENT_INLINE_INGEST_DEFAULT", "true")
     monkeypatch.setenv("PLANAGENT_INLINE_SIMULATION_DEFAULT", "true")
@@ -211,9 +213,7 @@ def test_advance_and_finalize_flow_over_http(monkeypatch, tmp_path: Path) -> Non
         assert [f["status"] for f in finalized.json()["finals"]] == ["final", "final"]
 
 
-def test_advance_and_finalize_missing_seminar_return_404(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_advance_and_finalize_missing_seminar_return_404(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     factory = FakePortFactory({"chair-1": ScriptedSkillPort({})})
     with _client_with_factory(factory) as client:

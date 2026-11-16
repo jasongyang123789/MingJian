@@ -63,13 +63,11 @@ class EndpointConfig(_StripMixin):
             )
         if self.target is None and not inline:
             raise ValueError(
-                "Endpoint must declare 'target' or an inline "
-                "'base_url_env'/'api_key_env' endpoint."
+                "Endpoint must declare 'target' or an inline 'base_url_env'/'api_key_env' endpoint."
             )
         if self.target is not None and self.target not in TARGET_NAMES:
             raise ValueError(
-                f"Unknown LLM target {self.target!r}; known targets: "
-                f"{', '.join(TARGET_NAMES)}."
+                f"Unknown LLM target {self.target!r}; known targets: {', '.join(TARGET_NAMES)}."
             )
         if inline and self.api_key_env is None:
             raise ValueError("An inline endpoint requires 'api_key_env'.")
@@ -124,9 +122,7 @@ class SeminarConfig(_StripMixin):
     @model_validator(mode="after")
     def _mode_matches_pipeline(self) -> SeminarConfig:
         allowed = (
-            {"standard", "deep"}
-            if self.pipeline == "strategy_team"
-            else {"quick", "standard"}
+            {"standard", "deep"} if self.pipeline == "strategy_team" else {"quick", "standard"}
         )
         if self.mode not in allowed:
             raise ValueError(
@@ -210,12 +206,8 @@ _ALLOWED_TRANSITIONS: dict[SeminarStatus, frozenset[SeminarStatus]] = {
     # open -> collecting: a first wave that terminates every model
     # (all converged/capped/failed) lands directly in collecting; the
     # running state is never observable for such a seminar.
-    SeminarStatus.OPEN: frozenset(
-        {SeminarStatus.RUNNING, SeminarStatus.COLLECTING}
-    ),
-    SeminarStatus.RUNNING: frozenset(
-        {SeminarStatus.RUNNING, SeminarStatus.COLLECTING}
-    ),
+    SeminarStatus.OPEN: frozenset({SeminarStatus.RUNNING, SeminarStatus.COLLECTING}),
+    SeminarStatus.RUNNING: frozenset({SeminarStatus.RUNNING, SeminarStatus.COLLECTING}),
     SeminarStatus.COLLECTING: frozenset(
         {SeminarStatus.COLLECTING, SeminarStatus.SYNTHESIZING, SeminarStatus.PARTIAL}
     ),
@@ -237,9 +229,7 @@ def validate_seminar_transition(current: str, target: str) -> None:
     current_status = SeminarStatus(current)
     target_status = SeminarStatus(target)
     if target_status not in _ALLOWED_TRANSITIONS[current_status]:
-        raise ValueError(
-            f"Illegal seminar transition {current!r} -> {target!r}."
-        )
+        raise ValueError(f"Illegal seminar transition {current!r} -> {target!r}.")
 
 
 # Round statuses: "completed" (analysis + reflection stored),

@@ -113,9 +113,7 @@ class SeminarService:
             raise LookupError(f"Seminar {seminar_id} was not found.")
         return seminar
 
-    async def _round_rows(
-        self, session: AsyncSession, seminar_id: str
-    ) -> list[SeminarRoundRecord]:
+    async def _round_rows(self, session: AsyncSession, seminar_id: str) -> list[SeminarRoundRecord]:
         result = await session.execute(
             select(SeminarRoundRecord)
             .where(SeminarRoundRecord.seminar_id == seminar_id)
@@ -123,9 +121,7 @@ class SeminarService:
         )
         return list(result.scalars().all())
 
-    async def _board_rows(
-        self, session: AsyncSession, seminar_id: str
-    ) -> list[SeminarBoardRecord]:
+    async def _board_rows(self, session: AsyncSession, seminar_id: str) -> list[SeminarBoardRecord]:
         result = await session.execute(
             select(SeminarBoardRecord)
             .where(SeminarBoardRecord.seminar_id == seminar_id)
@@ -133,13 +129,9 @@ class SeminarService:
         )
         return list(result.scalars().all())
 
-    async def _final_rows(
-        self, session: AsyncSession, seminar_id: str
-    ) -> list[SeminarFinalRecord]:
+    async def _final_rows(self, session: AsyncSession, seminar_id: str) -> list[SeminarFinalRecord]:
         result = await session.execute(
-            select(SeminarFinalRecord).where(
-                SeminarFinalRecord.seminar_id == seminar_id
-            )
+            select(SeminarFinalRecord).where(SeminarFinalRecord.seminar_id == seminar_id)
         )
         return list(result.scalars().all())
 
@@ -154,9 +146,7 @@ class SeminarService:
     ) -> dict[str, ModelStatus]:
         digests: dict[str, dict[int, dict[str, Any]]] = {}
         for board_row in board_rows:
-            digests.setdefault(board_row.model_id, {})[board_row.round_no] = (
-                board_row.digest or {}
-            )
+            digests.setdefault(board_row.model_id, {})[board_row.round_no] = board_row.digest or {}
         rounds_by_model: dict[str, list[dict[str, Any]]] = {}
         for row in round_rows:
             rounds_by_model.setdefault(row.model_id, []).append(
@@ -257,9 +247,7 @@ class SeminarService:
 
     # -- advance ---------------------------------------------------------
 
-    async def advance_seminar(
-        self, session: AsyncSession, seminar_id: str
-    ) -> AdvanceRead:
+    async def advance_seminar(self, session: AsyncSession, seminar_id: str) -> AdvanceRead:
         seminar = await self._get_seminar(session, seminar_id)
         if seminar.status in _TERMINAL_STATUSES:
             raise SeminarServiceError(
@@ -313,9 +301,7 @@ class SeminarService:
                 }
             )
         for item in board_snapshot:
-            digests_by_model.setdefault(item["model_id"], {})[item["round_no"]] = (
-                item["digest"]
-            )
+            digests_by_model.setdefault(item["model_id"], {})[item["round_no"]] = item["digest"]
 
         semaphore = asyncio.Semaphore(config.max_concurrency)
 
@@ -374,9 +360,7 @@ class SeminarService:
                     ),
                     status=outcome.status,
                     error=(
-                        outcome.error.model_dump(mode="json")
-                        if outcome.error is not None
-                        else None
+                        outcome.error.model_dump(mode="json") if outcome.error is not None else None
                     ),
                     created_at=utc_now(),
                 )
@@ -435,9 +419,7 @@ class SeminarService:
 
     # -- finalize --------------------------------------------------------
 
-    async def finalize_seminar(
-        self, session: AsyncSession, seminar_id: str
-    ) -> FinalizeRead:
+    async def finalize_seminar(self, session: AsyncSession, seminar_id: str) -> FinalizeRead:
         seminar = await self._get_seminar(session, seminar_id)
         if seminar.status in _TERMINAL_STATUSES:
             raise SeminarServiceError(
@@ -471,9 +453,7 @@ class SeminarService:
                 }
             )
         for item in board_snapshot:
-            digests_by_model.setdefault(item["model_id"], {})[item["round_no"]] = (
-                item["digest"]
-            )
+            digests_by_model.setdefault(item["model_id"], {})[item["round_no"]] = item["digest"]
 
         semaphore = asyncio.Semaphore(config.max_concurrency)
 
@@ -517,9 +497,7 @@ class SeminarService:
                 )
             return entry, "final", None, (verdict, stage)
 
-        results = await asyncio.gather(
-            *(_verdict_for(entry) for entry in roster)
-        )
+        results = await asyncio.gather(*(_verdict_for(entry) for entry in roster))
         finals: list[FinalizeModelRead] = []
         for entry, status, error, payload in results:
             if status == "final" and payload is not None:
@@ -536,15 +514,9 @@ class SeminarService:
                         created_at=utc_now(),
                     )
                 )
-            finals.append(
-                FinalizeModelRead(
-                    model_id=entry.model_id, status=status, error=error
-                )
-            )
+            finals.append(FinalizeModelRead(model_id=entry.model_id, status=status, error=error))
         await session.commit()
-        return FinalizeRead(
-            seminar_id=seminar.id, finals=finals, status=seminar.status
-        )
+        return FinalizeRead(seminar_id=seminar.id, finals=finals, status=seminar.status)
 
 
 __all__ = [

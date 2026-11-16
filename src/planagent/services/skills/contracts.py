@@ -56,8 +56,7 @@ class SkillContractError(RuntimeError):
         self.contract_version = contract_version
         self.details = details
         summary = "; ".join(
-            f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
-            for item in details
+            f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in details
         )
         super().__init__(
             f"LLM output for stage {template_id!r} failed contract "

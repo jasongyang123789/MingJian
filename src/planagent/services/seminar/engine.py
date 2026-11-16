@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 from planagent.services.seminar.board import (
@@ -47,9 +48,11 @@ from planagent.services.seminar.templates import (
 )
 from planagent.services.skills.contracts import SkillContractError
 from planagent.services.skills.orchestration import (
+    AdvisoryBoardResult,
     SkillLLMPort,
     SkillLLMUnavailable,
     StageRecord,
+    StrategyTeamResult,
     run_advisory_board,
     run_strategy_team,
 )
@@ -89,10 +92,7 @@ async def run_seminar_stage(
             [
                 {
                     "loc": ("root",),
-                    "msg": (
-                        "no usable JSON response (empty, unparseable, "
-                        "or upstream failure)"
-                    ),
+                    "msg": ("no usable JSON response (empty, unparseable, or upstream failure)"),
                 }
             ],
             contract_version=SEMINAR_CONTRACT_VERSION,
@@ -171,9 +171,7 @@ def round_summary_from_stored(
     )
 
 
-def evaluate_convergence(
-    summaries: list[RoundSummary], *, quiet_rounds: int
-) -> bool:
+def evaluate_convergence(summaries: list[RoundSummary], *, quiet_rounds: int) -> bool:
     """Quiet-rounds rule (design §5.3): ``quiet_rounds`` consecutive
     rounds each stable vs its predecessor — recommendation unchanged,
     confidence unchanged, changes empty. Round 1 can never be quiet
@@ -182,7 +180,7 @@ def evaluate_convergence(
     if len(ordered) < quiet_rounds + 1:
         return False
     quiet_streak = 0
-    for previous, current in zip(ordered, ordered[1:], strict=False):
+    for previous, current in pairwise(ordered):
         if not previous.usable or not current.usable:
             quiet_streak = 0
             continue
@@ -259,21 +257,18 @@ def render_own_history(
         for point in critique:
             if isinstance(point, dict):
                 lines.append(
-                    f"  Weakness you flagged: {point.get('weak_point')} "
-                    f"({point.get('reason')})"
+                    f"  Weakness you flagged: {point.get('weak_point')} ({point.get('reason')})"
                 )
     if current_summary is not None:
         lines.append("This round's analysis summary:")
         lines.append(f"  Recommendation: {current_summary.recommendation}")
         if current_summary.key_arguments:
             lines.append(
-                "  Key arguments: "
-                + "; ".join(str(a) for a in current_summary.key_arguments)
+                "  Key arguments: " + "; ".join(str(a) for a in current_summary.key_arguments)
             )
         if current_summary.kill_criteria:
             lines.append(
-                "  Kill criteria: "
-                + "; ".join(str(k) for k in current_summary.kill_criteria)
+                "  Kill criteria: " + "; ".join(str(k) for k in current_summary.kill_criteria)
             )
     if not lines:
         return "(No prior rounds — this is your first round.)"
@@ -310,20 +305,16 @@ async def run_round(
         model_id=model_id, round_no=round_no, board_snapshot_seq=board_snapshot_seq
     )
     context = str(snapshot.get("context") or "")
-    snapshot_rows = select_board_snapshot(
-        board_rows, policy=snapshot_policy, exclude_model_id=None
-    )
+    snapshot_rows = select_board_snapshot(board_rows, policy=snapshot_policy, exclude_model_id=None)
     # Round 1 has no board input (design §5.1); later rounds read the
     # wave-start snapshot. The round_no guard is defense-in-depth:
     # board_rows is empty in wave 1 by construction.
     if snapshot_rows and round_no > 1:
-        context = (
-            f"{context}\n\n"
-            + render_board_snapshot_for_prompt(
-                snapshot_rows, snapshot_seq=board_snapshot_seq
-            )
+        context = f"{context}\n\n" + render_board_snapshot_for_prompt(
+            snapshot_rows, snapshot_seq=board_snapshot_seq
         )
     topic = str(snapshot.get("topic") or "")
+    result: StrategyTeamResult | AdvisoryBoardResult
     try:
         if pipeline == "strategy_team":
             result = await run_strategy_team(
@@ -359,9 +350,7 @@ async def run_round(
     other_rows = select_board_snapshot(
         board_rows, policy=snapshot_policy, exclude_model_id=model_id
     )
-    board_block = render_board_snapshot_for_prompt(
-        other_rows, snapshot_seq=board_snapshot_seq
-    )
+    board_block = render_board_snapshot_for_prompt(other_rows, snapshot_seq=board_snapshot_seq)
     try:
         reflection_record = await run_seminar_stage(
             port,
@@ -428,9 +417,7 @@ async def run_verdict(
     other_rows = select_board_snapshot(
         board_rows, policy=snapshot_policy, exclude_model_id=model_id
     )
-    board_block = render_board_snapshot_for_prompt(
-        other_rows, snapshot_seq=board_snapshot_seq
-    )
+    board_block = render_board_snapshot_for_prompt(other_rows, snapshot_seq=board_snapshot_seq)
     record = await run_seminar_stage(
         port,
         stage="final_verdict",

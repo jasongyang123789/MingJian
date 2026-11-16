@@ -224,9 +224,7 @@ async def count_rows(model: Any) -> int:
 
 async def board_rows() -> list[SeminarBoardRecord]:
     async with get_database().session() as session:
-        result = await session.execute(
-            select(SeminarBoardRecord).order_by(SeminarBoardRecord.seq)
-        )
+        result = await session.execute(select(SeminarBoardRecord).order_by(SeminarBoardRecord.seq))
         return list(result.scalars().all())
 
 
@@ -257,9 +255,7 @@ async def test_create_freezes_snapshot_with_hash(monkeypatch, tmp_path: Path) ->
     )
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
     async with get_database().session() as session:
-        created = await service.create_seminar(
-            session, run.id, make_request(roster_ids=["a", "b"])
-        )
+        created = await service.create_seminar(session, run.id, make_request(roster_ids=["a", "b"]))
     assert created.status == "open"
     assert created.run_id == run.id
     assert created.case_snapshot_hash.startswith("sha256:")
@@ -282,53 +278,37 @@ async def test_create_rejects_non_completed_run(monkeypatch, tmp_path: Path) -> 
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
     async with get_database().session() as session:
         with pytest.raises(SeminarServiceError) as exc_info:
-            await service.create_seminar(
-                session, run.id, make_request(roster_ids=["a", "b"])
-            )
+            await service.create_seminar(session, run.id, make_request(roster_ids=["a", "b"]))
     assert exc_info.value.code == "seminar_requires_completed_run"
     assert await count_rows(SeminarRecord) == 0
 
 
-async def test_create_rejects_small_and_duplicate_rosters(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_create_rejects_small_and_duplicate_rosters(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
     async with get_database().session() as session:
         with pytest.raises(SeminarServiceError) as exc_info:
-            await service.create_seminar(
-                session, run.id, make_request(roster_ids=["solo"])
-            )
+            await service.create_seminar(session, run.id, make_request(roster_ids=["solo"]))
     assert exc_info.value.code == "seminar_roster_too_small"
     async with get_database().session() as session:
         with pytest.raises(SeminarServiceError) as exc_info:
-            await service.create_seminar(
-                session, run.id, make_request(roster_ids=["a", "a"])
-            )
+            await service.create_seminar(session, run.id, make_request(roster_ids=["a", "a"]))
     assert exc_info.value.code == "seminar_duplicate_model_id"
     assert await count_rows(SeminarRecord) == 0
 
 
-async def test_create_chair_unavailable_writes_nothing(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_create_chair_unavailable_writes_nothing(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
-    service = make_service(
-        FakePortFactory({"chair-1": ScriptedSkillPort({}, available=False)})
-    )
+    service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({}, available=False)}))
     async with get_database().session() as session:
         with pytest.raises(SeminarChairUnavailable):
-            await service.create_seminar(
-                session, run.id, make_request(roster_ids=["a", "b"])
-            )
+            await service.create_seminar(session, run.id, make_request(roster_ids=["a", "b"]))
     assert await count_rows(SeminarRecord) == 0
 
 
-async def test_create_records_chair_participation_flag(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_create_records_chair_participation_flag(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
@@ -397,12 +377,9 @@ async def test_three_models_three_waves_board_seq_and_snapshots(
     assert len(rounds) == 9
     assert [r.board_snapshot_seq for r in rounds if r.model_id == "model-a"] == [0, 3, 6]
     # Analysis stages carry skills v2; reflection stages carry seminar v1.
-    first = [r for r in rounds if r.model_id == "model-a" and r.round_no == 1][0]
+    first = next(r for r in rounds if r.model_id == "model-a" and r.round_no == 1)
     assert len(first.stages) == 11
-    assert all(
-        s["template_version"] == "2" and s["contract_version"] == "2"
-        for s in first.stages
-    )
+    assert all(s["template_version"] == "2" and s["contract_version"] == "2" for s in first.stages)
     assert first.reflection_stage is not None
     assert first.reflection_stage["template_id"] == "seminar.reflect"
     assert first.reflection_stage["template_version"] == "1"
@@ -411,9 +388,7 @@ async def test_three_models_three_waves_board_seq_and_snapshots(
     assert await count_rows(SeminarReportRecord) == 0
 
 
-async def test_quiet_convergence_stops_stable_model_before_cap(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_quiet_convergence_stops_stable_model_before_cap(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     ports = {
@@ -442,9 +417,7 @@ async def test_quiet_convergence_stops_stable_model_before_cap(
     assert len([r for r in rounds if r.model_id == "flipper"]) == 5
     # The flip-flopper's digests alternate recommendations: never quiet.
     flip_digests = [
-        row.digest["recommendation"]
-        for row in await board_rows()
-        if row.model_id == "flipper"
+        row.digest["recommendation"] for row in await board_rows() if row.model_id == "flipper"
     ]
     assert flip_digests == [
         "Phased rollout",
@@ -474,12 +447,10 @@ async def test_analysis_failure_isolates_model_and_publishes_nothing(
         created = await service.create_seminar(
             session,
             run.id,
-            make_request(
-                roster_ids=["model-a", "model-b", "model-c"], max_rounds=2
-            ),
+            make_request(roster_ids=["model-a", "model-b", "model-c"], max_rounds=2),
         )
         wave1 = await service.advance_seminar(session, created.seminar_id)
-        failed = [m for m in wave1.per_model if m.model_id == "model-b"][0]
+        failed = next(m for m in wave1.per_model if m.model_id == "model-b")
         assert failed.status == "failed"
         assert [m.status for m in wave1.per_model] == [
             "completed",
@@ -587,9 +558,7 @@ async def test_finalize_writes_verdicts_with_system_snapshot_seq(
         assert row.stage["contract_version"] == "1"
 
 
-async def test_finalize_skips_models_without_usable_rounds(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_finalize_skips_models_without_usable_rounds(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     ports = {
@@ -634,7 +603,7 @@ async def test_finalize_verdict_failure_writes_zero_rows_then_retries(
         )
         await service.advance_seminar(session, created.seminar_id)
         first = await service.finalize_seminar(session, created.seminar_id)
-        failed = [f for f in first.finals if f.model_id == "model-a"][0]
+        failed = next(f for f in first.finals if f.model_id == "model-a")
         assert failed.status == "failed"
         assert failed.error is not None
         assert failed.error["kind"] == "contract"
@@ -648,9 +617,7 @@ async def test_finalize_verdict_failure_writes_zero_rows_then_retries(
 # --- snapshot freeze + prompt boundaries --------------------------------------
 
 
-async def test_snapshot_frozen_against_later_run_products(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_snapshot_frozen_against_later_run_products(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run(summary={"monte_carlo": {"metric": "cash"}})
     port_a = ScriptedSkillPort(stable_model_script(1))
@@ -730,9 +697,7 @@ async def test_reflection_reads_only_snapshot_own_history_and_board(
         )
         await service.advance_seminar(session, created.seminar_id)
         await service.advance_seminar(session, created.seminar_id)
-    reflection_calls = [
-        call for call in port_a.calls if call["template_id"] == "seminar.reflect"
-    ]
+    reflection_calls = [call for call in port_a.calls if call["template_id"] == "seminar.reflect"]
     assert len(reflection_calls) == 2
     second = reflection_calls[1]["user_content"]
     # Own history + board quotations present...
@@ -779,16 +744,14 @@ async def test_advisory_board_pipeline_round(monkeypatch, tmp_path: Path) -> Non
     for row in board:
         assert row.digest["recommendation"].startswith("validate_first: ")
         assert row.digest["key_arguments"], "positions feed key arguments"
-        assert any(
-            "conversions" in kill for kill in row.digest["kill_criteria"]
-        ), "chair kill criterion feeds the digest"
+        assert any("conversions" in kill for kill in row.digest["kill_criteria"]), (
+            "chair kill criterion feeds the digest"
+        )
     rounds = await round_rows()
     assert len(rounds[0].stages) == 13
 
 
-async def test_advance_noop_when_all_models_terminated(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_advance_noop_when_all_models_terminated(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     ports = {

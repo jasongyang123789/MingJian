@@ -57,7 +57,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["seminar_id"], ["seminars.id"]),
         sa.UniqueConstraint(
-            "seminar_id", "model_id", "round_no",
+            "seminar_id",
+            "model_id",
+            "round_no",
             name="uq_seminar_rounds_seminar_model_round",
         ),
     )
@@ -72,9 +74,7 @@ def upgrade() -> None:
         sa.Column("digest", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["seminar_id"], ["seminars.id"]),
-        sa.UniqueConstraint(
-            "seminar_id", "seq", name="uq_seminar_board_seminar_seq"
-        ),
+        sa.UniqueConstraint("seminar_id", "seq", name="uq_seminar_board_seminar_seq"),
     )
     op.create_index("ix_seminar_board_seminar_id", "seminar_board", ["seminar_id"])
     op.create_table(
@@ -88,9 +88,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["seminar_id"], ["seminars.id"]),
-        sa.UniqueConstraint(
-            "seminar_id", "model_id", name="uq_seminar_finals_seminar_model"
-        ),
+        sa.UniqueConstraint("seminar_id", "model_id", name="uq_seminar_finals_seminar_model"),
     )
     op.create_index("ix_seminar_finals_seminar_id", "seminar_finals", ["seminar_id"])
     op.create_table(
@@ -106,9 +104,7 @@ def upgrade() -> None:
         sa.Column("partial", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["seminar_id"], ["seminars.id"]),
-        sa.UniqueConstraint(
-            "seminar_id", "version", name="uq_seminar_reports_seminar_version"
-        ),
+        sa.UniqueConstraint("seminar_id", "version", name="uq_seminar_reports_seminar_version"),
     )
     op.create_index("ix_seminar_reports_seminar_id", "seminar_reports", ["seminar_id"])
 

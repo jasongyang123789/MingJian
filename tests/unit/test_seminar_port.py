@@ -28,9 +28,7 @@ def _settings() -> Settings:
 
 
 def _settings_no_key() -> Settings:
-    return Settings(
-        openai=OpenAIConfig(primary=OpenAITargetConfig(model="m"))
-    )
+    return Settings(openai=OpenAIConfig(primary=OpenAITargetConfig(model="m")))
 
 
 def test_resolve_target_entry_uses_settings_resolution() -> None:

@@ -91,9 +91,7 @@ def parse_seminar_stage_output(template_id: str, raw: Any) -> BaseModel:
     """
     model = SEMINAR_CONTRACT_FOR_TEMPLATE.get(template_id)
     if model is None:
-        raise ValueError(
-            f"No seminar output contract registered for template {template_id!r}."
-        )
+        raise ValueError(f"No seminar output contract registered for template {template_id!r}.")
     if not isinstance(raw, dict):
         raise SkillContractError(
             template_id,
@@ -113,8 +111,8 @@ def parse_seminar_stage_output(template_id: str, raw: Any) -> BaseModel:
 
 
 __all__ = [
-    "SEMINAR_CONTRACT_VERSION",
     "SEMINAR_CONTRACT_FOR_TEMPLATE",
+    "SEMINAR_CONTRACT_VERSION",
     "BoardResponse",
     "CritiquePoint",
     "FinalVerdict",

@@ -27,9 +27,7 @@ from planagent.services.skills.context import render_run_context
 _MAX_CALIBRATION_FITS_IN_CONTEXT = 5
 
 
-async def fetch_calibration_fits(
-    session: AsyncSession, domain_id: str
-) -> list[dict[str, Any]]:
+async def fetch_calibration_fits(session: AsyncSession, domain_id: str) -> list[dict[str, Any]]:
     """Latest calibration fits for the context block (skills parity)."""
     result = await session.execute(
         select(CalibrationFitRecord)

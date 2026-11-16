@@ -22,9 +22,7 @@ from planagent.services.skills.contracts import SkillContractError
 def valid_reflection(**overrides: object) -> dict:
     payload: dict = {
         "critique": [{"weak_point": "Demand assumption untested", "reason": "No data"}],
-        "responses": [
-            {"model_id": "other", "stance": "oppose", "reason": "Evidence is thin"}
-        ],
+        "responses": [{"model_id": "other", "stance": "oppose", "reason": "Evidence is thin"}],
         "changes": [],
         "confidence": "medium",
         "confidence_basis": "Evidence is mixed.",

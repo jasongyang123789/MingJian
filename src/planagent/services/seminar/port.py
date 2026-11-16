@@ -73,16 +73,8 @@ def resolve_endpoint(
             temperature=temperature,
             timeout_seconds=timeout_seconds,
         )
-    base_url = (
-        environ.get(endpoint.base_url_env)
-        if endpoint.base_url_env is not None
-        else None
-    )
-    api_key = (
-        environ.get(endpoint.api_key_env)
-        if endpoint.api_key_env is not None
-        else None
-    )
+    base_url = environ.get(endpoint.base_url_env) if endpoint.base_url_env is not None else None
+    api_key = environ.get(endpoint.api_key_env) if endpoint.api_key_env is not None else None
     return ResolvedEndpoint(
         base_url=base_url or None,
         api_key=api_key or None,
@@ -142,7 +134,7 @@ class ParameterizedSkillPort:
                 model=self._resolved.model,
                 payload=parsed if isinstance(parsed, dict) else None,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
             return SkillLLMResponse(model=None, payload=None)
 
 

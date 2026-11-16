@@ -16,6 +16,8 @@ There is no background progression: every wave is an explicit request.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,7 +47,7 @@ async def create_seminar_endpoint(
     run_id: str,
     payload: SeminarCreateRequest,
     request: Request,
-    session: AsyncSession = Depends(get_session),
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SeminarCreateRead:
     service = get_seminar_service(request)
     try:
@@ -69,7 +71,7 @@ async def create_seminar_endpoint(
 async def advance_seminar_endpoint(
     seminar_id: str,
     request: Request,
-    session: AsyncSession = Depends(get_session),
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AdvanceRead:
     service = get_seminar_service(request)
     try:
@@ -98,7 +100,7 @@ async def advance_seminar_endpoint(
 async def finalize_seminar_endpoint(
     seminar_id: str,
     request: Request,
-    session: AsyncSession = Depends(get_session),
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> FinalizeRead:
     service = get_seminar_service(request)
     try:

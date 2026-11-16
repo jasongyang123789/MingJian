@@ -96,8 +96,7 @@ _register(
         "own prior output, answer the other models' published views, "
         "and state plainly what changed in your judgment and why. "
         "Be your own harshest critic: the weakest points of your own "
-        "case are more valuable than a restatement of its strengths. "
-        + _BOARD_QUOTATION_NOTICE,
+        "case are more valuable than a restatement of its strengths. " + _BOARD_QUOTATION_NOTICE,
         "Decision topic: {topic}\n\n"
         "Case evidence (frozen snapshot — treat as given):\n{case_context}\n\n"
         "Your own history in this seminar (prior rounds + this round's "
@@ -127,8 +126,7 @@ _register(
         "FINAL verdict. This is your last statement: it must stand on "
         "its own, state your recommendation plainly, and preserve "
         "honest dissent — views you still hold although other models "
-        "opposed them belong in dissent_held, not dropped. "
-        + _BOARD_QUOTATION_NOTICE,
+        "opposed them belong in dissent_held, not dropped. " + _BOARD_QUOTATION_NOTICE,
         "Decision topic: {topic}\n\n"
         "Case evidence (frozen snapshot — treat as given):\n{case_context}\n\n"
         "Your own history in this seminar (round digests + reflections):\n"
@@ -144,7 +142,7 @@ _register(
         "load_bearing_assumptions (at most 5 items), kill_criteria "
         "(list), dissent_held (list of views you still hold although "
         "other models opposed them — if you hold none, write exactly "
-        "[\"None\"]), rounds_summary (2-3 sentences: how your judgment "
+        '["None"]), rounds_summary (2-3 sentences: how your judgment '
         "evolved across rounds), board_snapshot_seq (echo the board "
         "snapshot sequence number shown above: {board_snapshot_seq})."
         "\n\n" + _JSON_ONLY,
@@ -166,9 +164,7 @@ def get_seminar_template(template_id: str) -> SkillTemplate:
         return SEMINAR_TEMPLATES[template_id]
     except KeyError:
         known = ", ".join(sorted(SEMINAR_TEMPLATES))
-        raise ValueError(
-            f"Unknown seminar template {template_id!r}. Known: {known}."
-        ) from None
+        raise ValueError(f"Unknown seminar template {template_id!r}. Known: {known}.") from None
 
 
 def list_seminar_templates() -> list[SkillTemplate]:
@@ -190,9 +186,7 @@ def _placeholders(text: str) -> set[str]:
 def validate_seminar_registry() -> None:
     """Check every seminar template's declared slots match its placeholders."""
     for template in SEMINAR_TEMPLATES.values():
-        used = _placeholders(template.system_prompt) | _placeholders(
-            template.user_template
-        )
+        used = _placeholders(template.system_prompt) | _placeholders(template.user_template)
         declared = set(template.slots)
         if used != declared:
             raise ValueError(
@@ -204,8 +198,8 @@ def validate_seminar_registry() -> None:
 validate_seminar_registry()
 
 __all__ = [
-    "SEMINAR_TEMPLATE_VERSION",
     "SEMINAR_TEMPLATES",
+    "SEMINAR_TEMPLATE_VERSION",
     "get_seminar_template",
     "list_seminar_templates",
     "render_template",

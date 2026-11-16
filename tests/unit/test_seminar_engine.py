@@ -50,9 +50,7 @@ def summary(
 
 def test_quiet_convergence_triggers_after_two_quiet_rounds() -> None:
     # Rounds 2 and 3 each stable vs predecessor: 2 quiet comparisons.
-    assert evaluate_convergence(
-        [summary(1), summary(2), summary(3)], quiet_rounds=2
-    )
+    assert evaluate_convergence([summary(1), summary(2), summary(3)], quiet_rounds=2)
 
 
 def test_quiet_convergence_needs_two_consecutive_quiet_rounds() -> None:
@@ -94,17 +92,13 @@ def test_reflection_missing_round_is_never_quiet() -> None:
     )
     assert stored.changes_empty is False
     assert stored.confidence is None
-    assert not evaluate_convergence(
-        [summary(1), stored, summary(3)], quiet_rounds=2
-    )
+    assert not evaluate_convergence([summary(1), stored, summary(3)], quiet_rounds=2)
 
 
 def test_failed_round_is_not_usable_and_breaks_the_streak() -> None:
     stored = round_summary_from_stored(round_no=2, status="failed", digest=None)
     assert stored.usable is False
-    assert not evaluate_convergence(
-        [summary(1), stored, summary(3)], quiet_rounds=2
-    )
+    assert not evaluate_convergence([summary(1), stored, summary(3)], quiet_rounds=2)
 
 
 # --- model status derivation ----------------------------------------------
@@ -336,10 +330,7 @@ def test_extract_analysis_summary_rejects_unknown_pipeline() -> None:
 
 def test_classify_error_maps_known_failures() -> None:
     assert classify_error(SkillLLMUnavailable("x")) == "unavailable"
-    assert (
-        classify_error(SkillContractError("t", [{"loc": (), "msg": "m"}]))
-        == "contract"
-    )
+    assert classify_error(SkillContractError("t", [{"loc": (), "msg": "m"}])) == "contract"
     assert classify_error(TimeoutError("slow")) == "timeout"
     assert classify_error(ValueError("weird")) == "error"
 
