@@ -15,6 +15,7 @@ from planagent.api.routes.loops import router as loops_router
 from planagent.api.routes.mece import router as mece_router
 from planagent.api.routes.narratives import router as narratives_router
 from planagent.api.routes.simulation import router as simulation_router
+from planagent.api.routes.seminars import router as seminars_router
 from planagent.api.routes.skills import router as skills_router
 from planagent.api.routes.variables import router as variables_router
 from planagent.api.routes.admin import router as admin_router
@@ -47,6 +48,7 @@ router.include_router(prediction_router)
 router.include_router(robustness_router, tags=["Robustness"])
 router.include_router(calibration_router, tags=["Calibration"])
 router.include_router(skills_router, tags=["Skills"])
+router.include_router(seminars_router, tags=["Seminars"])
 router.include_router(loops_router, tags=["Living Loop"])
 router.include_router(narratives_router, tags=["Narratives"])
 router.include_router(sources_router)

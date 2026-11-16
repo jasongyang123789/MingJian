@@ -1817,3 +1817,166 @@ class DirectionMappingRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class SeminarRecord(Base):
+    """One multi-model seminar over a frozen case snapshot (Sprint 16).
+
+    The case snapshot (``case_snapshot`` + ``case_snapshot_hash``) is
+    frozen at creation: every model and every round reads the same
+    evidence, and later products on the run never enter the seminar.
+    ``roster`` and ``config`` are stored JSON (the roster carries
+    endpoint *configuration* — target names and environment variable
+    names — never keys). ``status`` follows the seminar state machine
+    (open → running → collecting → synthesizing → reported, plus
+    partial); S16 code produces open/running/collecting only — the
+    synthesize transitions arrive with S17.
+    """
+
+    __tablename__ = "seminars"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("simulation_runs.id"), nullable=False, index=True
+    )
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    case_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    case_snapshot_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    roster: Mapped[list] = mapped_column(JSON, nullable=False)
+    config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    chair_model: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class SeminarRoundRecord(Base):
+    """One model's one round: analysis stages + reflection (Sprint 16).
+
+    ``stages`` holds the analysis pipeline's StageRecords (possibly a
+    partial list when the analysis failed mid-pipeline — pipeline
+    internals do not expose partial progress, so a failed analysis
+    stores an empty list and the failure in ``error``). ``reflection``
+    holds the validated Reflection output, or NULL when the reflection
+    stage failed (stage-level isolation: the analysis still stands and
+    a digest is still published, marked reflection-missing).
+    ``reflection_stage`` holds that stage's StageRecord (template /
+    contract version provenance), NULL when the stage failed.
+    ``board_snapshot_seq`` is the board version the round read — the
+    audit answer to "what had this model seen when it wrote this".
+    """
+
+    __tablename__ = "seminar_rounds"
+    __table_args__ = (
+        UniqueConstraint(
+            "seminar_id", "model_id", "round_no",
+            name="uq_seminar_rounds_seminar_model_round",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    round_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    board_snapshot_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    stages: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    reflection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reflection_stage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class SeminarBoardRecord(Base):
+    """One append-only board publication (Sprint 16).
+
+    ``seq`` is monotonically increasing per seminar and is the only
+    time scale of the seminar: every round records the ``seq`` it read.
+    Rows are never updated or deleted.
+    """
+
+    __tablename__ = "seminar_board"
+    __table_args__ = (
+        UniqueConstraint("seminar_id", "seq", name="uq_seminar_board_seminar_seq"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    model_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    round_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    digest: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class SeminarFinalRecord(Base):
+    """One model's final verdict (Sprint 16).
+
+    ``verdict`` is the validated FinalVerdict JSON verbatim (including
+    the model's echoed ``board_snapshot_seq``). ``stage`` holds the
+    verdict stage's StageRecord (template / contract version
+    provenance). ``board_snapshot_seq`` is the system-known board
+    version the verdict was produced against — the audit fact, kept
+    separate from the model's echo.
+    """
+
+    __tablename__ = "seminar_finals"
+    __table_args__ = (
+        UniqueConstraint("seminar_id", "model_id", name="uq_seminar_finals_seminar_model"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    verdict: Mapped[dict] = mapped_column(JSON, nullable=False)
+    stage: Mapped[dict] = mapped_column(JSON, nullable=False)
+    board_snapshot_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="final")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class SeminarReportRecord(Base):
+    """One versioned seminar report (Sprint 16: table only).
+
+    The table is created with migration 0038 so the schema lands in one
+    migration; synthesize behavior (clustering, synthesis, deterministic
+    composer, versioning) is S17 and no S16 code writes this table.
+    """
+
+    __tablename__ = "seminar_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "seminar_id", "version", name="uq_seminar_reports_seminar_version"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    seminar_id: Mapped[str] = mapped_column(
+        ForeignKey("seminars.id"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    clusters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    synthesis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    computed_metrics: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    report_hash: Mapped[str] = mapped_column(String(80), nullable=False)
+    chair_model_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    partial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )

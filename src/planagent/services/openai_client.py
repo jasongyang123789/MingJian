@@ -24,6 +24,33 @@ TargetRole = Literal[
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
+def sanitize_model_text(value: str) -> str:
+    """Strip think blocks and a single surrounding code fence from model text."""
+    cleaned = _THINK_BLOCK_RE.sub("", value or "")
+    cleaned = cleaned.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def extract_json_payload(raw_text: str) -> str:
+    """Extract the outermost JSON object/array substring from model text.
+
+    Shared by :class:`OpenAIService` and the parameterized seminar port
+    so both parse model output with identical semantics: sanitize,
+    then take the span from the first ``{``/``[`` to the last matching
+    ``}``/``]``. Callers ``json.loads`` the result.
+    """
+    sanitized = sanitize_model_text(raw_text)
+    for opening, closing in (("{", "}"), ("[", "]")):
+        start = sanitized.find(opening)
+        end = sanitized.rfind(closing)
+        if start != -1 and end != -1 and end >= start:
+            return sanitized[start : end + 1]
+    return sanitized
+
+
 def resolve_openclaw_model_selector(selector: str) -> str:
     normalized = selector.strip().lower().replace(" ", "-")
     for prefix in ("openai/", "openai-codex/"):
@@ -1030,21 +1057,10 @@ class OpenAIService:
         return response_id, self._sanitize_model_text(str(content))
 
     def _extract_json_payload(self, raw_text: str) -> str:
-        sanitized = self._sanitize_model_text(raw_text)
-        for opening, closing in (("{", "}"), ("[", "]")):
-            start = sanitized.find(opening)
-            end = sanitized.rfind(closing)
-            if start != -1 and end != -1 and end >= start:
-                return sanitized[start : end + 1]
-        return sanitized
+        return extract_json_payload(raw_text)
 
     def _sanitize_model_text(self, value: str) -> str:
-        cleaned = _THINK_BLOCK_RE.sub("", value or "")
-        cleaned = cleaned.strip()
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", cleaned)
-            cleaned = re.sub(r"\s*```$", "", cleaned)
-        return cleaned.strip()
+        return sanitize_model_text(value)
 
     def _api_key_for_target(self, target: TargetRole) -> str | None:
         if target == "primary":

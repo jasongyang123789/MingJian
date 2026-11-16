@@ -20,6 +20,7 @@ from planagent.services.openai_client import OpenAIService
 from planagent.services.pipeline import PhaseOnePipelineService
 from planagent.services.platform_topology import PlatformTopologyService
 from planagent.services.runtime import RuntimeMonitorService
+from planagent.services.seminar.service import SeminarService
 from planagent.services.simulation import SimulationService
 from planagent.services.skills.service import SkillDeliberationService
 from planagent.services.workbench import WorkbenchService
@@ -180,6 +181,13 @@ def get_narrative_service(request: Request) -> NarrativeService:
             get_settings(), request.app.state.openai_service
         )
     return request.app.state.narrative_service  # type: ignore[no-any-return]  # app.state 动态属性
+
+
+def get_seminar_service(request: Request) -> SeminarService:
+    ensure_app_services(request)
+    if not hasattr(request.app.state, "seminar_service"):
+        request.app.state.seminar_service = SeminarService(get_settings())
+    return request.app.state.seminar_service  # type: ignore[no-any-return]  # app.state 动态属性
 
 
 def get_workbench_service() -> WorkbenchService:

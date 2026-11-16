@@ -45,9 +45,15 @@ Importance = Annotated[int, Field(ge=1, le=5)]
 class SkillContractError(RuntimeError):
     """A stage's LLM output failed its Pydantic contract."""
 
-    def __init__(self, template_id: str, details: list[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        template_id: str,
+        details: list[dict[str, Any]],
+        contract_version: str = SKILL_CONTRACT_VERSION,
+        contract_family: str = "skills",
+    ) -> None:
         self.template_id = template_id
-        self.contract_version = SKILL_CONTRACT_VERSION
+        self.contract_version = contract_version
         self.details = details
         summary = "; ".join(
             f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
@@ -55,7 +61,7 @@ class SkillContractError(RuntimeError):
         )
         super().__init__(
             f"LLM output for stage {template_id!r} failed contract "
-            f"skills-v{SKILL_CONTRACT_VERSION}: {summary}"
+            f"{contract_family}-v{contract_version}: {summary}"
         )
 
 
