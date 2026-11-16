@@ -19,6 +19,12 @@ Event kinds:
   finished event means the call never returned.
 * ``retry`` — a timeout retry was scheduled: attempt number,
   backoff, and the timeout that caused it.
+* ``stage_failure`` — a stage-level failure captured OUTSIDE the
+  port wrapper (contract validation in the stage runner, a verdict
+  failure, a round failure): error kind, stage, message, round. The
+  port wrapper cannot see these (the call itself succeeded), so the
+  service records them — without this kind, a reader with only the
+  audit log could not locate a contract failure.
 * ``budget_exhausted`` — a budget check blocked a call: which
   budget, used/limit. Budget checks that PASS are not separate
   events; the budget position rides on every ``stage_call_finished``
@@ -71,6 +77,7 @@ class AuditEventKind:
     STAGE_CALL_STARTED = "stage_call_started"
     STAGE_CALL_FINISHED = "stage_call_finished"
     RETRY = "retry"
+    STAGE_FAILURE = "stage_failure"
     BUDGET_EXHAUSTED = "budget_exhausted"
     FALLBACK = "fallback"
     QUEUE_WAIT = "queue_wait"
@@ -86,6 +93,7 @@ class AuditEventKind:
             STAGE_CALL_STARTED,
             STAGE_CALL_FINISHED,
             RETRY,
+            STAGE_FAILURE,
             BUDGET_EXHAUSTED,
             FALLBACK,
             QUEUE_WAIT,
@@ -202,12 +210,15 @@ class AuditEventRead(BaseModel):
 class DiagnosisSummary(BaseModel):
     """The GET-detail diagnosis summary, computed from audit events.
 
-    Counts by error kind (from finished stage calls, budget
-    exhaustions, fallbacks, and synthesis failures), total tokens and
-    total duration (from finished stage calls that reported them),
-    and the stage-call / retry totals. Seminars with no audit events
-    (created before S18, or never run) report all zeros — never an
-    error.
+    ``error_counts`` counts RECORDED FAILURES by kind: ``stage_failure``
+    events, ``fallback`` events, and ``synthesis_failed`` events.
+    Failed stage-call ATTEMPTS are not counted here (a timeout that
+    recovered via retry is visible in the ``retries`` count and in
+    the events themselves, not as an error), and ``budget_exhausted``
+    events are not counted separately (the resulting stage failure
+    carries the kind) — so each failure is counted exactly once.
+    Token/duration totals come from finished stage calls that
+    reported them. Seminars with no audit events report all zeros.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -297,9 +308,6 @@ def compute_diagnosis(events: list[dict[str, Any]]) -> DiagnosisSummary:
         detail = event.get("detail") or {}
         if kind == AuditEventKind.STAGE_CALL_FINISHED:
             attempts += 1
-            outcome = str(detail.get("outcome") or "")
-            if outcome != "ok":
-                error_counts[outcome] = error_counts.get(outcome, 0) + 1
             usage = detail.get("usage") or {}
             total_prompt += int(usage.get("prompt_tokens") or 0)
             total_completion += int(usage.get("completion_tokens") or 0)
@@ -309,8 +317,10 @@ def compute_diagnosis(events: list[dict[str, Any]]) -> DiagnosisSummary:
                 stage_calls += 1
         elif kind == AuditEventKind.RETRY:
             retries += 1
-        elif kind == AuditEventKind.BUDGET_EXHAUSTED:
-            error_counts["budget_exhausted"] = error_counts.get("budget_exhausted", 0) + 1
+        elif kind == AuditEventKind.STAGE_FAILURE:
+            error_kind = str(detail.get("error_kind") or "")
+            if error_kind:
+                error_counts[error_kind] = error_counts.get(error_kind, 0) + 1
         elif kind == AuditEventKind.FALLBACK:
             fallbacks += 1
             error_kind = str(detail.get("error_kind") or "")

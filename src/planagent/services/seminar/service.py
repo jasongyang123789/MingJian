@@ -561,6 +561,22 @@ class SeminarService:
         next_seq = snapshot_seq
         per_model: list[AdvanceModelRead] = []
         for outcome in outcomes:
+            if outcome.error is not None:
+                # Contract failures and other round errors are
+                # captured outside the port wrapper, so they need
+                # their own audit event — otherwise the audit log
+                # alone could not locate them.
+                recorder.record(
+                    kind=AuditEventKind.STAGE_FAILURE,
+                    model_id=outcome.model_id,
+                    stage=outcome.error.stage,
+                    round_no=outcome.round_no,
+                    detail={
+                        "error_kind": outcome.error.kind,
+                        "stage": outcome.error.stage,
+                        "message": outcome.error.message,
+                    },
+                )
             session.add(
                 SeminarRoundRecord(
                     id=generate_id(),
@@ -738,6 +754,20 @@ class SeminarService:
         results = await asyncio.gather(*(_verdict_for(entry) for entry in roster))
         finals: list[FinalizeModelRead] = []
         for entry, status, error, payload in results:
+            if status == "failed" and error is not None:
+                # Verdict failures are captured outside the port
+                # wrapper, so they need their own audit event.
+                recorder.record(
+                    kind=AuditEventKind.STAGE_FAILURE,
+                    model_id=entry.model_id,
+                    stage=error["stage"],
+                    round_no=None,
+                    detail={
+                        "error_kind": error["kind"],
+                        "stage": error["stage"],
+                        "message": error["message"],
+                    },
+                )
             if status == "final" and payload is not None:
                 verdict, stage = payload
                 session.add(
@@ -1124,24 +1154,26 @@ class SeminarService:
         prepass: dict[str, Any] = inputs["prepass"]
         failures: list[str] = []
         cluster_stage_json: dict[str, Any] | None = None
-
-        # One tracker + one instrumented chair port for BOTH chair
-        # stages: the cluster and synthesize calls share one budget
-        # position within this synthesis.
-        tracker = await self._seed_tracker(session, seminar.id, config)
-        chair_port = self._instrumented_port(
-            chair_model,
-            model_id=chair_model.model_id,
-            round_no=None,
-            recorder=recorder,
-            tracker=tracker,
-            seminar_config=config,
-        )
+        chair_port: InstrumentedPort | None = None
 
         if deterministic_only:
+            # No chair port is built on this path: in agent mode there
+            # may be no chair endpoint configured at all.
             clusters = deterministic_clusters(prepass)
             failures.append("deterministic fallback requested by the caller")
         else:
+            # One tracker + one instrumented chair port for BOTH chair
+            # stages: the cluster and synthesize calls share one
+            # budget position within this synthesis.
+            tracker = await self._seed_tracker(session, seminar.id, config)
+            chair_port = self._instrumented_port(
+                chair_model,
+                model_id=chair_model.model_id,
+                round_no=None,
+                recorder=recorder,
+                tracker=tracker,
+                seminar_config=config,
+            )
             # Stage 1: clustering. Any failure (unavailable port,
             # empty response, contract violation, incomplete merge
             # map, budget exhaustion) falls back to deterministic
@@ -1194,7 +1226,7 @@ class SeminarService:
         # Skipped entirely on the deterministic path.
         synthesis_payload: dict[str, Any] | None = None
         synthesis_stage_json: dict[str, Any] | None = None
-        if not deterministic_only:
+        if not deterministic_only and chair_port is not None:
             try:
                 parsed_synthesis, synthesis_stage = await run_synthesize(
                     chair_port,
