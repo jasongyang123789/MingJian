@@ -750,7 +750,9 @@ class SeminarService:
         # Stage 1: clustering. Any failure (unavailable port, empty
         # response, contract violation, incomplete merge map) falls
         # back to deterministic pre-pass clusters — recorded, never
-        # hidden.
+        # hidden. A merge map that drops, duplicates, or invents item
+        # ids is a contract failure, not a crash.
+        cluster_stage_json: dict[str, Any] | None = None
         try:
             parsed_clusters, cluster_stage = await run_cluster(
                 chair_port,
@@ -758,12 +760,17 @@ class SeminarService:
                 prepass=prepass,
                 output_language=config.output_language,
             )
-            clusters = expand_clusters(parsed_clusters, prepass=prepass)
-            cluster_stage_json = cluster_stage.model_dump(mode="json")
         except Exception as exc:  # noqa: BLE001 — chair failure -> fallback
             clusters = deterministic_clusters(prepass)
-            cluster_stage_json = None
             failures.append(f"cluster stage failed ({classify_error(exc)}): {str(exc)[:300]}")
+        else:
+            try:
+                clusters = expand_clusters(parsed_clusters, prepass=prepass)
+            except ValueError as exc:
+                clusters = deterministic_clusters(prepass)
+                failures.append(f"cluster stage failed (contract): {str(exc)[:300]}")
+            else:
+                cluster_stage_json = cluster_stage.model_dump(mode="json")
         clusters["stage"] = cluster_stage_json
 
         round_dicts = [
