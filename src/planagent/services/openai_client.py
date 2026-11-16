@@ -873,7 +873,10 @@ class OpenAIService:
                 response_format={"type": "json_object"},
             )
             text = response.choices[0].message.content or "{}"
-            parsed = self._extract_json_payload(text)
+            try:
+                parsed = json.loads(self._extract_json_payload(text))
+            except json.JSONDecodeError:
+                parsed = None
             return {"model": model, "api_mode": "chat.completions.json"}, parsed if isinstance(
                 parsed, dict
             ) else None
