@@ -1737,6 +1737,7 @@ class DecisionNarrativeRecord(Base):
     inputs_hash: Mapped[str] = mapped_column(String(80), nullable=False)
     content_hash: Mapped[str] = mapped_column(String(80), nullable=False)
     artifact: Mapped[dict] = mapped_column(JSON, nullable=False)
+    direction_mapping_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
@@ -1763,4 +1764,55 @@ class DecisionNarrativePolishRecord(Base):
     polished_markdown: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class DirectionMappingRecord(Base):
+    """One persisted direction definition for an anchor run (Sprint 14).
+
+    A mapping is exactly a stored :class:`DirectionDefinition`:
+    name, source run, arm, MECE branches, optional deliberation pin.
+    Narrative generation resolves its directions from these rows
+    when the request omits ``directions``; inline definitions always
+    win. ``origin`` records whether the row was written by a
+    derivation run (``derived``, with the rule record pinned) or by
+    a user (``authored``). ``user_edited`` is set by any successful
+    update and protects the row from derivation upserts (the
+    no-clobber rule: derive never overwrites a user-edited mapping).
+    Names are unique per anchor run, enforced in code and by a DB
+    unique constraint. ``position`` fixes generation order
+    (derivation writes in rule order; authored rows take max + 1).
+    Deleting a mapping affects future generations only: generated
+    narratives are versioned artifacts and keep no live link here.
+    """
+
+    __tablename__ = "direction_mappings"
+    __table_args__ = (
+        UniqueConstraint(
+            "anchor_run_id", "name", name="uq_direction_mappings_anchor_name"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_id)
+    anchor_run_id: Mapped[str] = mapped_column(
+        ForeignKey("simulation_runs.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_run_id: Mapped[str] = mapped_column(
+        ForeignKey("simulation_runs.id"), nullable=False
+    )
+    arm: Mapped[str] = mapped_column(String(16), nullable=False)
+    mece_branches: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    deliberation_id: Mapped[str | None] = mapped_column(String(36))
+    origin: Mapped[str] = mapped_column(String(16), nullable=False)
+    rule_id: Mapped[str | None] = mapped_column(String(32))
+    rules_version: Mapped[str | None] = mapped_column(String(32))
+    rule_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    user_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
