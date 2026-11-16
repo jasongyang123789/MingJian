@@ -184,8 +184,7 @@ _register(
         "stage is CLUSTERING, not judging: group the quoted verdict "
         "claims that say the same thing into canonical claims, and "
         "record each source's stance toward its canonical claim. "
-        "Grouping identifies sameness; it never settles who is right. "
-        + _CHAIR_QUOTATION_NOTICE,
+        "Grouping identifies sameness; it never settles who is right. " + _CHAIR_QUOTATION_NOTICE,
         "Decision topic: {topic}\n\n"
         "Quoted verdict claims (each labeled with a stable item id, "
         "source model, and verdict field):\n{quoted_claims}\n\n"
@@ -220,8 +219,7 @@ _register(
         "below. State plainly whether your unified recommendation "
         "reflects a consensus or is your own judgment; preserve "
         "minority views verbatim; and never present a computed "
-        "metric as your own judgment or vice versa. "
-        + _CHAIR_QUOTATION_NOTICE,
+        "metric as your own judgment or vice versa. " + _CHAIR_QUOTATION_NOTICE,
         "Decision topic: {topic}\n\n"
         "Canonical claims (clustered, each with sources and "
         "stances):\n{clustered_claims}\n\n"

@@ -37,10 +37,7 @@ def render_quoted_verdicts(verdicts: list[dict[str, Any]]) -> str:
     """Render final verdicts verbatim, labeled by source model."""
     blocks = []
     for entry in verdicts:
-        blocks.append(
-            f"[verdict: {entry['model_id']}]\n"
-            + canonical_json(entry["verdict"])
-        )
+        blocks.append(f"[verdict: {entry['model_id']}]\n" + canonical_json(entry["verdict"]))
     return "\n\n".join(blocks) if blocks else "(No verdicts.)"
 
 

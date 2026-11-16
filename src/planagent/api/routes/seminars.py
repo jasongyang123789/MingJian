@@ -32,8 +32,8 @@ from planagent.db import get_session
 from planagent.services.seminar.models import (
     AdvanceRead,
     BoardRowRead,
-    FinalRowRead,
     FinalizeRead,
+    FinalRowRead,
     ReportDetailRead,
     RoundRowRead,
     SeminarCreateRead,

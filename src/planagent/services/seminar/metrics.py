@@ -123,7 +123,9 @@ def round_statistics(
             "rounds": len(rows),
             "status": statuses.get(model_id, "unknown"),
             "board_snapshot_seqs": sorted({int(row["board_snapshot_seq"]) for row in rows}),
-            "round_statuses": [str(row["status"]) for row in sorted(rows, key=lambda r: int(r["round_no"]))],
+            "round_statuses": [
+                str(row["status"]) for row in sorted(rows, key=lambda r: int(r["round_no"]))
+            ],
         }
     return {
         "per_model": per_model,
@@ -147,9 +149,7 @@ def compute_metrics(
         "borda": borda_count(verdicts),
         "dedup": dedup_statistics(clusters=clusters),
         "disagreement_count": len(clusters.get("disagreements") or []),
-        "rounds": round_statistics(
-            roster_ids=roster_ids, round_rows=round_rows, statuses=statuses
-        ),
+        "rounds": round_statistics(roster_ids=roster_ids, round_rows=round_rows, statuses=statuses),
         "finals_used": len(verdicts),
         "roster_size": len(roster_ids),
         "absent_models": absent_models,

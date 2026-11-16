@@ -1,8 +1,9 @@
-"""Seminar contract tests (Sprint 16).
+"""Seminar contract tests (Sprint 16–17).
 
-Reflection + FinalVerdict inherit the Sprint 15 _Contract base:
-structured shapes coerce to canonical flat shapes, unknown keys are
-forbidden, and the seminar contract version is 1.
+Reflection + FinalVerdict + ClaimClusters + SeminarSynthesis inherit
+the Sprint 15 _Contract base: structured shapes coerce to canonical
+flat shapes, unknown keys are forbidden, and the seminar contract
+version is 1.
 """
 
 from __future__ import annotations
@@ -12,8 +13,10 @@ from pydantic import ValidationError
 
 from planagent.services.seminar.contracts import (
     SEMINAR_CONTRACT_VERSION,
+    ClaimClusters,
     FinalVerdict,
     Reflection,
+    SeminarSynthesis,
     parse_seminar_stage_output,
 )
 from planagent.services.skills.contracts import SkillContractError
@@ -134,4 +137,96 @@ def test_parse_seminar_stage_output_rejects_contract_violations() -> None:
 
 def test_parse_seminar_stage_output_rejects_unknown_template() -> None:
     with pytest.raises(ValueError, match="No seminar output contract"):
-        parse_seminar_stage_output("seminar.cluster", {})
+        parse_seminar_stage_output("seminar.nope", {})
+
+
+def valid_clusters(**overrides: object) -> dict:
+    payload: dict = {
+        "claims": [
+            {
+                "claim": "Runway is 14 months",
+                "sources": [
+                    {"item_id": "I1", "stance": "support"},
+                    {"item_id": "I2", "stance": "oppose"},
+                ],
+            }
+        ]
+    }
+    payload.update(overrides)
+    return payload
+
+
+def valid_synthesis(**overrides: object) -> dict:
+    payload: dict = {
+        "unified_recommendation": "Phase the rollout.",
+        "recommendation_basis": "chair_judgment",
+        "agreement_level": "moderate",
+        "alternatives_ranked": ["Phased rollout", "Full launch"],
+        "aggregation_rule": "Chair judgment weighted the runway evidence.",
+        "key_evidence": [{"text": "Runway is 14 months", "source_models": ["model-a"]}],
+        "kill_criteria": [{"text": "Fewer than six conversions", "source_models": ["model-a"]}],
+        "minority_report": "[model-b] Fourteen months is too thin.",
+        "open_questions": ["Will demand hold?"],
+        "chair_notes": "Model B challenged the runway assumption.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_claim_clusters_validates_sources_with_stances() -> None:
+    clusters = ClaimClusters.model_validate(valid_clusters())
+    assert clusters.claims[0].claim == "Runway is 14 months"
+    assert clusters.claims[0].sources[1].stance == "oppose"
+
+
+def test_claim_clusters_rejects_empty_sources_and_bad_stance() -> None:
+    with pytest.raises(ValidationError):
+        ClaimClusters.model_validate(valid_clusters(claims=[{"claim": "x", "sources": []}]))
+    with pytest.raises(ValidationError):
+        ClaimClusters.model_validate(
+            valid_clusters(
+                claims=[
+                    {
+                        "claim": "x",
+                        "sources": [{"item_id": "I1", "stance": "shrug"}],
+                    }
+                ]
+            )
+        )
+
+
+def test_claim_clusters_forbids_unknown_keys() -> None:
+    with pytest.raises(ValidationError):
+        ClaimClusters.model_validate(valid_clusters(merge_map={}))
+
+
+def test_seminar_synthesis_validates_a_complete_payload() -> None:
+    synthesis = SeminarSynthesis.model_validate(valid_synthesis())
+    assert synthesis.recommendation_basis == "chair_judgment"
+    assert synthesis.agreement_level == "moderate"
+    assert synthesis.key_evidence[0].source_models == ["model-a"]
+
+
+def test_seminar_synthesis_rejects_bad_basis_level_and_empty_ranking() -> None:
+    with pytest.raises(ValidationError):
+        SeminarSynthesis.model_validate(valid_synthesis(recommendation_basis="vote"))
+    with pytest.raises(ValidationError):
+        SeminarSynthesis.model_validate(valid_synthesis(agreement_level="total"))
+    with pytest.raises(ValidationError):
+        SeminarSynthesis.model_validate(valid_synthesis(alternatives_ranked=[]))
+
+
+def test_seminar_synthesis_forbids_unknown_keys() -> None:
+    with pytest.raises(ValidationError):
+        SeminarSynthesis.model_validate(valid_synthesis(extra="x"))
+
+
+def test_parse_seminar_stage_output_routes_chair_templates() -> None:
+    parsed = parse_seminar_stage_output("seminar.cluster", valid_clusters())
+    assert isinstance(parsed, ClaimClusters)
+    parsed = parse_seminar_stage_output("seminar.synthesize", valid_synthesis())
+    assert isinstance(parsed, SeminarSynthesis)
+    with pytest.raises(SkillContractError) as exc_info:
+        parse_seminar_stage_output("seminar.cluster", {"claims": [{"claim": "x"}]})
+    assert exc_info.value.template_id == "seminar.cluster"
+    assert exc_info.value.contract_version == "1"

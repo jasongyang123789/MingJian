@@ -30,9 +30,7 @@ def _template_note(*, seminar_id: str, missing: str, reason: str) -> str:
     )
 
 
-def _evidence_union(
-    claims: list[dict[str, Any]], *, field: str
-) -> list[dict[str, Any]]:
+def _evidence_union(claims: list[dict[str, Any]], *, field: str) -> list[dict[str, Any]]:
     """Deduped union of canonical claims sourced from one verdict field.
 
     Each entry carries the canonical claim text plus the distinct
@@ -60,7 +58,7 @@ def _verbatim_minority_report(verdicts: list[dict[str, Any]]) -> str:
             if text.strip() and text.strip() != DISSENT_PLACEHOLDER:
                 lines.append(f"[{entry['model_id']}] {text}")
     if not lines:
-        return "No dissenting views were held: every model wrote \"None\" for dissent_held."
+        return 'No dissenting views were held: every model wrote "None" for dissent_held.'
     return "\n".join(lines)
 
 
@@ -120,7 +118,7 @@ def compose_report(
 
     if chair_path:
         assert isinstance(synthesis, dict)
-        unified = {
+        unified: dict[str, Any] = {
             "text": str(synthesis["unified_recommendation"]),
             "basis": str(synthesis["recommendation_basis"]),
             "provenance": "deliberated",
@@ -160,9 +158,7 @@ def compose_report(
     else:
         reason = str(fallback_reason or "chair synthesis unavailable")
         unified = {
-            "text": _template_note(
-                seminar_id=seminar_id, missing="chair synthesis", reason=reason
-            ),
+            "text": _template_note(seminar_id=seminar_id, missing="chair synthesis", reason=reason),
             "basis": None,
             "provenance": "template",
         }
@@ -174,9 +170,7 @@ def compose_report(
             "note": (
                 "No chair agreement judgment was produced; only the computed "
                 "agreement rate is available. "
-                + _template_note(
-                    seminar_id=seminar_id, missing="chair synthesis", reason=reason
-                )
+                + _template_note(seminar_id=seminar_id, missing="chair synthesis", reason=reason)
             ),
         }
         alternatives = {
@@ -196,14 +190,10 @@ def compose_report(
         open_questions = {
             "items": [],
             "provenance": "template",
-            "note": _template_note(
-                seminar_id=seminar_id, missing="chair synthesis", reason=reason
-            ),
+            "note": _template_note(seminar_id=seminar_id, missing="chair synthesis", reason=reason),
         }
         chair_notes = {
-            "text": _template_note(
-                seminar_id=seminar_id, missing="chair synthesis", reason=reason
-            ),
+            "text": _template_note(seminar_id=seminar_id, missing="chair synthesis", reason=reason),
             "provenance": "template",
         }
         chair_synthesis_section = None

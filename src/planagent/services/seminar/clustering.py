@@ -131,9 +131,7 @@ def deterministic_prepass(
     }
 
 
-def _validate_coverage(
-    claims: list[dict[str, Any]], item_ids: frozenset[str]
-) -> None:
+def _validate_coverage(claims: list[dict[str, Any]], item_ids: frozenset[str]) -> None:
     seen: list[str] = []
     for claim in claims:
         for source in claim.get("sources") or []:
@@ -143,7 +141,9 @@ def _validate_coverage(
         raise ValueError(f"Clustering references unknown item ids: {', '.join(unknown)}.")
     duplicates = sorted({item for item in seen if seen.count(item) > 1})
     if duplicates:
-        raise ValueError(f"Clustering assigns item ids to multiple claims: {', '.join(duplicates)}.")
+        raise ValueError(
+            f"Clustering assigns item ids to multiple claims: {', '.join(duplicates)}."
+        )
     missing = sorted(set(item_ids) - set(seen))
     if missing:
         raise ValueError(f"Clustering drops item ids: {', '.join(missing)}.")
@@ -269,8 +269,7 @@ def derive_disagreements(claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "claim": str(claim["claim"]),
                 "stances": sorted(stances),
                 "positions": [
-                    {"stance": stance, "sources": positions[stance]}
-                    for stance in sorted(positions)
+                    {"stance": stance, "sources": positions[stance]} for stance in sorted(positions)
                 ],
             }
         )
@@ -281,10 +280,7 @@ def render_quoted_claims(prepass: dict[str, Any]) -> str:
     """Render pre-pass items as labeled quotations for the cluster prompt."""
     lines = []
     for item in prepass["items"]:
-        lines.append(
-            f"[{item['item_id']} | {item['model_id']} | {item['field']}] "
-            f"\"{item['text']}\""
-        )
+        lines.append(f'[{item["item_id"]} | {item["model_id"]} | {item["field"]}] "{item["text"]}"')
     return "\n".join(lines) if lines else "(No clusterable claims in the verdicts.)"
 
 
@@ -309,7 +305,7 @@ def render_clustered_claims(clusters: dict[str, Any]) -> str:
         sources = "; ".join(
             f"{s['model_id']} ({s['stance']}, {s['field']})" for s in claim["sources"]
         )
-        lines.append(f"Claim {index}: \"{claim['claim']}\" — sources: {sources}")
+        lines.append(f'Claim {index}: "{claim["claim"]}" — sources: {sources}')
     return "\n".join(lines)
 
 
@@ -320,10 +316,12 @@ def render_disagreements(clusters: dict[str, Any]) -> str:
         return "(No disagreements: no canonical claim carries differing stances.)"
     lines = []
     for disagreement in disagreements:
-        lines.append(f"Disagreement on claim {disagreement['claim_index']}: \"{disagreement['claim']}\"")
+        lines.append(
+            f'Disagreement on claim {disagreement["claim_index"]}: "{disagreement["claim"]}"'
+        )
         for position in disagreement["positions"]:
             evidence = "; ".join(
-                f"{s['model_id']}: \"{s['original_text']}\"" for s in position["sources"]
+                f'{s["model_id"]}: "{s["original_text"]}"' for s in position["sources"]
             )
             lines.append(f"  {position['stance']}: {evidence}")
     return "\n".join(lines)

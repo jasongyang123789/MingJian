@@ -70,9 +70,9 @@ from planagent.services.seminar.models import (
     AdvanceModelRead,
     AdvanceRead,
     BoardRowRead,
-    FinalRowRead,
     FinalizeModelRead,
     FinalizeRead,
+    FinalRowRead,
     ModelPortConfig,
     ModelStatus,
     ReportDetailRead,
@@ -811,9 +811,7 @@ class SeminarService:
             synthesis_payload = parsed_synthesis.model_dump(mode="json")
             synthesis_stage_json = synthesis_stage.model_dump(mode="json")
         except Exception as exc:  # noqa: BLE001 — chair failure -> fallback
-            failures.append(
-                f"synthesize stage failed ({classify_error(exc)}): {str(exc)[:300]}"
-            )
+            failures.append(f"synthesize stage failed ({classify_error(exc)}): {str(exc)[:300]}")
         synthesis_path = "chair" if synthesis_payload is not None else "deterministic_fallback"
         fallback_reason = "; ".join(failures) if failures else None
         synthesis_envelope: dict[str, Any] = {
@@ -850,18 +848,14 @@ class SeminarService:
             created_at=utc_now(),
         )
         session.add(record)
-        target = (
-            SeminarStatus.PARTIAL.value if partial else SeminarStatus.REPORTED.value
-        )
+        target = SeminarStatus.PARTIAL.value if partial else SeminarStatus.REPORTED.value
         validate_seminar_transition(seminar.status, target)
         seminar.status = target
         seminar.updated_at = utc_now()
         await session.commit()
         await session.refresh(record)
         agreement_level = (
-            str(synthesis_payload["agreement_level"])
-            if synthesis_payload is not None
-            else None
+            str(synthesis_payload["agreement_level"]) if synthesis_payload is not None else None
         )
         return SynthesizeRead(
             report_id=record.id,
@@ -879,9 +873,7 @@ class SeminarService:
 
     # -- reads -------------------------------------------------------------
 
-    async def get_seminar_detail(
-        self, session: AsyncSession, seminar_id: str
-    ) -> SeminarDetailRead:
+    async def get_seminar_detail(self, session: AsyncSession, seminar_id: str) -> SeminarDetailRead:
         seminar = await self._get_seminar(session, seminar_id)
         roster = [RosterEntry.model_validate(item) for item in seminar.roster]
         config = SeminarConfig.model_validate(seminar.config)

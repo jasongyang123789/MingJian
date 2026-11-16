@@ -1,9 +1,9 @@
-"""API tests for the Sprint 16 seminar endpoints.
+"""API tests for the Sprint 16–17 seminar endpoints.
 
 The seminar service is pre-seeded on ``app.state`` with a fake-port
-factory, so every test runs without a live LLM call. Covers the three
-endpoints (create / advance / finalize), the honest status codes
-(400/404/503), and the deliberate absence of GET endpoints (S17).
+factory, so every test runs without a live LLM call. Covers the
+create / advance / finalize / synthesize endpoints, the GET
+endpoints (S17), and the honest status codes (400/404/503).
 State assertions live in the service tests; these tests pin the HTTP
 surface and response shapes.
 """
@@ -221,18 +221,134 @@ def test_advance_and_finalize_missing_seminar_return_404(monkeypatch, tmp_path: 
         assert client.post("/seminars/nope/finalize").status_code == 404
 
 
-def test_get_endpoints_are_not_built_in_s16(monkeypatch, tmp_path: Path) -> None:
-    """GET endpoints arrive with S17 synthesis; S16 serves only the
-    three POST endpoints."""
+def _chair_script_for_shared_verdicts() -> dict:
+    """Cluster + synthesize payloads for two models sharing the S16
+    verdict builder: 6 items (3 per model), 3 exact-duplicate groups."""
+    return {
+        "seminar.cluster": [
+            {
+                "claims": [
+                    {
+                        "claim": "Runway is 14 months",
+                        "sources": [
+                            {"item_id": "I1", "stance": "support"},
+                            {"item_id": "I4", "stance": "support"},
+                        ],
+                    },
+                    {
+                        "claim": "Demand grows",
+                        "sources": [
+                            {"item_id": "I2", "stance": "support"},
+                            {"item_id": "I5", "stance": "support"},
+                        ],
+                    },
+                    {
+                        "claim": "Fewer than six conversions",
+                        "sources": [
+                            {"item_id": "I3", "stance": "support"},
+                            {"item_id": "I6", "stance": "support"},
+                        ],
+                    },
+                ]
+            }
+        ],
+        "seminar.synthesize": [
+            {
+                "unified_recommendation": "Phase the rollout.",
+                "recommendation_basis": "consensus",
+                "agreement_level": "high",
+                "alternatives_ranked": ["Phased rollout", "Full launch"],
+                "aggregation_rule": "Both models ranked identically.",
+                "key_evidence": [
+                    {"text": "Runway is 14 months", "source_models": ["model-a", "model-b"]}
+                ],
+                "kill_criteria": [
+                    {
+                        "text": "Fewer than six conversions",
+                        "source_models": ["model-a", "model-b"],
+                    }
+                ],
+                "minority_report": "No dissenting views were held.",
+                "open_questions": [],
+                "chair_notes": "The models agreed throughout.",
+            }
+        ],
+    }
+
+
+def test_synthesize_and_get_endpoints_over_http(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
-    factory = FakePortFactory({"chair-1": ScriptedSkillPort({})})
+    factory = FakePortFactory(
+        {
+            "model-a": ScriptedSkillPort(stable_model_script(2)),
+            "model-b": ScriptedSkillPort(stable_model_script(2)),
+            "chair-1": ScriptedSkillPort(_chair_script_for_shared_verdicts()),
+        }
+    )
     with _client_with_factory(factory) as client:
         run = _create_completed_run(client)
         created = client.post(f"/runs/{run['id']}/seminars", json=_seminar_body())
         seminar_id = created.json()["seminar_id"]
-        assert client.get(f"/seminars/{seminar_id}").status_code == 404
-        assert client.get(f"/seminars/{seminar_id}/board").status_code == 404
-        assert client.get(f"/runs/{run['id']}/seminars").status_code == 405
+        assert client.post(f"/seminars/{seminar_id}/advance").status_code == 200
+        assert client.post(f"/seminars/{seminar_id}/advance").status_code == 200
+        assert client.post(f"/seminars/{seminar_id}/finalize").status_code == 200
+
+        synthesized = client.post(f"/seminars/{seminar_id}/synthesize", json={})
+        assert synthesized.status_code == 201, synthesized.text
+        body = synthesized.json()
+        assert body["version"] == 1
+        assert body["partial"] is False
+        assert body["agreement_level"] == "high"
+        assert body["production_path"] == "chair"
+        assert body["status"] == "reported"
+
+        detail = client.get(f"/seminars/{seminar_id}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["status"] == "reported"
+        assert detail.json()["finals_count"] == 2
+        assert detail.json()["board_publications"] == 4
+
+        board = client.get(f"/seminars/{seminar_id}/board")
+        assert board.status_code == 200
+        assert [row["seq"] for row in board.json()] == [1, 2, 3, 4]
+
+        rounds = client.get(f"/seminars/{seminar_id}/rounds")
+        assert rounds.status_code == 200
+        assert len(rounds.json()) == 4
+
+        finals = client.get(f"/seminars/{seminar_id}/finals")
+        assert finals.status_code == 200
+        assert len(finals.json()) == 2
+
+        reports = client.get(f"/seminars/{seminar_id}/reports")
+        assert reports.status_code == 200
+        assert len(reports.json()) == 1
+        assert reports.json()[0]["version"] == 1
+
+        report = client.get(f"/seminars/{seminar_id}/reports/1")
+        assert report.status_code == 200, report.text
+        document = report.json()["document"]
+        assert document["unified_recommendation"]["text"] == "Phase the rollout."
+        assert len(document["canonical_claims"]["claims"]) == 3
+
+        run_seminars = client.get(f"/runs/{run['id']}/seminars")
+        assert run_seminars.status_code == 200
+        assert len(run_seminars.json()) == 1
+        assert run_seminars.json()[0]["report_versions"] == 1
+
+
+def test_synthesize_and_get_missing_ids_return_404(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    factory = FakePortFactory({"chair-1": ScriptedSkillPort({})})
+    with _client_with_factory(factory) as client:
+        assert client.post("/seminars/nope/synthesize", json={}).status_code == 404
+        assert client.get("/seminars/nope").status_code == 404
+        assert client.get("/seminars/nope/board").status_code == 404
+        assert client.get("/seminars/nope/rounds").status_code == 404
+        assert client.get("/seminars/nope/finals").status_code == 404
+        assert client.get("/seminars/nope/reports").status_code == 404
+        assert client.get("/seminars/nope/reports/1").status_code == 404
+        assert client.get("/runs/nope/seminars").status_code == 404
 
 
 def test_reflection_and_verdict_payload_builders_are_contract_valid() -> None:
