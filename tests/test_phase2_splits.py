@@ -144,7 +144,7 @@ def test_generation_shares_interpolate_from_static_shares() -> None:
     tick6 = generation_shares_at_tick(structure, "sagitar", 6)
     assert tick6["gen-out"] == pytest.approx(0.0)
     assert tick6["gen-new"] == pytest.approx(1.0)
-    for tick in range(0, 9):
+    for tick in range(9):
         shares = generation_shares_at_tick(structure, "sagitar", tick)
         assert sum(shares.values()) == pytest.approx(1.0)
 
