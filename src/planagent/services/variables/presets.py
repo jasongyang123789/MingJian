@@ -19,12 +19,15 @@ from planagent.services.simulation_branching import _STATE_POLICIES, MetricPolic
 from planagent.simulation.domain_packs import registry
 
 from .models import (
+    FormulaDefinition,
     MetricPolicySpec,
     TemplateStateField,
+    VariableDefinition,
     VariableSet,
     VariableTemplate,
     VariableValidationResult,
 )
+from .validator import validate_template
 
 BUILTIN_TEMPLATE_ID_PREFIX = "builtin:"
 
@@ -46,7 +49,15 @@ def known_domain_ids() -> list[str]:
 
 
 def builtin_template(domain_id: str) -> VariableTemplate:
-    """Synthesize the built-in template for a domain from its pack code."""
+    """Synthesize the built-in template for a domain from its pack code.
+
+    Variables, formulas, and assumption data come from the pack's
+    template-spec methods (empty by default, so the corporate/military
+    presets synthesize exactly as before). The synthesized template is
+    validated before it is returned: a built-in that fails validation
+    is a code defect, and failing loudly here beats silently serving a
+    broken preset to every run that attaches it.
+    """
 
     try:
         pack = registry.get(domain_id)
@@ -55,7 +66,7 @@ def builtin_template(domain_id: str) -> VariableTemplate:
         # on-demand import raises ModuleNotFoundError when the domain's
         # package does not exist at all (find_spec on a missing parent).
         raise ValueError(f"Unknown domain_id: {domain_id}") from exc
-    return VariableTemplate(
+    template = VariableTemplate(
         id=builtin_template_id(domain_id),
         name=f"Built-in {domain_id} preset",
         domain_id=domain_id,
@@ -79,10 +90,19 @@ def builtin_template(domain_id: str) -> VariableTemplate:
             )
             for metric, policy in _STATE_POLICIES.get(domain_id, {}).items()
         },
-        variables=[],
+        variables=[VariableDefinition.model_validate(raw) for raw in pack.template_variables()],
+        formulas=[FormulaDefinition.model_validate(raw) for raw in pack.template_formulas()],
         internal={},
+        assumption_data=dict(pack.template_assumption_data()),
         is_builtin=True,
     )
+    result = validate_template(template)
+    if not result.is_valid:
+        details = "; ".join(
+            f"{issue.kind}({issue.variable}): {issue.message}" for issue in result.issues
+        )
+        raise RuntimeError(f"Built-in template for domain {domain_id!r} is invalid: {details}")
+    return template
 
 
 def variables_configuration_fragment(
@@ -144,3 +164,26 @@ def resolve_policies(domain_id: str, configuration: dict | None) -> dict[str, Me
                 critical_threshold=spec.critical_threshold,
             )
     return policies
+
+
+def resolve_assumption_data(configuration: dict | None) -> dict[str, Any]:
+    """Effective assumption data for a run, or {} when none is attached.
+
+    The run's stored BINDINGS win (they carry the merged template +
+    inline override); a template-only run (no bindings stored) falls
+    back to the template snapshot. Both are pinned in the run's
+    configuration, so the resolution is replay-stable.
+    """
+
+    if isinstance(configuration, dict):
+        fragment = configuration.get(CONFIGURATION_KEY)
+        if isinstance(fragment, dict):
+            bindings = fragment.get("bindings")
+            if isinstance(bindings, dict):
+                data = bindings.get("assumption_data")
+                if isinstance(data, dict):
+                    return dict(data)
+    template = _stored_template(configuration)
+    if template is not None:
+        return dict(template.assumption_data)
+    return {}

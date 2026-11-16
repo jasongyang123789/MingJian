@@ -80,6 +80,9 @@ class BaseAppSettings(BaseSettings):
     report_retention_days: int = 30
     default_corporate_ticks: int = 6
     default_military_ticks: int = 8
+    # Automotive (Phase 1): tick = 1 month, so 12 ticks is the 12-month
+    # decision horizon. Overridable per run via tick_count.
+    default_automotive_ticks: int = 12
     worker_lease_seconds: int = 60
     worker_max_attempts: int = 3
     # Monitoring worker (Sprint 11): evaluate-only loop-trigger

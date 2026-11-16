@@ -34,6 +34,7 @@ def record_to_template(record: VariableTemplateRecord) -> VariableTemplate:
         variables=record.variables,
         formulas=record.formulas or [],
         internal=record.internal,
+        assumption_data=record.assumption_data or {},
         is_builtin=False,
     )
 
@@ -147,6 +148,7 @@ async def create_variable_template(
         variables=data.variables,
         formulas=data.formulas,
         internal=data.internal,
+        assumption_data=data.assumption_data,
     )
     result = validate_template(template)
     if not result.is_valid:
@@ -160,6 +162,7 @@ async def create_variable_template(
         variables=[variable.model_dump(mode="json") for variable in data.variables],
         formulas=[formula.model_dump(mode="json") for formula in data.formulas],
         internal=dict(data.internal),
+        assumption_data=dict(data.assumption_data),
         tenant_id=tenant_id,
         preset_id=preset_id,
     )
@@ -184,6 +187,9 @@ async def update_variable_template(
         variables=data.variables if data.variables is not None else current.variables,
         formulas=data.formulas if data.formulas is not None else current.formulas,
         internal=data.internal if data.internal is not None else current.internal,
+        assumption_data=(
+            data.assumption_data if data.assumption_data is not None else current.assumption_data
+        ),
     )
     result = validate_template(merged)
     if not result.is_valid:
@@ -197,6 +203,7 @@ async def update_variable_template(
     record.variables = [variable.model_dump(mode="json") for variable in merged.variables]
     record.formulas = [formula.model_dump(mode="json") for formula in merged.formulas]
     record.internal = dict(merged.internal)
+    record.assumption_data = dict(merged.assumption_data)
     await session.flush()
     return record
 

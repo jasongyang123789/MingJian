@@ -1563,6 +1563,7 @@ class VariableTemplateRecord(Base):
     variables: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     formulas: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     internal: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    assumption_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     tenant_id: Mapped[str | None] = mapped_column(String(120), index=True)
     preset_id: Mapped[str | None] = mapped_column(String(120), index=True)
     created_at: Mapped[datetime] = mapped_column(

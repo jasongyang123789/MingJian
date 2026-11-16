@@ -47,6 +47,40 @@ class DomainPack(ABC):
     def actor_templates(self) -> list[ActorTemplate]:
         raise NotImplementedError
 
+    def template_variables(self) -> list[dict]:
+        """Raw variable definitions for the domain's built-in template.
+
+        Plain JSON dicts in ``VariableDefinition`` shape; the presets
+        layer validates them into models at synthesis time. The default
+        (no variables) keeps the pre-Phase-1 built-in presets exactly.
+        A pack that defines variables MUST also define matching state
+        fields: sampling only moves trajectories through id-matched
+        fields.
+        """
+
+        return []
+
+    def template_formulas(self) -> list[dict]:
+        """Raw formula definitions for the domain's built-in template.
+
+        Plain JSON dicts in ``FormulaDefinition`` shape, validated at
+        synthesis time like :meth:`template_variables`. May include
+        tick-driver formulas (``tick_driver: true``).
+        """
+
+        return []
+
+    def template_assumption_data(self) -> dict:
+        """Assumption data shipped with the domain's built-in template.
+
+        Opaque JSON consumed by domain helpers (e.g. lookup priors),
+        snapshotted into every run that attaches the template and
+        overridable through the template mechanism with no code change.
+        The default is empty.
+        """
+
+        return {}
+
     def rules_dir(self) -> Path:
         return Path("rules") / self.domain_id
 

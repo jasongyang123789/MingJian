@@ -1,0 +1,230 @@
+# Automotive rules (Phase 1, coarse dynamics first).
+#
+# Each rule maps evidence keywords to a sales-strategy action with fixed
+# additive effects, following the corporate/military pattern. Effect
+# magnitudes are COARSE ASSUMPTION PARAMETERS (no public elasticities
+# exist — synthesis A9/C5); direction and mechanism are the Phase 1
+# deliverable, magnitudes are sensitivity-analysis inputs. C2 link
+# numbers refer to the synthesis transmission chain (§C2).
+#
+# `scale_by` (Phase 1, new): an effect may name a sampled variable or
+# derived formula id; the applied effect is base value x scope[id]. When
+# the id is absent from the run's scope the factor falls back to 1.0 and
+# the base value applies. Only `auto.demand_surge` uses it in Phase 1 —
+# the scaling demonstration. All other effects are fixed constants and
+# behave exactly as before.
+#
+# No `conditions` are used: trigger conditions are parsed but NOT
+# evaluated against state by the engine (their values only extend the
+# keyword list), so state-gated rules would silently misbehave. The DMS
+# switch and other policy-calendar state are lever-driven (C4 families),
+# not condition-driven.
+rules:
+  - id: "auto.policy_tax_hike"
+    domain: "automotive"
+    action_id: "increase_incentive"
+    trigger:
+      keywords:
+        - "purchase tax"
+        - "tax hike"
+        - "tax increase"
+        - "subsidy cut"
+        - "subsidy reduction"
+        - "policy cliff"
+    effects:
+      - target: "promo_rate"
+        op: "add"
+        value: 0.02
+      - target: "price_cut_expectation"
+        op: "add"
+        value: 0.03
+    priority: 85
+    explanation_template: "Policy tightening appeared in '{statement}', so the run selected {action_id} to offset the purchase-cost rise (C2 link 1)."
+
+  - id: "auto.price_war"
+    domain: "automotive"
+    action_id: "adjust_price"
+    trigger:
+      keywords:
+        - "price war"
+        - "price cut"
+        - "discount war"
+        - "below cost"
+        - "price drop"
+    effects:
+      - target: "price_index"
+        op: "add"
+        value: -0.02
+      - target: "promo_rate"
+        op: "add"
+        value: 0.02
+      - target: "price_cut_expectation"
+        op: "add"
+        value: 0.05
+    priority: 88
+    explanation_template: "Price-war evidence appeared in '{statement}', so the run selected {action_id} (C2 link 4)."
+
+  - id: "auto.inventory_overhang"
+    domain: "automotive"
+    action_id: "cut_production"
+    trigger:
+      keywords:
+        - "inventory overhang"
+        - "overstock"
+        - "inventory pile"
+        - "dealer inventory"
+        - "destock"
+    effects:
+      - target: "production_volume"
+        op: "add"
+        value: -5.0
+      - target: "dealer_inventory_coef"
+        op: "add"
+        value: -0.05
+    priority: 82
+    explanation_template: "Inventory overhang appeared in '{statement}', so the run selected {action_id} for inventory discipline (C2 links 3-4)."
+
+  - id: "auto.chip_shortage"
+    domain: "automotive"
+    action_id: "cut_production"
+    trigger:
+      keywords:
+        - "chip shortage"
+        - "semiconductor shortage"
+        - "chip supply"
+        - "lead time"
+        - "mcu shortage"
+    effects:
+      - target: "production_volume"
+        op: "add"
+        value: -8.0
+      - target: "chip_supply_index"
+        op: "add"
+        value: -0.05
+    priority: 90
+    explanation_template: "Chip-supply stress appeared in '{statement}', so the run selected {action_id} (C2 link 6)."
+
+  - id: "auto.demand_surge"
+    domain: "automotive"
+    action_id: "ramp_production"
+    trigger:
+      keywords:
+        - "demand surge"
+        - "strong retail"
+        - "record sales"
+        - "order surge"
+        - "booming demand"
+    effects:
+      - target: "production_volume"
+        op: "add"
+        value: 6.0
+        scale_by: "consumer_confidence_proxy"
+      - target: "dealer_inventory_coef"
+        op: "add"
+        value: -0.03
+    priority: 80
+    explanation_template: "Demand surge appeared in '{statement}', so the run selected {action_id}; the production effect scales with sampled consumer confidence (C2 link 2)."
+
+  - id: "auto.dms_mandate"
+    domain: "automotive"
+    action_id: "shift_product_mix"
+    trigger:
+      keywords:
+        - "dms"
+        - "driver monitoring"
+        - "gb 47955"
+        - "mandate"
+        - "driver monitoring system"
+    effects:
+      - target: "tier1_gross_margin"
+        op: "add"
+        value: -0.005
+      - target: "price_index"
+        op: "add"
+        value: 0.005
+    priority: 78
+    explanation_template: "DMS mandate evidence appeared in '{statement}', so the run selected {action_id}; compliance cost squeezes margin and partly passes into price (C2 link 8)."
+
+  - id: "auto.generation_changeover"
+    domain: "automotive"
+    action_id: "shift_product_mix"
+    trigger:
+      keywords:
+        - "new generation"
+        - "successor generation"
+        - "generation changeover"
+        - "phase-out"
+        - "phase out"
+        - "model changeover"
+        - "ramp-up"
+        - "next-generation"
+    effects:
+      - target: "generation_transition_index"
+        op: "add"
+        value: 0.05
+    priority: 76
+    explanation_template: "Generation-changeover evidence appeared in '{statement}', so the run selected {action_id}; the successor ramp accelerates (Ho 2026-11-16 generation dimension)."
+
+  - id: "auto.margin_pressure"
+    domain: "automotive"
+    action_id: "adjust_price"
+    trigger:
+      keywords:
+        - "annual cut"
+        - "margin squeeze"
+        - "margin pressure"
+        - "payment terms"
+        - "price pressure"
+        - "cost-down"
+    effects:
+      - target: "annual_cut_rate"
+        op: "add"
+        value: 0.01
+      - target: "payment_terms_months"
+        op: "add"
+        value: 0.5
+      - target: "tier1_gross_margin"
+        op: "add"
+        value: -0.005
+    priority: 74
+    explanation_template: "Margin pressure appeared in '{statement}', so the run selected {action_id} while OEMs push annual cuts and longer terms (C2 links 9-10)."
+
+  - id: "auto.export_hedge"
+    domain: "automotive"
+    action_id: "expand_channel"
+    trigger:
+      keywords:
+        - "export surge"
+        - "overseas expansion"
+        - "export market"
+        - "outbound"
+        - "export growth"
+    effects:
+      - target: "export_volume"
+        op: "add"
+        value: 2.0
+      - target: "production_volume"
+        op: "add"
+        value: 2.0
+    priority: 70
+    explanation_template: "Export opportunity appeared in '{statement}', so the run selected {action_id} (C4 export-hedge family)."
+
+  - id: "auto.subsidy_payback"
+    domain: "automotive"
+    action_id: "increase_incentive"
+    trigger:
+      keywords:
+        - "subsidy expiry"
+        - "trade-in end"
+        - "pull-forward"
+        - "payback"
+        - "subsidy withdrawal"
+    effects:
+      - target: "promo_rate"
+        op: "add"
+        value: 0.03
+      - target: "trade_in_support"
+        op: "add"
+        value: -0.1
+    priority: 84
+    explanation_template: "Subsidy payback appeared in '{statement}', so the run selected {action_id} to cushion the post-subsidy demand drop (C2 link 11)."

@@ -49,6 +49,18 @@ _STATE_POLICIES: dict[str, dict[str, MetricPolicy]] = {
         "enemy_readiness": MetricPolicy("decrease", 0.72, 0.86),
         "enemy_pressure": MetricPolicy("decrease", 0.58, 0.72),
     },
+    # Automotive (Phase 1). Thresholds are scoring heuristics, not facts:
+    # the inventory alert line (1.5) is the CADA warning line (synthesis
+    # B1); every other threshold is an assumption parameter anchored to
+    # the synthesis value ranges, tunable via variable templates.
+    "automotive": {
+        "dealer_inventory_coef": MetricPolicy("decrease", 1.5, 2.0),
+        "capacity_utilization": MetricPolicy("increase", 0.70, 0.60),
+        "tier1_gross_margin": MetricPolicy("increase", 0.15, 0.10),
+        "chip_supply_index": MetricPolicy("increase", 0.9, 0.7),
+        "price_cut_expectation": MetricPolicy("decrease", 0.5, 0.65),
+        "cash": MetricPolicy("increase", 50.0, 25.0),
+    },
 }
 
 
