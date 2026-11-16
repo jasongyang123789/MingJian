@@ -481,6 +481,44 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   the full suite has outgrown /tmp's 512M tmpfs — full runs now
   need `TMPDIR=/dev/shm/pytest-tmp`.
 
+## Phase 2 — S-layer wiring, transmission links, dual track, prompts, cockpit (done)
+
+- Delivered on `strategy-engine/phase2-auto` (see
+  PHASE2-AUTO-PACK.md), from Sprint 16 tip `4dc21eb`, built in
+  parallel with Sprint 17 (separate worktree/branch), as Ho
+  directed on 2026-11-16 (S-layer wired to snapshots; income/LPR/
+  materials links + NEV/ICE dual track; cockpit UI; two-
+  subpopulation structure for all nameplates; co-occurrence
+  prompts, never hard rules). Design authority: the Phase 1
+  report, the domain-pack design draft, the auto-model synthesis,
+  and the co-occurrence verification report incl. appendices 1–3
+  (Q1–Q11 rulings, prompt-system directive, no-generalization
+  rule). No LLM call anywhere; no migration. New: S-layer
+  computation over stored snapshots (trajectory extraction
+  excluding tick 0, per-tick effective structures, caller-supplied
+  OEM shares summing to 1, supplier-row/share attribution with
+  prospects at 0, strict-prices mode); transmission drivers
+  (price/income/penetration/margin + 4 dual-track drivers; F1
+  split so income/LPR/price terms apply per tick, not once);
+  3 new YAML rules; per-nameplate generation schedules (linear
+  interpolation, exactly two generations, hard structural gates);
+  the 22-entry prompt catalog (R1–R13/X1–X5/AVM1/BUNDLE1/SCREEN1/
+  EMBED1) with the (code, product-line) alias layer, the P.O
+  decomposition catalog, and a 9-fact morphology registry; 4 new
+  automotive endpoints + the prompt/catalog endpoints; the
+  `/cockpit/automotive` page (launcher, trajectory, S-layer form,
+  prompt evaluation, catalog). Phase 1 hard gates unchanged; no
+  product-level sum gate added. Acceptance: a chip-supply shock
+  moves production below baseline every tick and computed sales
+  below 75% of baseline. Backend 1510 → 1604 tests, 0 failed;
+  frontend 212 → 228, lint + build pass; smoke PASS. Limits:
+  coefficients remain labeled assumptions (no public
+  elasticities); two rates are documented literals at the Sprint
+  2 30-variable cap; schedules are two-generation only; the
+  global transition index is still advanced; morphology registry
+  holds 9 facts by design; one-host backstop {P01, P04} still
+  pending Ho's confirmation.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
