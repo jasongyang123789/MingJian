@@ -1189,7 +1189,7 @@ export interface NarrativeDirectionDefinition {
 
 export interface NarrativeGenerateRequest {
   topic: string | null
-  directions: NarrativeDirectionDefinition[]
+  directions?: NarrativeDirectionDefinition[]
   loop_id: string | null
 }
 
@@ -1358,9 +1358,72 @@ export interface DecisionNarrativeRead {
   created_at: string
   body: NarrativeBody
   polish: NarrativePolishRead | null
+  direction_mapping_ids: string[]
 }
 
 export interface DecisionNarrativeListRead {
   run_id: string
   narratives: DecisionNarrativeRead[]
+}
+
+// ==================== Sprint 14 — 方向推导 + 已存映射 ====================
+
+export interface DirectionMappingRead {
+  id: string
+  anchor_run_id: string
+  name: string
+  source_run_id: string
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+  deliberation_id: string | null
+  origin: 'derived' | 'authored'
+  rule_id: string | null
+  rules_version: string | null
+  rule_record: Record<string, unknown> | null
+  user_edited: boolean
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+export interface DirectionMappingListRead {
+  run_id: string
+  mappings: DirectionMappingRead[]
+}
+
+export type DirectionMappingCreate = NarrativeDirectionDefinition
+
+export interface DirectionMappingUpdate {
+  name?: string
+  source_run_id?: string
+  arm?: 'baseline' | 'strategy'
+  mece_branches?: string[]
+  deliberation_id?: string | null
+}
+
+export type DerivationRuleId = 'highest_p50' | 'most_robust' | 'baseline_control'
+export type DerivationOutcomeStatus = 'produced' | 'none' | 'duplicate' | 'skipped'
+
+export interface DerivationRuleOutcome {
+  rule_id: DerivationRuleId
+  status: DerivationOutcomeStatus
+  reason: string
+  direction_name: string | null
+  source_run_id: string | null
+  arm: 'baseline' | 'strategy' | null
+  duplicate_of_rule: string | null
+  p50: number | null
+  p_loss: number | null
+  expected_shortfall: number | null
+  expected_shortfall_alpha: number | null
+}
+
+export interface DerivationRead {
+  anchor_run_id: string
+  rules_version: string
+  derivation_hash: string
+  family_size: number
+  candidates_considered: number
+  outcomes: DerivationRuleOutcome[]
+  mappings: DirectionMappingRead[]
 }

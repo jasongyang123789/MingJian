@@ -9,7 +9,12 @@ import type {
   DecisionNarrativeListRead,
   DecisionNarrativeRead,
   DecompositionTree,
+  DerivationRead,
   DeterminismRead,
+  DirectionMappingCreate,
+  DirectionMappingListRead,
+  DirectionMappingRead,
+  DirectionMappingUpdate,
   ExpectedShortfallRequest,
   ExpectedShortfallResult,
   FirewallRead,
@@ -367,5 +372,29 @@ export const narrativesApi = {
   polish: (runId: string, narrativeId: string) =>
     api.post<NarrativePolishRead>(
       `/runs/${encodeURIComponent(runId)}/narratives/${encodeURIComponent(narrativeId)}/polish`,
+    ),
+}
+
+// ==================== Sprint 14 — 方向推导 + 已存映射 ====================
+export const directionsApi = {
+  derive: (runId: string) =>
+    api.post<DerivationRead>(`/runs/${encodeURIComponent(runId)}/directions/derive`),
+  listMappings: (runId: string) =>
+    api.get<DirectionMappingListRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings`,
+    ),
+  createMapping: (runId: string, payload: DirectionMappingCreate) =>
+    api.post<DirectionMappingRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings`,
+      payload,
+    ),
+  updateMapping: (runId: string, mappingId: string, payload: DirectionMappingUpdate) =>
+    api.put<DirectionMappingRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}`,
+      payload,
+    ),
+  deleteMapping: (runId: string, mappingId: string) =>
+    api.deleteNoContent(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}`,
     ),
 }
