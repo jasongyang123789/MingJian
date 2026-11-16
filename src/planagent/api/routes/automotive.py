@@ -7,6 +7,9 @@ backgrounded (Sprint 9 automation boundary):
   states per tick (read-only; unlike the replay package it writes no
   record). Any run status is readable; the response carries the status
   so partial trajectories are never mistaken for complete ones.
+- ``GET /runs/{id}/automotive/split-structure``: the run's stored
+  split-structure fragment (read-only), for the cockpit's S-layer
+  form and prompt evaluation over the run's own structure.
 - ``POST /runs/{id}/automotive/sales-layer``: the S-layer computation
   wired to the run's simulated production trajectory (Phase 2 item a).
   Requires a COMPLETED automotive run with a stored split structure;
@@ -111,6 +114,16 @@ class PromptsEvaluateRequest(BaseModel):
     dms_mandate_on: bool | None = None
 
 
+class SplitStructureRead(BaseModel):
+    """A run's stored split-structure fragment (read-only)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    structure: SplitStructure
+    validation: dict
+
+
 def _automotive_error(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=400, detail={"code": code, "message": message})
 
@@ -165,6 +178,32 @@ def _group_by_tick(
             )
         tick_states.append((tick, records[0].state))
     return tick_states
+
+
+def _load_split_fragment(run: SimulationRun) -> tuple[SplitStructure, dict]:
+    """The run's stored split structure + validation, or a 400."""
+
+    configuration = run.configuration or {}
+    fragment = configuration.get("split_structure")
+    if fragment is None:
+        raise _automotive_error(
+            "automotive_no_split_structure",
+            f"Run {run.id} carries no split structure; attach one at run creation.",
+        )
+    if not isinstance(fragment, dict) or "structure" not in fragment:
+        raise _automotive_error(
+            "automotive_corrupt_split_fragment",
+            f"Run {run.id} carries a malformed split-structure fragment.",
+        )
+    try:
+        structure = SplitStructure.model_validate(fragment["structure"])
+    except ValueError as exc:
+        raise _automotive_error(
+            "automotive_corrupt_split_fragment",
+            f"Run {run.id} carries a split structure that no longer parses: {exc}",
+        ) from exc
+    validation = fragment.get("validation")
+    return structure, validation if isinstance(validation, dict) else {}
 
 
 def _sales_layer_error(exc: ValueError) -> HTTPException:
@@ -223,6 +262,18 @@ async def get_automotive_trajectory(
     )
 
 
+@router.get(
+    "/runs/{run_id}/automotive/split-structure", response_model=SplitStructureRead
+)
+async def get_automotive_split_structure(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> SplitStructureRead:
+    run = await _load_automotive_run(session, run_id)
+    structure, validation = _load_split_fragment(run)
+    return SplitStructureRead(run_id=run.id, structure=structure, validation=validation)
+
+
 @router.post("/runs/{run_id}/automotive/sales-layer", response_model=SalesLayerRead)
 async def compute_automotive_sales_layer(
     run_id: str,
@@ -235,25 +286,7 @@ async def compute_automotive_sales_layer(
             "automotive_run_not_completed",
             f"Run {run_id} has status {run.status!r}; the S-layer requires a COMPLETED run.",
         )
-    configuration = run.configuration or {}
-    fragment = configuration.get("split_structure")
-    if fragment is None:
-        raise _automotive_error(
-            "automotive_no_split_structure",
-            f"Run {run_id} carries no split structure; attach one at run creation.",
-        )
-    if not isinstance(fragment, dict) or "structure" not in fragment:
-        raise _automotive_error(
-            "automotive_corrupt_split_fragment",
-            f"Run {run_id} carries a malformed split-structure fragment.",
-        )
-    try:
-        structure = SplitStructure.model_validate(fragment["structure"])
-    except ValueError as exc:
-        raise _automotive_error(
-            "automotive_corrupt_split_fragment",
-            f"Run {run_id} carries a split structure that no longer parses: {exc}",
-        ) from exc
+    structure, _validation = _load_split_fragment(run)
     snapshots = await _load_snapshots(session, run_id)
     if not snapshots:
         raise _automotive_error(

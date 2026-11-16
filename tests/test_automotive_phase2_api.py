@@ -297,6 +297,23 @@ def test_trajectory_rejects_non_automotive_and_missing(monkeypatch, tmp_path: Pa
         assert missing.status_code == 404
 
 
+def test_split_structure_endpoint_round_trips(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client, split_structure=PHASE2_SPLIT)
+        response = client.get(f"/runs/{run['id']}/automotive/split-structure")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["run_id"] == run["id"]
+        assert body["structure"]["oems"][0]["oem_id"] == "faw-vw"
+        assert body["structure"]["oems"][0]["nameplates"][0]["nameplate_id"] == "sagitar"
+        assert body["validation"]["is_valid"] is True
+        plain = _create_run(client)
+        missing = client.get(f"/runs/{plain['id']}/automotive/split-structure")
+        assert missing.status_code == 400
+        assert missing.json()["detail"]["code"] == "automotive_no_split_structure"
+
+
 def test_dual_track_splits_sum_to_spine_every_tick(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
