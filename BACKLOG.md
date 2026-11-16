@@ -649,6 +649,42 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   client timeout may trip on long live-model waves; no
   live-backend or real-browser verification in this sprint.
 
+## Fix batch 2 — live-smoke truncation: unified output cap + truncation kind (done)
+
+- Delivered on `strategy-engine/fix-batch2-truncation`
+  (see FIX-BATCH-2.md), from the S19+S20 merge tip `58a56a8`, as
+  approved by Ho on 2026-11-16 (Ho also directed the cap policy:
+  one loose unified cap, no per-template micro-tuning). Not a
+  numbered sprint: one verified live bug fixed, its
+  misclassification fixed, and every LLM output cap swept. (1)
+  Root cause, verified from the live smoke recorder file: a
+  `mckinsey.diagnose` call requested 1500 tokens, the provider
+  enforced it exactly (`finish_reason "length"`, 1500 completion
+  tokens, JSON cut mid-string), and the audit misreported it as a
+  `contract` failure — `finish_reason` appeared nowhere in `src/`.
+  The same run shows another provider ignoring the cap and
+  returning up to 2408 tokens for a legitimate output, so the
+  cliff threatens every model. Fixed with one shared cap,
+  `JSON_CONTRACT_MAX_TOKENS = 8000` (3.3x the observed 2408),
+  applied to all 17 skill templates, all 4 seminar templates,
+  the `generate_json_for_target` default, all 7 structured-output
+  sites, all 4 debate sites, both Jarvis sites, all 6 provider
+  defaults, and the polish cap; only proven-tiny outputs keep
+  small caps (change-detection 8/120, the 32-token connection-test
+  ping). Template/contract versions unchanged (parameter-only).
+  Budgets + timeouts untouched. (2) Truncation is now surfaced
+  (`finish_reason` threaded from both call paths onto
+  `SkillLLMResponse`, recorded in the audit detail) and
+  classified distinctly: new `SkillTruncatedError` (subclassing
+  `SkillContractError`, message names the truncation and the cap)
+  and new taxonomy kind `truncated` (seventh kind; never
+  retried). Retry-on-truncation is a follow-up option, not
+  implemented. No migration, no frontend change (the cockpit
+  renders the kind as a free string), no model change (the
+  re-run keeps `gpt-5.4` as regression proof). 21 new tests;
+  backend 1819 → 1840, 0 failed. Live-LLM verification of the
+  fix awaits the re-run on this branch.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
