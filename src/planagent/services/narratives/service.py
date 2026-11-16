@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, cast
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,9 +73,14 @@ from planagent.services.narratives.polish import (
 )
 from planagent.services.openai_client import OpenAIService
 from planagent.services.robustness.models import (
+    BootstrapResult,
     DecisionGatesRead,
     ExpectedShortfallResult,
+    GateEvaluation,
+    GateRegistration,
     RobustnessRead,
+    ThresholdSearchResult,
+    TornadoResult,
 )
 from planagent.services.simulation.distributions import MONTE_CARLO_SUMMARY_KEY
 from planagent.services.simulation.robustness import (
@@ -117,6 +122,101 @@ def _direction_corrupt(fragment: str, exc: ValidationError) -> DirectionError:
         "direction_corrupt_fragment",
         f"Stored {fragment} fragment fails its model: {exc}",
     )
+
+
+def _read_sub_fragment[ModelT: BaseModel](
+    fragment: dict[str, Any], key: str, model: type[ModelT], fragment_name: str
+) -> ModelT | None:
+    """Validate one stored sub-fragment, or None when absent.
+
+    A present-but-not-a-dict value is corrupt, not silently absent:
+    writers only ever store model dumps, so anything else means the
+    stored data is wrong-shaped.
+    """
+    value = fragment.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise NarrativeError(
+            "narrative_corrupt_fragment",
+            f"Stored {fragment_name} fragment fails its model: sub-fragment "
+            f"{key!r} is not a JSON object.",
+        )
+    try:
+        return model.model_validate(value)
+    except ValidationError as exc:
+        raise _corrupt(fragment_name, exc) from exc
+
+
+def _read_robustness(fragment: object, *, run_id: str, ensemble_id: str) -> RobustnessRead:
+    """Build a RobustnessRead from the stored robustness fragment.
+
+    Writers store per-analysis sub-fragments (``{"tornado": ...}``)
+    with no top-level ``run_id``; this validates each sub-fragment
+    on its own model and injects ``run_id``, exactly as the
+    robustness service's own ``get_robustness`` does. Validating
+    the raw fragment against ``RobustnessRead`` always failed (the
+    Sprint 13 bug, fixed in fix batch 1). Unknown keys are
+    ignored, matching ``get_robustness``.
+    """
+    if not isinstance(fragment, dict):
+        raise NarrativeError(
+            "narrative_corrupt_fragment",
+            "Stored robustness fragment fails its model: expected a JSON object.",
+        )
+    return RobustnessRead(
+        run_id=run_id,
+        ensemble_id=ensemble_id,
+        expected_shortfall=_read_sub_fragment(
+            fragment, "expected_shortfall", ExpectedShortfallResult, "robustness"
+        ),
+        tornado=_read_sub_fragment(fragment, "tornado", TornadoResult, "robustness"),
+        threshold_search=_read_sub_fragment(
+            fragment, "threshold_search", ThresholdSearchResult, "robustness"
+        ),
+        bootstrap=_read_sub_fragment(fragment, "bootstrap", BootstrapResult, "robustness"),
+    )
+
+
+def _read_gates_list(fragment: dict[str, Any], key: str) -> list[Any]:
+    value = fragment.get(key, [])
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise NarrativeError(
+            "narrative_corrupt_fragment",
+            f"Stored decision_gates fragment fails its model: {key!r} is not a list.",
+        )
+    return value
+
+
+def _read_gates(fragment: object, *, run_id: str) -> DecisionGatesRead:
+    """Build a DecisionGatesRead from the stored decision_gates fragment.
+
+    Same shape rule as :func:`_read_robustness`: writers store
+    ``{"registrations": [...], "evaluations": [...]}`` with no
+    top-level ``run_id``; each item is validated on its own model
+    and ``run_id`` is injected, as the gates read path does.
+    """
+    if not isinstance(fragment, dict):
+        raise NarrativeError(
+            "narrative_corrupt_fragment",
+            "Stored decision_gates fragment fails its model: expected a JSON object.",
+        )
+    try:
+        return DecisionGatesRead(
+            run_id=run_id,
+            registrations=[
+                GateRegistration.model_validate(item)
+                for item in _read_gates_list(fragment, "registrations")
+            ],
+            evaluations=[
+                GateEvaluation.model_validate(item)
+                for item in _read_gates_list(fragment, "evaluations")
+            ],
+        )
+    except ValidationError as exc:
+        raise _corrupt("decision_gates", exc) from exc
 
 
 def _lower_tail_shortfall(
@@ -248,17 +348,13 @@ class NarrativeService:
         robustness: RobustnessRead | None = None
         robustness_fragment = summary.get(ROBUSTNESS_SUMMARY_KEY)
         if robustness_fragment is not None:
-            try:
-                robustness = RobustnessRead.model_validate(robustness_fragment)
-            except ValidationError as exc:
-                raise _corrupt("robustness", exc) from exc
+            robustness = _read_robustness(
+                robustness_fragment, run_id=source.id, ensemble_id=ensemble.ensemble_id
+            )
         gates: DecisionGatesRead | None = None
         gates_fragment = summary.get(DECISION_GATES_SUMMARY_KEY)
         if gates_fragment is not None:
-            try:
-                gates = DecisionGatesRead.model_validate(gates_fragment)
-            except ValidationError as exc:
-                raise _corrupt("decision_gates", exc) from exc
+            gates = _read_gates(gates_fragment, run_id=source.id)
         return DirectionInputs(
             definition=definition,
             ensemble=ensemble,
@@ -527,10 +623,9 @@ class NarrativeService:
             # validate the whole robustness fragment against
             # RobustnessRead: the stored fragment has no top-level
             # run_id (writers store per-analysis sub-fragments), so
-            # whole-fragment validation always fails — the known
-            # Sprint 13 bug in _assemble_direction (verified
-            # 2026-11-16, see verification/backend-integration
-            # REPORT.md §5; fix deferred to its own branch). Other
+            # whole-fragment validation always fails — the Sprint 13
+            # bug in _assemble_direction, fixed in fix batch 1 by
+            # reading sub-fragments the same way. Other
             # sub-fragments (tornado, bootstrap, ...) are irrelevant
             # to derivation and are not read here.
             expected_shortfall: ExpectedShortfallResult | None = None

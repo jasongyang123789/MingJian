@@ -5,21 +5,28 @@ verified against the stored ensemble summaries read back through
 the API), the no-clobber rule for user-edited mappings, mapping
 CRUD with refuse-before-write validation, narrative generation
 from stored mappings (inline definitions win; cap 4; mapping ids
-pinned), and the known Sprint 13 refusal on robustness-enriched
-runs (pinned explicitly, NOT worked around — see the test's
-comment). Same scratch-SQLite + in-memory-bus + empty-LLM-keys
-pattern as the Sprint 1-13 tests. No live LLM call is ever made.
+pinned), and narrative generation on robustness/gates-enriched
+runs (fix batch 1: the Sprint 13 refusal is fixed, with
+corrupt-fragment refusal preserved). Same scratch-SQLite +
+in-memory-bus + empty-LLM-keys pattern as the Sprint 1-13 tests.
+No live LLM call is ever made.
 """
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from planagent.config import reset_settings_cache
-from planagent.db import reset_database_cache
+from planagent.db import get_database, reset_database_cache
+from planagent.domain.models import SimulationRun
 from planagent.main import create_app
+from planagent.services.simulation.robustness import (
+    DECISION_GATES_SUMMARY_KEY,
+    ROBUSTNESS_SUMMARY_KEY,
+)
 
 BOUND_SET = {
     "name": "case",
@@ -90,6 +97,59 @@ def _create_ensemble(client: TestClient, run_id: str, trials: int = 5) -> dict:
     response = client.post(f"/runs/{run_id}/monte-carlo", json={"trials": trials, "metric": "cash"})
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def _register_gates(client: TestClient, run_id: str) -> dict:
+    registered = client.post(
+        f"/runs/{run_id}/decision-gates",
+        json={
+            "gates": [
+                {"name": "g1_value", "metric": "mean", "operator": ">", "threshold": 0},
+            ]
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    return registered.json()
+
+
+async def _set_summary_fragment(run_id: str, key: str, value: object) -> None:
+    """Replace one top-level summary key by direct DB write.
+
+    Writers only ever store valid fragments, so corrupt-fragment
+    cases need direct manipulation (same pattern as the monitoring
+    corrupt-registration test).
+    """
+    database = get_database()
+    async with database.session() as session:
+        row = await session.get(SimulationRun, run_id)
+        assert row is not None
+        row.summary = {**(row.summary or {}), key: value}
+        await session.commit()
+
+
+async def _add_robustness_sub_fragment(run_id: str, key: str, value: object) -> None:
+    database = get_database()
+    async with database.session() as session:
+        row = await session.get(SimulationRun, run_id)
+        assert row is not None
+        summary = dict(row.summary or {})
+        fragment = dict(summary.get(ROBUSTNESS_SUMMARY_KEY) or {})
+        fragment[key] = value
+        summary[ROBUSTNESS_SUMMARY_KEY] = fragment
+        row.summary = summary
+        await session.commit()
+
+
+def _generate(client: TestClient, run_id: str, payload: dict) -> dict:
+    response = client.post(f"/runs/{run_id}/narratives", json=payload)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _narrative_count(client: TestClient, run_id: str) -> int:
+    listed = client.get(f"/runs/{run_id}/narratives")
+    assert listed.status_code == 200, listed.text
+    return len(listed.json()["narratives"])
 
 
 def _branch(client: TestClient, parent_id: str, cash: float) -> dict:
@@ -275,8 +335,8 @@ def test_derive_uses_lower_tail_shortfall(monkeypatch, tmp_path: Path) -> None:
             }
         }
         # Derivation must SUCCEED on the enriched run: it reads the
-        # expected_shortfall sub-fragment directly (see the known
-        # Sprint 13 bug note in test_generate_refuses_enriched_run).
+        # expected_shortfall sub-fragment directly (see the fix-batch-1
+        # tests below for the narrative side of the same shape rule).
         response = _derive(client, run["id"])
         assert response.status_code == 200, response.text
         body = response.json()
@@ -593,36 +653,245 @@ def test_delete_mapping_leaves_narratives_untouched(monkeypatch, tmp_path: Path)
 
 
 # ---------------------------------------------------------------------------
-# Known Sprint 13 bug (pinned, not fixed here)
+# Narrative generation on enriched runs (fix batch 1)
 # ---------------------------------------------------------------------------
 
 
-def test_generate_refuses_enriched_run_known_sprint13_bug(monkeypatch, tmp_path: Path) -> None:
-    """PINNED KNOWN BUG — do not "fix" by changing this test's expectation.
+def test_generate_succeeds_on_tornado_enriched_run(monkeypatch, tmp_path: Path) -> None:
+    """Fix batch 1: the Sprint 13 refusal is fixed.
 
     Verified 2026-11-16 over real HTTP (see
     ~/workspace/verification/backend-integration-2026-11-16/REPORT.md
-    §5): Sprint 13's ``_assemble_direction`` validates the raw stored
-    robustness fragment against ``RobustnessRead``, which requires a
-    top-level ``run_id`` the writers never store — so narrative
-    generation refuses any run with tornado/gates analysis. The fix
-    gets its own branch with regression tests after Sprint 14; this
-    test pins the current refusal so the fix branch sees exactly
-    what changes. Sprint 14's derive path reads the
-    expected_shortfall sub-fragment directly and is NOT affected
-    (see test_derive_uses_lower_tail_shortfall).
+    §5): generation refused any run with tornado/gates analysis
+    because ``_assemble_direction`` validated the raw stored
+    fragments against read models requiring a top-level ``run_id``
+    the writers never store. The fix validates each sub-fragment
+    on its own model (the services' own read-path precedent) and
+    injects ``run_id``.
     """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        ensemble = _create_ensemble(client, run["id"])
+        tornado = client.post(f"/runs/{run['id']}/robustness/tornado", json={})
+        assert tornado.status_code == 201, tornado.text
+        body = _generate(
+            client,
+            run["id"],
+            {"directions": [{"name": "D", "source_run_id": run["id"]}]},
+        )
+        assert body["version"] == 1
+        direction = body["body"]["directions"][0]
+        assert direction["name"] == "D"
+        drivers = direction["drivers"]
+        assert len(drivers["rows"]) == 1
+        assert drivers["rows"][0]["variable"] == "cash"
+        assert drivers["ensemble_id"] == ensemble["ensemble_id"]
+
+
+def test_generate_succeeds_on_gates_enriched_run(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        _register_gates(client, run["id"])
+        body = _generate(
+            client,
+            run["id"],
+            {"directions": [{"name": "D", "source_run_id": run["id"]}]},
+        )
+        signals = body["body"]["directions"][0]["signals"]
+        gate_signals = [s for s in signals if s["kind"] == "decision_gate"]
+        assert len(gate_signals) == 1
+        assert gate_signals[0]["name"] == "g1_value"
+        assert gate_signals[0]["provenance"] == "computed"
+        assert "not yet evaluated" in gate_signals[0]["text"]
+
+
+def test_generate_succeeds_on_fully_enriched_run(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_run(client)
         _create_ensemble(client, run["id"])
         tornado = client.post(f"/runs/{run['id']}/robustness/tornado", json={})
         assert tornado.status_code == 201, tornado.text
-        response = client.post(
-            f"/runs/{run['id']}/narratives",
-            json={"directions": [{"name": "D", "source_run_id": run["id"]}]},
+        shortfall = client.post(
+            f"/runs/{run['id']}/robustness/expected-shortfall", json={"alpha": 0.05}
         )
-        assert response.status_code == 400, response.text
-        detail = response.json()["detail"]
-        assert detail["code"] == "narrative_corrupt_fragment"
-        assert "robustness" in detail["message"]
+        assert shortfall.status_code == 201, shortfall.text
+        bootstrap = client.post(f"/runs/{run['id']}/robustness/bootstrap", json={"draws": 100})
+        assert bootstrap.status_code == 201, bootstrap.text
+        search = client.post(
+            f"/runs/{run['id']}/robustness/threshold-search",
+            json={
+                "variable": "cash",
+                "mode": "p_loss",
+                "target": 0.5,
+                "direction": "decreasing",
+                "trials_per_evaluation": 2,
+                "max_iterations": 2,
+            },
+        )
+        assert search.status_code == 201, search.text
+        _register_gates(client, run["id"])
+        body = _generate(
+            client,
+            run["id"],
+            {"directions": [{"name": "D", "source_run_id": run["id"]}]},
+        )
+        direction = body["body"]["directions"][0]
+        assert len(direction["drivers"]["rows"]) == 1
+        kinds = [s["kind"] for s in direction["signals"]]
+        assert "decision_gate" in kinds
+        assert "threshold_search" in kinds
+
+
+def test_generate_from_mappings_succeeds_on_enriched_run(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        tornado = client.post(f"/runs/{run['id']}/robustness/tornado", json={})
+        assert tornado.status_code == 201, tornado.text
+        derived = client.post(f"/runs/{run['id']}/directions/derive")
+        assert derived.status_code == 200, derived.text
+        mapping_ids = [m["id"] for m in derived.json()["mappings"]]
+        assert mapping_ids
+        body = _generate(client, run["id"], {"topic": "From mappings"})
+        assert body["direction_mapping_ids"] == mapping_ids[:4]
+        assert len(body["body"]["directions"]) == len(mapping_ids[:4])
+
+
+def test_generate_ignores_unknown_robustness_keys(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        tornado = client.post(f"/runs/{run['id']}/robustness/tornado", json={})
+        assert tornado.status_code == 201, tornado.text
+        asyncio.run(_add_robustness_sub_fragment(run["id"], "future_analysis", {"x": 1}))
+        body = _generate(
+            client,
+            run["id"],
+            {"directions": [{"name": "D", "source_run_id": run["id"]}]},
+        )
+        assert len(body["body"]["directions"][0]["drivers"]["rows"]) == 1
+
+
+def _assert_corrupt_refusal(client: TestClient, run_id: str, fragment_name: str) -> None:
+    response = client.post(
+        f"/runs/{run_id}/narratives",
+        json={"directions": [{"name": "D", "source_run_id": run_id}]},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "narrative_corrupt_fragment"
+    assert fragment_name in detail["message"]
+    assert _narrative_count(client, run_id) == 0
+
+
+def test_generate_refuses_wrong_shaped_tornado_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(
+                run["id"], ROBUSTNESS_SUMMARY_KEY, {"tornado": {"rows": "not-a-list"}}
+            )
+        )
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_wrong_shaped_shortfall_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(
+                run["id"], ROBUSTNESS_SUMMARY_KEY, {"expected_shortfall": {"alpha": 0.05}}
+            )
+        )
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_wrong_shaped_threshold_search_fragment(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(
+                run["id"], ROBUSTNESS_SUMMARY_KEY, {"threshold_search": {"variable": "cash"}}
+            )
+        )
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_wrong_shaped_bootstrap_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(
+                run["id"], ROBUSTNESS_SUMMARY_KEY, {"bootstrap": {"baseline": "not-a-list"}}
+            )
+        )
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_non_dict_robustness_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(_set_summary_fragment(run["id"], ROBUSTNESS_SUMMARY_KEY, "garbage"))
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_non_dict_tornado_sub_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(run["id"], ROBUSTNESS_SUMMARY_KEY, {"tornado": "garbage"})
+        )
+        _assert_corrupt_refusal(client, run["id"], "robustness")
+
+
+def test_generate_refuses_wrong_shaped_gates_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(
+                run["id"], DECISION_GATES_SUMMARY_KEY, {"registrations": [{"id": "x"}]}
+            )
+        )
+        _assert_corrupt_refusal(client, run["id"], "decision_gates")
+
+
+def test_generate_refuses_non_list_gates_registrations(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(
+            _set_summary_fragment(run["id"], DECISION_GATES_SUMMARY_KEY, {"registrations": "nope"})
+        )
+        _assert_corrupt_refusal(client, run["id"], "decision_gates")
+
+
+def test_generate_refuses_non_dict_gates_fragment(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        asyncio.run(_set_summary_fragment(run["id"], DECISION_GATES_SUMMARY_KEY, "garbage"))
+        _assert_corrupt_refusal(client, run["id"], "decision_gates")
