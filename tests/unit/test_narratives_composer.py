@@ -50,7 +50,7 @@ from planagent.services.robustness.models import (
     TornadoResult,
     TornadoRow,
 )
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.models import SkillDeliberationRecord
 from planagent.services.skills.orchestration import SkillLLMUnavailable
 from tests.skill_fixtures import ScriptedSkillPort
@@ -796,3 +796,16 @@ async def test_polish_contract_failure_raises() -> None:
     port = ScriptedSkillPort({POLISH_TEMPLATE_ID: [{"wrong_key": "nope"}]})
     with pytest.raises(SkillContractError):
         await polish_markdown(port, "# Draft")
+
+
+async def test_polish_truncated_response_raises_truncation_error_naming_the_cap() -> None:
+    # Fix batch 2: payload None + finish_reason "length" is truncation,
+    # not a generic contract failure; the message names the cap.
+    port = ScriptedSkillPort(
+        {POLISH_TEMPLATE_ID: [None]},  # type: ignore[list-item]
+        finish_reason_script={POLISH_TEMPLATE_ID: ["length"]},
+    )
+    with pytest.raises(SkillTruncatedError, match="truncated") as excinfo:
+        await polish_markdown(port, "# Draft")
+    assert "8000" in str(excinfo.value)
+    assert excinfo.value.max_tokens == 8000

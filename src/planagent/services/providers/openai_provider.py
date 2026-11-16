@@ -4,6 +4,7 @@ import json
 from typing import Any
 from openai import AsyncOpenAI
 from planagent.services.providers.base import LLMResponse
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 
 class OpenAIProvider:
@@ -29,7 +30,7 @@ class OpenAIProvider:
         model: str,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 1024,
+        max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
         temperature: float = 0.3,
     ) -> LLMResponse | None:
         if not self._client:
@@ -62,7 +63,7 @@ class OpenAIProvider:
         system_prompt: str,
         user_prompt: str,
         schema: dict[str, Any] | None = None,
-        max_tokens: int = 1024,
+        max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
         temperature: float = 0.3,
     ) -> tuple[LLMResponse | None, dict[str, Any] | None]:
         if not self._client:

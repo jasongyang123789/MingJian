@@ -280,3 +280,25 @@ def test_tracker_check_allows_calls_within_budget() -> None:
     tracker.record_completed_call(total_tokens=0)
     with pytest.raises(BudgetExhaustedError):
         tracker.check_before_call()
+
+
+async def test_finished_detail_records_the_port_reported_finish_reason() -> None:
+    # Fix batch 2: the stage_call_finished detail carries finish_reason
+    # when the port reports it, so a truncated call is visible in the
+    # audit even before the stage runner classifies it.
+    port, _, recorder, _ = _port(
+        [SkillLLMResponse(model="fake", payload={"ok": True}, finish_reason="stop")]
+    )
+    response = await _call(port)
+    assert response.finish_reason == "stop"
+    finished = recorder.pending[1]
+    assert finished.detail["finish_reason"] == "stop"
+
+
+async def test_finished_detail_records_null_finish_reason_when_unreported() -> None:
+    # Ports that do not report a finish reason (older fakes, providers
+    # without the field) record null — absence, not a fabricated value.
+    port, _, recorder, _ = _port([_ok_response()])
+    await _call(port)
+    finished = recorder.pending[1]
+    assert finished.detail["finish_reason"] is None

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
+
 
 @dataclass(frozen=True)
 class LLMResponse:
@@ -26,7 +28,7 @@ class LLMProvider(Protocol):
         model: str,
         system_prompt: str,
         user_prompt: str,
-        max_tokens: int = 1024,
+        max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
         temperature: float = 0.3,
     ) -> LLMResponse | None: ...
 
@@ -37,7 +39,7 @@ class LLMProvider(Protocol):
         system_prompt: str,
         user_prompt: str,
         schema: dict[str, Any] | None = None,
-        max_tokens: int = 1024,
+        max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
         temperature: float = 0.3,
     ) -> tuple[LLMResponse | None, dict[str, Any] | None]: ...
 

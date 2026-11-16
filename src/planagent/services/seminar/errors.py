@@ -9,6 +9,12 @@ kinds:
   internal retries exhausted). The ONLY retryable kind.
 * ``contract`` — output arrived but failed contract validation.
   Never retried: the same prompt will most likely fail again.
+* ``truncated`` — the provider cut the output at the token cap
+  (``finish_reason="length"``), so the JSON is incomplete by
+  construction (fix batch 2). Never retried under the current
+  policy: retrying the same capped call would truncate again.
+  Retry-on-truncation with a raised cap is a follow-up option,
+  deliberately NOT implemented here.
 * ``unavailable`` — no endpoint configured / auth failure / 5xx
   collapsed by the port into an empty response. Never retried.
 * ``budget_exhausted`` — a seminar budget (stage calls or tokens)
@@ -37,6 +43,7 @@ class ErrorKind(str, Enum):
 
     TIMEOUT = "timeout"
     CONTRACT = "contract"
+    TRUNCATED = "truncated"
     UNAVAILABLE = "unavailable"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
@@ -84,8 +91,8 @@ def is_timeout_exception(exc: BaseException) -> bool:
 def is_retryable_error(exc: BaseException) -> bool:
     """True only for timeout errors (design §10.3).
 
-    Contract failures, unavailability, budget exhaustion, and
-    cancellations are never retried.
+    Contract failures, truncations, unavailability, budget
+    exhaustion, and cancellations are never retried.
     """
     return is_timeout_exception(exc)
 

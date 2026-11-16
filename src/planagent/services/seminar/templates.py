@@ -22,6 +22,14 @@ seminar template contains "follow the board consensus" wording —
 consensus may only appear as an object of evaluation, never as a
 directive. Tests pin both the presence of the critical-evaluation
 wording and the absence of consensus-following wording.
+
+Fix batch 2 (output caps): all four templates use the shared loose
+cap :data:`JSON_CONTRACT_MAX_TOKENS` (see
+:mod:`planagent.services.skills.templates` for the rationale — the
+old 1500 default truncated a live diagnose stage, and the chair
+templates' 3000 was set without live evidence). The cap is a call
+parameter, not prompt content: changing it is parameter-only, so the
+seminar template version stays "1" (see FIX-BATCH-2.md).
 """
 
 from __future__ import annotations
@@ -29,7 +37,11 @@ from __future__ import annotations
 import re
 from string import Formatter
 
-from planagent.services.skills.templates import SkillTemplate, render_template
+from planagent.services.skills.templates import (
+    JSON_CONTRACT_MAX_TOKENS,
+    SkillTemplate,
+    render_template,
+)
 
 SEMINAR_TEMPLATE_VERSION = "1"
 
@@ -82,7 +94,7 @@ def _seminar_template(
     system_prompt: str,
     user_template: str,
     slots: tuple[str, ...],
-    max_tokens: int = 1500,
+    max_tokens: int = JSON_CONTRACT_MAX_TOKENS,
 ) -> SkillTemplate:
     return SkillTemplate(
         id=template_id,
@@ -205,7 +217,6 @@ _register(
         "opposite senses keeps BOTH sources with their differing "
         "stances — never merge a disagreement away.\n\n" + _JSON_ONLY,
         ("topic", "quoted_claims", "prepass_groups", "output_language"),
-        max_tokens=3000,
     )
 )
 
@@ -258,7 +269,6 @@ _register(
             "chair_participation",
             "output_language",
         ),
-        max_tokens=3000,
     )
 )
 

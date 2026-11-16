@@ -12,6 +12,7 @@ from planagent.config import Settings
 from planagent.domain.enums import EventTopic
 from planagent.events.bus import EventBus
 from planagent.services.openai_client import OpenAIService
+from planagent.services.skills.templates import JSON_CONTRACT_MAX_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +279,7 @@ class JarvisOrchestrator:
                             ],
                         }
                     )[:4000],
-                    max_tokens=700,
+                    max_tokens=JSON_CONTRACT_MAX_TOKENS,
                 )
                 if isinstance(parsed, dict) and parsed:
                     output["model_review"] = parsed
@@ -440,7 +441,10 @@ class JarvisOrchestrator:
             sys_p = f'You are Jarvis orchestration. Validate {target} stage for \'{task.task_type}\'. Respond JSON: {{"status":"ok|warn|fail","findings":[],"recommendations":[]}}'
             usr_c = str(task.payload.get("query", task.payload.get("topic", "")))[:2000]
             _, parsed = await self._openai.generate_json_for_target(
-                target=target, system_prompt=sys_p, user_content=usr_c, max_tokens=500
+                target=target,
+                system_prompt=sys_p,
+                user_content=usr_c,
+                max_tokens=JSON_CONTRACT_MAX_TOKENS,
             )
             return JarvisStepResult(
                 step=step_name,

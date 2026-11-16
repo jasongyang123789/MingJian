@@ -23,6 +23,11 @@ errors surface as :class:`TimeoutError` (so the retry wrapper can
 retry exactly timeouts, and the taxonomy can classify them), and SDK
 token usage is captured onto the response where the provider reports
 it. Every other failure still collapses to ``payload=None``.
+
+Fix batch 2 adds a third difference: the SDK finish reason is
+captured onto the response, so a response cut at the token cap
+(``finish_reason="length"``) is classified as truncation, never as a
+generic contract failure.
 """
 
 from __future__ import annotations
@@ -146,9 +151,24 @@ class ParameterizedSkillPort:
                 model=self._resolved.model,
                 payload=parsed if isinstance(parsed, dict) else None,
                 usage=_sdk_usage(response),
+                finish_reason=_sdk_finish_reason(response),
             )
         except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
             return SkillLLMResponse(model=None, payload=None)
+
+
+def _sdk_finish_reason(response: object) -> str | None:
+    """Read the first choice's finish reason off an SDK response.
+
+    ``"length"`` means the provider cut the output at the token cap.
+    Missing choices / missing attribute report None (not reported),
+    never a fabricated value.
+    """
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    reason = getattr(choices[0], "finish_reason", None)
+    return str(reason) if reason else None
 
 
 def _sdk_usage(response: object) -> TokenUsage | None:
