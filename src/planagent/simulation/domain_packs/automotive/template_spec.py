@@ -25,10 +25,11 @@ double as lever handles for the C4 scenario families).
 
 Formula graph (evaluation order matters — drivers chain within a tick):
 
-- ``demand_growth_rate`` (initial): monthly growth from confidence +
-  income. The tax term is deliberately NOT here: a tax change is a
-  LEVEL shift, and putting it in a monthly growth rate would compound
-  it every tick.
+- ``demand_growth_rate`` (initial): monthly growth from confidence
+  ONLY. The income / LPR / price terms live in the retail driver,
+  which reads the CURRENT state each tick (Phase 2): income and price
+  evolve per tick, so freezing them into a once-per-run formula would
+  double-count the level and miss the dynamics.
 - ``demand_level_factor`` (initial): the 2026-cliff event anchor
   (semi-elasticity 1.25, synthesis C2 link 2 — NON-structural, event
   observation only). Applied ONCE, on tick 1, by the retail driver via
@@ -37,10 +38,17 @@ Formula graph (evaluation order matters — drivers chain within a tick):
   pull-forward stock so the retail driver can form the decay ratio
   (a driver self-reference reads the CURRENT state, never the initial
   value — the separate initial formula is the only way to see both).
-- Drivers, in order: pull-forward decay → retail → inventory →
-  production → generation transition. Each driver is self-referential,
+- Drivers, in order: pull-forward decay → price (partial adjustment
+  toward the material-implied level) → income (monthly compounding
+  of the annual growth rate) → retail (confidence + income + LPR +
+  price + pull-forward drag, tax level factor on tick 1) → inventory
+  → production → NEV penetration drift → NEV/ICE retail splits →
+  NEV/ICE production splits → Tier-1 margin (unpassed material-cost
+  pressure) → generation transition. Each driver is self-referential,
   so rule effects applied earlier in the same tick are PRESERVED (the
-  driver transforms the post-rule state, it does not reset it).
+  driver transforms the post-rule state, it does not reset it) —
+  except the four split drivers, which re-derive their fields from
+  the spine x penetration each tick by construction.
 """
 
 from __future__ import annotations
@@ -64,7 +72,14 @@ TEMPLATE_VARIABLES: list[dict] = [
         "unit": "index (1.0 = 2025)",
         "distribution": {"type": "fixed", "value": 1.0},
         "evidence_ref": "NBS via synthesis B4 (per-capita disposable income CNY 43,377 in 2025, nominal +5.0%)",
-        "description": "Disposable-income level, 1.0 = 2025. The +5.0%/year path is an assumption parameter (C1).",
+        "description": "Disposable-income level, 1.0 = 2025. Compounds monthly at income_growth_rate_annual/12 via the income tick driver (Phase 2); the retail driver reads the current level each tick (C2 link: income -> demand).",
+    },
+    {
+        "id": "lpr_proxy",
+        "unit": "index (1.0 = baseline)",
+        "distribution": {"type": "fixed", "value": 1.0},
+        "evidence_ref": "assumption:pending-calibration (synthesis C1/B4: normalized index, 1.0 = baseline; the live LPR value is bound per run — no point value is baked in)",
+        "description": "Interest-rate environment proxy. Below 1.0 = easier financing, supporting demand through the retail driver (C2 link: LPR -> financing cost -> demand). Lever for the C4 monetary-easing family.",
     },
     {
         "id": "policy_tax_rate",
@@ -102,6 +117,13 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "assumption:pending-calibration (synthesis C2 link 6: 1.0 = normal supply baseline; China scaling factor is an assumption parameter)",
         "description": "Chip supply level. Below 1.0 constrains production through the production driver (C2 link 6).",
     },
+    {
+        "id": "material_cost_index",
+        "unit": "index (1.0 = baseline)",
+        "distribution": {"type": "fixed", "value": 1.0},
+        "evidence_ref": "synthesis C1 (lithium + steel/aluminum proxy composite, 1.0 = baseline)",
+        "description": "Raw-material cost pressure. Passes into transaction prices via the price driver (partial adjustment toward the material-implied level) and squeezes the Tier-1 margin via the margin driver while unpassed (C2 links 7-8).",
+    },
     # --- Tier-1 / sales-strategy parameters (S): SIMULATED, Ho-authorized ---
     {
         "id": "annual_cut_rate",
@@ -130,7 +152,7 @@ TEMPLATE_VARIABLES: list[dict] = [
         "unit": "rate",
         "distribution": {"type": "fixed", "value": 0.479},
         "evidence_ref": "CAAM via synthesis B1 (2025 total-volume NEV penetration 47.9%; retail caliber is higher and must never be mixed in)",
-        "description": "NEV share of total vehicle sales (CAAM total-volume caliber). NEV/ICE dual-track dynamics are Phase 2 (v2).",
+        "description": "NEV share of total vehicle sales (CAAM total-volume caliber). Drifts monthly via the penetration driver (Phase 2 dual track); the NEV/ICE split drivers derive each track from the shared spine x this penetration.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
@@ -225,31 +247,56 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "synthesis C2 link 2 event anchor (2026 cliff: +20% low-band purchase cost, ~-25% volume; NON-structural semi-elasticity, sensitivity analysis only)",
         "description": "Retail LEVEL semi-elasticity to the purchase-tax rate: the 2026 cliff event anchor. Applied once (tick 1), never compounded. High-band behavior differs mechanistically and must not share this elasticity (C2).",
     },
+    # --- Phase 2 transmission-link sensitivities (C5 assumption parameters) ---
+    {
+        "id": "lpr_sensitivity",
+        "unit": "growth per index point",
+        "distribution": {"type": "fixed", "value": 0.10},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public rate elasticity exists; placeholder sensitivity for tornado analysis)",
+        "description": "Monthly retail growth per point of the LPR proxy BELOW 1.0 (easing supports demand; tightening drags it). Magnitude is a placeholder; direction and mechanism are the Phase 2 deliverable.",
+    },
+    {
+        "id": "material_passthrough",
+        "unit": "price ratio per index point",
+        "distribution": {"type": "fixed", "value": 0.30},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public passthrough estimate exists; placeholder sensitivity for tornado analysis)",
+        "description": "Share of raw-material cost pressure passed into transaction prices: the price driver's target level is 1 + passthrough x (material_cost_index - 1). The unpassed remainder squeezes the Tier-1 margin (C2 links 7-8).",
+    },
+    {
+        "id": "price_sensitivity",
+        "unit": "growth per index point",
+        "distribution": {"type": "fixed", "value": 0.20},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5/A9: no public price elasticity exists; placeholder sensitivity for tornado analysis)",
+        "description": "Monthly retail growth drag per point of the price index above 1.0. Magnitude is a placeholder; direction and mechanism are the Phase 2 deliverable.",
+    },
+    {
+        "id": "margin_material_sensitivity",
+        "unit": "margin points per index point",
+        "distribution": {"type": "fixed", "value": 0.02},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; placeholder sensitivity)",
+        "description": "Tier-1 margin points lost per tick per point of unpassed material-cost pressure (material_cost_index minus the current price index). Price passthrough mitigates the squeeze.",
+    },
+    # NOTE (Phase 2, template size): the variable-set limit is 30
+    # (Sprint 2 design), and this template holds exactly 30. Two
+    # Phase 2 parameters stay formula LITERALS by that precedent —
+    # the income growth rate (0.05/year, NBS) in the income driver
+    # and the penetration drift (0.002/month, placeholder) in the
+    # penetration driver — promoted to variables when calibrated.
+    # The income LEVEL (income_index) and penetration LEVEL
+    # (nev_penetration) remain sampled lever handles.
 ]
 
 TEMPLATE_FORMULAS: list[dict] = [
     {
         "output": "demand_growth_rate",
         "expression": {
-            "op": "add",
+            "op": "multiply",
             "args": [
-                {
-                    "op": "multiply",
-                    "args": [
-                        {"ref": "confidence_sensitivity"},
-                        {"op": "subtract", "args": [{"ref": "consumer_confidence_proxy"}, 1]},
-                    ],
-                },
-                {
-                    "op": "multiply",
-                    "args": [
-                        {"ref": "income_sensitivity"},
-                        {"op": "subtract", "args": [{"ref": "income_index"}, 1]},
-                    ],
-                },
+                {"ref": "confidence_sensitivity"},
+                {"op": "subtract", "args": [{"ref": "consumer_confidence_proxy"}, 1]},
             ],
         },
-        "description": "Initial formula (once per run): monthly retail growth from confidence + income. The tax term is NOT here — a tax change is a level shift (see demand_level_factor).",
+        "description": "Initial formula (once per run): monthly retail growth from confidence ONLY (Phase 2: the income term moved into the retail driver, which reads the current income level each tick; the LPR and price terms live there too). The tax term is NOT here — a tax change is a level shift (see demand_level_factor).",
     },
     {
         "output": "demand_level_factor",
@@ -283,6 +330,63 @@ TEMPLATE_FORMULAS: list[dict] = [
         "description": "Tick driver (C2 link 11): pull-forward stock decays 2% per tick. The 2% rate is an assumption parameter (C5: no initial value, calibrate on 2026 actuals); literal in Phase 1, promote to a variable when calibrated.",
     },
     {
+        "output": "price_index",
+        "tick_driver": True,
+        "expression": {
+            "op": "add",
+            "args": [
+                {"ref": "price_index"},
+                {
+                    "op": "multiply",
+                    "args": [
+                        0.5,
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        1,
+                                        {
+                                            "op": "multiply",
+                                            "args": [
+                                                {"ref": "material_passthrough"},
+                                                {
+                                                    "op": "subtract",
+                                                    "args": [{"ref": "material_cost_index"}, 1],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                                {"ref": "price_index"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (C2 link 7, Phase 2): partial adjustment toward the material-implied price level 1 + passthrough x (material - 1). The 0.5 adjustment speed is an assumption parameter (literal, Phase 2); at the baseline (material = 1) the driver is a no-op. Rule effects on price are preserved in the level but mean-revert toward the cost-implied target.",
+    },
+    {
+        "output": "income_index",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "income_index"},
+                {
+                    "op": "add",
+                    "args": [
+                        1,
+                        {"op": "divide", "args": [0.05, 12]},
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (C2 link: income -> demand, Phase 2): disposable income compounds monthly at 5.0%/year / 12 (NBS 2025 nominal growth; the rate is a literal — the template holds the 30-variable Sprint 2 limit — promoted to a variable when calibrated). The retail driver reads the current level each tick.",
+    },
+    {
         "output": "sales_volume_retail",
         "tick_driver": True,
         "expression": {
@@ -295,7 +399,61 @@ TEMPLATE_FORMULAS: list[dict] = [
                         {
                             "op": "subtract",
                             "args": [
-                                {"op": "add", "args": [1, {"ref": "demand_growth_rate"}]},
+                                {
+                                    "op": "subtract",
+                                    "args": [
+                                        {
+                                            "op": "subtract",
+                                            "args": [
+                                                {
+                                                    "op": "add",
+                                                    "args": [
+                                                        {
+                                                            "op": "add",
+                                                            "args": [
+                                                                1,
+                                                                {"ref": "demand_growth_rate"},
+                                                            ],
+                                                        },
+                                                        {
+                                                            "op": "multiply",
+                                                            "args": [
+                                                                {"ref": "income_sensitivity"},
+                                                                {
+                                                                    "op": "subtract",
+                                                                    "args": [
+                                                                        {"ref": "income_index"},
+                                                                        1,
+                                                                    ],
+                                                                },
+                                                            ],
+                                                        },
+                                                    ],
+                                                },
+                                                {
+                                                    "op": "multiply",
+                                                    "args": [
+                                                        {"ref": "lpr_sensitivity"},
+                                                        {
+                                                            "op": "subtract",
+                                                            "args": [{"ref": "lpr_proxy"}, 1],
+                                                        },
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                        {
+                                            "op": "multiply",
+                                            "args": [
+                                                {"ref": "price_sensitivity"},
+                                                {
+                                                    "op": "subtract",
+                                                    "args": [{"ref": "price_index"}, 1],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
                                 {
                                     "op": "multiply",
                                     "args": [
@@ -346,7 +504,7 @@ TEMPLATE_FORMULAS: list[dict] = [
                 },
             ],
         },
-        "description": "Tick driver (C2 links 2+11): retail compounds at (1 + demand growth - pull-forward drag), where the drag is 1% x the remaining pull-forward ratio (assumption parameter, literal in Phase 1). The tax LEVEL factor applies once, on tick 1, via the first-tick indicator max(0, min(1, 2 - tick)).",
+        "description": "Tick driver (C2 links 2+11, Phase 2 transmission links): retail compounds at (1 + demand growth + income term - LPR term - price term - pull-forward drag), where the income term reads the CURRENT income level, the LPR term reads the CURRENT rate proxy (easing supports demand), and the price term reads the CURRENT price level (same-tick drivers chain in list order). The drag is 1% x the remaining pull-forward ratio (assumption parameter, literal). The tax LEVEL factor applies once, on tick 1, via the first-tick indicator max(0, min(1, 2 - tick)).",
     },
     {
         "output": "dealer_inventory_coef",
@@ -424,6 +582,84 @@ TEMPLATE_FORMULAS: list[dict] = [
         "description": "Tick driver (C2 links 5+6): production is cut when the inventory coefficient exceeds the 1.2 reasonable-band ceiling (CADA, B1) and constrained when chip supply falls below normal. The 0.05 inventory response and 0.5 chip response are assumption parameters (C5); literals in Phase 1. Reads the same-tick inventory value.",
     },
     {
+        "output": "nev_penetration",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                {
+                    "op": "add",
+                    "args": [{"ref": "nev_penetration"}, 0.002],
+                },
+                1,
+            ],
+        },
+        "description": "Tick driver (Phase 2 dual track): NEV penetration drifts 0.002/month, capped at 1.0. The drift is a placeholder assumption parameter (literal — the template holds the 30-variable Sprint 2 limit — promoted to a variable when calibrated); the split drivers below read the same-tick value.",
+    },
+    {
+        "output": "nev_retail_volume",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "sales_volume_retail"}, {"ref": "nev_penetration"}],
+        },
+        "description": "Tick driver (Phase 2 dual track): NEV retail is the shared retail spine x the same-tick NEV penetration. Re-derived each tick; sums with ice_retail_volume to the spine by construction.",
+    },
+    {
+        "output": "ice_retail_volume",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "sales_volume_retail"},
+                {"op": "subtract", "args": [1, {"ref": "nev_penetration"}]},
+            ],
+        },
+        "description": "Tick driver (Phase 2 dual track): ICE retail is the shared retail spine x (1 - NEV penetration).",
+    },
+    {
+        "output": "nev_production_volume",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "production_volume"}, {"ref": "nev_penetration"}],
+        },
+        "description": "Tick driver (Phase 2 dual track): NEV production is the shared production spine x the same-tick NEV penetration. Sums with ice_production_volume to the spine by construction.",
+    },
+    {
+        "output": "ice_production_volume",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "production_volume"},
+                {"op": "subtract", "args": [1, {"ref": "nev_penetration"}]},
+            ],
+        },
+        "description": "Tick driver (Phase 2 dual track): ICE production is the shared production spine x (1 - NEV penetration).",
+    },
+    {
+        "output": "tier1_gross_margin",
+        "tick_driver": True,
+        "expression": {
+            "op": "subtract",
+            "args": [
+                {"ref": "tier1_gross_margin"},
+                {
+                    "op": "multiply",
+                    "args": [
+                        {"ref": "margin_material_sensitivity"},
+                        {
+                            "op": "subtract",
+                            "args": [{"ref": "material_cost_index"}, {"ref": "price_index"}],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (C2 link 8, Phase 2): the Tier-1 margin is squeezed by UNPASSED material-cost pressure — the gap between the material cost index and the current (same-tick) price level. Price passthrough mitigates the squeeze; at the baseline (material = price = 1) the driver is a no-op. Coarse dynamics: no floor, horizons are 6-12 ticks.",
+    },
+    {
         "output": "generation_transition_index",
         "tick_driver": True,
         "expression": {
@@ -433,7 +669,7 @@ TEMPLATE_FORMULAS: list[dict] = [
                 1,
             ],
         },
-        "description": "Tick driver (Ho 2026-11-16 generation dimension): the representative successor-generation share ramps 5 points per tick, capped at 1.0. The 5-point rate is an assumption parameter (literal in Phase 1); per-nameplate schedules are Phase 2.",
+        "description": "Tick driver (Ho 2026-11-16 generation dimension): the representative successor-generation share ramps 5 points per tick, capped at 1.0. The 5-point rate is an assumption parameter (literal in Phase 1). Per-nameplate schedules (Phase 2) live in the split structure and drive S-layer aggregation; this global index remains the coarse engine-level representative for trajectory display.",
     },
 ]
 
