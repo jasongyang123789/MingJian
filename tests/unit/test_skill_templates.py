@@ -41,7 +41,7 @@ def test_registry_contains_exactly_the_expected_templates() -> None:
 
 def test_every_template_carries_provenance_and_version() -> None:
     for template in list_templates():
-        assert template.version == "1"
+        assert template.version == "2"
         assert template.title
         assert template.source_repo
         assert template.source_file
