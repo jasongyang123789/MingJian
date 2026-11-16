@@ -72,7 +72,7 @@ sections — the same discipline as board ``seq`` assignment.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -271,7 +271,7 @@ def _as_aware(moment: datetime) -> datetime:
     """Treat a naive timestamp read from the DB as UTC (SQLite
     returns naive datetimes; Postgres returns aware ones)."""
     if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
+        return moment.replace(tzinfo=UTC)
     return moment
 
 
@@ -328,10 +328,14 @@ def select_purge_victims(
     if older_than_days is not None and older_than_days < 0:
         raise ValueError(f"older_than_days must be >= 0; got {older_than_days}.")
     ordered = sorted(events, key=lambda event: int(event["seq"]))
-    cutoff = _as_aware(now) - timedelta(days=older_than_days) if older_than_days is not None else None
+    cutoff = (
+        _as_aware(now) - timedelta(days=older_than_days) if older_than_days is not None else None
+    )
     keep_seqs: set[int] = set()
     if keep_last_n is not None:
-        keep_seqs = {int(event["seq"]) for event in ordered[-keep_last_n:]} if keep_last_n > 0 else set()
+        keep_seqs = (
+            {int(event["seq"]) for event in ordered[-keep_last_n:]} if keep_last_n > 0 else set()
+        )
     victims: list[dict[str, Any]] = []
     for event in ordered:
         seq = int(event["seq"])

@@ -161,15 +161,11 @@ class SeminarConfig(_StripMixin):
     )
     similarity_provider: Literal["jaccard", "embedding"] = "jaccard"
     synthesize_lock_provider: Literal["process", "lease"] = "process"
-    lease_ttl_seconds: float = Field(
-        default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0
-    )
+    lease_ttl_seconds: float = Field(default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0)
     lock_wait_timeout_seconds: float = Field(
         default=DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS, gt=0.0, le=600.0
     )
-    audit_retention_max_events: int | None = Field(
-        default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1
-    )
+    audit_retention_max_events: int | None = Field(default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1)
     audit_retention_max_age_days: int | None = Field(
         default=DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS, ge=1
     )
@@ -217,15 +213,11 @@ class SeminarCreateRequest(_StripMixin):
     )
     similarity_provider: Literal["jaccard", "embedding"] = "jaccard"
     synthesize_lock_provider: Literal["process", "lease"] = "process"
-    lease_ttl_seconds: float = Field(
-        default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0
-    )
+    lease_ttl_seconds: float = Field(default=DEFAULT_LEASE_TTL_SECONDS, gt=0.0, le=3600.0)
     lock_wait_timeout_seconds: float = Field(
         default=DEFAULT_LOCK_WAIT_TIMEOUT_SECONDS, gt=0.0, le=600.0
     )
-    audit_retention_max_events: int | None = Field(
-        default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1
-    )
+    audit_retention_max_events: int | None = Field(default=DEFAULT_AUDIT_RETENTION_MAX_EVENTS, ge=1)
     audit_retention_max_age_days: int | None = Field(
         default=DEFAULT_AUDIT_RETENTION_MAX_AGE_DAYS, ge=1
     )
@@ -597,8 +589,7 @@ class AuditPurgeRequest(BaseModel):
     def _at_least_one_criterion(self) -> AuditPurgeRequest:
         if self.keep_last_n is None and self.older_than_days is None:
             raise ValueError(
-                "A purge requires at least one criterion: "
-                "'keep_last_n' and/or 'older_than_days'."
+                "A purge requires at least one criterion: 'keep_last_n' and/or 'older_than_days'."
             )
         return self
 

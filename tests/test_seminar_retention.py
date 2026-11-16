@@ -111,16 +111,17 @@ async def _create_seminar(service, run_id: str, request) -> str:
 
 
 @pytest.mark.asyncio
-async def test_purge_exact_limit_is_noop_but_writes_summary(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_purge_exact_limit_is_noop_but_writes_summary(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
     seminar_id = await _create_seminar(
         service, run.id, _no_floor_request(roster_ids=["model-a", "model-b"])
     )
-    await _seed_events(seminar_id, [(1, 0, "stage_call_finished"), (2, 0, "stage_call_finished"), (3, 0, "report_written")])
+    await _seed_events(
+        seminar_id,
+        [(1, 0, "stage_call_finished"), (2, 0, "stage_call_finished"), (3, 0, "report_written")],
+    )
     async with get_database().session() as session:
         outcome = await service.purge_audit_events(
             session, seminar_id, AuditPurgeRequest(keep_last_n=3)
@@ -161,9 +162,7 @@ async def test_purge_over_limit_deletes_oldest_only(monkeypatch, tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_purge_older_than_days_deletes_old_events_only(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_purge_older_than_days_deletes_old_events_only(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
@@ -172,7 +171,11 @@ async def test_purge_older_than_days_deletes_old_events_only(
     )
     await _seed_events(
         seminar_id,
-        [(1, 10, "stage_call_finished"), (2, 10, "stage_call_finished"), (3, 0, "stage_call_finished")],
+        [
+            (1, 10, "stage_call_finished"),
+            (2, 10, "stage_call_finished"),
+            (3, 0, "stage_call_finished"),
+        ],
     )
     async with get_database().session() as session:
         outcome = await service.purge_audit_events(
@@ -185,9 +188,7 @@ async def test_purge_older_than_days_deletes_old_events_only(
 
 
 @pytest.mark.asyncio
-async def test_purge_full_wipe_seq_continues_monotonically(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_purge_full_wipe_seq_continues_monotonically(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
@@ -226,13 +227,13 @@ async def test_purge_below_event_floor_refuses_and_deletes_nothing(
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
     # Default policy floor: 1000 events / 90 days.
-    seminar_id = await _create_seminar(service, run.id, make_request(roster_ids=["model-a", "model-b"]))
+    seminar_id = await _create_seminar(
+        service, run.id, make_request(roster_ids=["model-a", "model-b"])
+    )
     await _seed_events(seminar_id, [(1, 0, "stage_call_finished"), (2, 0, "stage_call_finished")])
     async with get_database().session() as session:
         with pytest.raises(SeminarServiceError) as exc_info:
-            await service.purge_audit_events(
-                session, seminar_id, AuditPurgeRequest(keep_last_n=5)
-            )
+            await service.purge_audit_events(session, seminar_id, AuditPurgeRequest(keep_last_n=5))
     assert exc_info.value.code == "seminar_retention_floor"
     rows = await _audit_rows(seminar_id)
     # Both seeded events survive; exactly one refusal event was added.
@@ -246,7 +247,9 @@ async def test_purge_below_age_floor_refuses(monkeypatch, tmp_path: Path) -> Non
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
-    seminar_id = await _create_seminar(service, run.id, make_request(roster_ids=["model-a", "model-b"]))
+    seminar_id = await _create_seminar(
+        service, run.id, make_request(roster_ids=["model-a", "model-b"])
+    )
     async with get_database().session() as session:
         with pytest.raises(SeminarServiceError) as exc_info:
             await service.purge_audit_events(
@@ -260,7 +263,9 @@ async def test_purge_at_floor_boundary_is_allowed(monkeypatch, tmp_path: Path) -
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
-    seminar_id = await _create_seminar(service, run.id, make_request(roster_ids=["model-a", "model-b"]))
+    seminar_id = await _create_seminar(
+        service, run.id, make_request(roster_ids=["model-a", "model-b"])
+    )
     await _seed_events(seminar_id, [(1, 0, "stage_call_finished")])
     async with get_database().session() as session:
         outcome = await service.purge_audit_events(
@@ -279,9 +284,7 @@ def test_purge_request_requires_at_least_one_criterion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_purge_one_seminar_leaves_another_untouched(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_purge_one_seminar_leaves_another_untouched(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
@@ -313,9 +316,11 @@ async def test_purge_leaves_reports_rounds_finals_and_briefs_untouched(
     }
     service = make_service(FakePortFactory(ports))
     model_seminar = await run_to_collecting(
-        service, run.id, request=make_request(roster_ids=["model-a", "model-b"]).model_copy(
+        service,
+        run.id,
+        request=make_request(roster_ids=["model-a", "model-b"]).model_copy(
             update={"audit_retention_max_events": None, "audit_retention_max_age_days": None}
-        )
+        ),
     )
     async with get_database().session() as session:
         await service.synthesize_seminar(session, model_seminar, SynthesizeRequest())
@@ -349,7 +354,9 @@ async def test_purge_leaves_reports_rounds_finals_and_briefs_untouched(
     async with get_database().session() as session:
         await service.purge_audit_events(session, model_seminar, AuditPurgeRequest(keep_last_n=0))
     async with get_database().session() as session:
-        await agent_service.purge_audit_events(session, agent_seminar, AuditPurgeRequest(keep_last_n=0))
+        await agent_service.purge_audit_events(
+            session, agent_seminar, AuditPurgeRequest(keep_last_n=0)
+        )
     after = {
         "rounds": await _count_rows(SeminarRoundRecord, model_seminar),
         "finals": await _count_rows(SeminarFinalRecord, model_seminar),
@@ -364,9 +371,7 @@ async def test_purge_leaves_reports_rounds_finals_and_briefs_untouched(
 
 
 @pytest.mark.asyncio
-async def test_budgets_and_diagnosis_hold_across_full_purge(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_budgets_and_diagnosis_hold_across_full_purge(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     usage = TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
@@ -407,9 +412,7 @@ async def test_budgets_and_diagnosis_hold_across_full_purge(
 
 
 @pytest.mark.asyncio
-async def test_retention_status_in_detail_and_read_endpoint(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_retention_status_in_detail_and_read_endpoint(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))
@@ -437,9 +440,7 @@ async def test_retention_status_in_detail_and_read_endpoint(
 
 
 @pytest.mark.asyncio
-async def test_purge_unknown_seminar_raises_lookup_error(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_purge_unknown_seminar_raises_lookup_error(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     await make_run()  # initializes the tables
     service = make_service(FakePortFactory({"chair-1": ScriptedSkillPort({})}))

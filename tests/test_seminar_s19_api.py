@@ -59,9 +59,7 @@ def test_purge_endpoint_compacts_and_reports_status(monkeypatch, tmp_path: Path)
         assert client.post(f"/seminars/{seminar_id}/advance").status_code == 200
         before = _audit_count(client, seminar_id)
         assert before > 2
-        response = client.post(
-            f"/seminars/{seminar_id}/audit/purge", json={"keep_last_n": 2}
-        )
+        response = client.post(f"/seminars/{seminar_id}/audit/purge", json={"keep_last_n": 2})
         assert response.status_code == 200, response.text
         outcome = response.json()
         assert outcome["deleted_count"] == before - 2
@@ -78,15 +76,11 @@ def test_purge_endpoint_compacts_and_reports_status(monkeypatch, tmp_path: Path)
         assert events[-1]["kind"] == "retention_purged"
 
 
-def test_purge_endpoint_floor_refusal_is_400_with_code(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_purge_endpoint_floor_refusal_is_400_with_code(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with _client_with_factory(_model_factory()) as client:
         seminar_id = _create_seminar(client)  # default floor: 1000 / 90
-        response = client.post(
-            f"/seminars/{seminar_id}/audit/purge", json={"keep_last_n": 5}
-        )
+        response = client.post(f"/seminars/{seminar_id}/audit/purge", json={"keep_last_n": 5})
         assert response.status_code == 400, response.text
         assert response.json()["detail"]["code"] == "seminar_retention_floor"
 
@@ -102,9 +96,7 @@ def test_purge_endpoint_requires_a_criterion(monkeypatch, tmp_path: Path) -> Non
 def test_purge_endpoint_unknown_seminar_is_404(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with _client_with_factory(_model_factory()) as client:
-        response = client.post(
-            "/seminars/missing-seminar/audit/purge", json={"keep_last_n": 1}
-        )
+        response = client.post("/seminars/missing-seminar/audit/purge", json={"keep_last_n": 1})
         assert response.status_code == 404, response.text
 
 
@@ -146,9 +138,7 @@ def test_detail_includes_retention_status(monkeypatch, tmp_path: Path) -> None:
         assert retention["max_age_days"] == 30
 
 
-def test_lease_lock_provider_synthesizes_over_http(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_lease_lock_provider_synthesizes_over_http(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with _client_with_factory(_model_factory()) as client:
         seminar_id = _create_seminar(client, synthesize_lock_provider="lease")

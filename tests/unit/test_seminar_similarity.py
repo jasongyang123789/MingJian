@@ -123,9 +123,7 @@ def test_char_bigram_similarity_edges() -> None:
 def test_char_bigram_similarity_counts_shared_bigrams() -> None:
     # "demandgrows" (10 bigrams) is a prefix of "demandgrowssteadily"
     # (18 bigrams): 10 shared of 18 union.
-    assert char_bigram_similarity("demand grows", "demand grows steadily") == pytest.approx(
-        10 / 18
-    )
+    assert char_bigram_similarity("demand grows", "demand grows steadily") == pytest.approx(10 / 18)
     # "supportticketsgrew40" (19 bigrams) is a prefix of
     # "supportticketsgrew40percent" (26 bigrams): 19 of 26.
     assert char_bigram_similarity(
@@ -149,8 +147,7 @@ def test_combined_score_is_the_max_of_both_signals() -> None:
         == 0.8
     )
     assert (
-        char_bigram_similarity("support tickets grew 40 percent", "support tickets grew 40")
-        < 0.8
+        char_bigram_similarity("support tickets grew 40 percent", "support tickets grew 40") < 0.8
     )
 
 
@@ -158,10 +155,7 @@ def test_combined_score_groups_on_bigrams_alone() -> None:
     # Synthetic boundary pin: single distinct tokens (token Jaccard
     # 0.0) whose bigram sets share 8 of 10 (0.8 exactly).
     assert (
-        jaccard_similarity(
-            similarity_tokens("abcdefghij"), similarity_tokens("abcdefghix")
-        )
-        == 0.0
+        jaccard_similarity(similarity_tokens("abcdefghij"), similarity_tokens("abcdefghix")) == 0.0
     )
     assert char_bigram_similarity("abcdefghij", "abcdefghix") == 0.8
     assert combined_similarity("abcdefghij", "abcdefghix") == 0.8
@@ -201,9 +195,9 @@ def test_cjk_grouping_follows_the_threshold() -> None:
     # Token 4/6, bigram 3/5: combined 2/3 — split at 0.8, grouped at 0.6.
     items = _items("需求增长强劲", "需求增长")
     assert deterministic_prepass(items)["near_duplicate_groups"] == [["I1"], ["I2"]]
-    assert deterministic_prepass(items, near_duplicate_threshold=0.6)[
-        "near_duplicate_groups"
-    ] == [["I1", "I2"]]
+    assert deterministic_prepass(items, near_duplicate_threshold=0.6)["near_duplicate_groups"] == [
+        ["I1", "I2"]
+    ]
 
 
 def test_prepass_records_the_similarity_provider() -> None:

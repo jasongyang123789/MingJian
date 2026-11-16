@@ -94,11 +94,7 @@ _UNDOUBLE_CONSONANTS = frozenset("bdgmnprt")
 
 
 def _undouble(stem: str) -> str:
-    if (
-        len(stem) >= 2
-        and stem[-1] == stem[-2]
-        and stem[-1] in _UNDOUBLE_CONSONANTS
-    ):
+    if len(stem) >= 2 and stem[-1] == stem[-2] and stem[-1] in _UNDOUBLE_CONSONANTS:
         return stem[:-1]
     return stem
 
@@ -123,17 +119,9 @@ def stem_word(word: str) -> str:
         return _undouble(word[:-3])  # growing -> grow, running -> run
     if word.endswith("ed") and len(word) > 4:
         return _undouble(word[:-2])  # stayed -> stay, stopped -> stop
-    if (
-        word.endswith("es")
-        and len(word) > 4
-        and word[:-2].endswith(("s", "x", "z", "ch", "sh"))
-    ):
+    if word.endswith("es") and len(word) > 4 and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
         return word[:-2]  # passes -> pass, watches -> watch
-    if (
-        word.endswith("s")
-        and len(word) > 3
-        and not word.endswith(("ss", "us", "is", "oes"))
-    ):
+    if word.endswith("s") and len(word) > 3 and not word.endswith(("ss", "us", "is", "oes")):
         return word[:-1]  # tickets -> ticket, grows -> grow
     return word
 
@@ -171,9 +159,7 @@ def _compact(normalized_text: str) -> str:
 
 
 def _bigrams(compacted: str) -> frozenset[str]:
-    return frozenset(
-        compacted[index : index + 2] for index in range(len(compacted) - 1)
-    )
+    return frozenset(compacted[index : index + 2] for index in range(len(compacted) - 1))
 
 
 def char_bigram_similarity(left_normalized: str, right_normalized: str) -> float:

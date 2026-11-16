@@ -121,9 +121,7 @@ async def test_both_lock_providers_serialize_into_versions_1_and_2(
 
 
 @pytest.mark.asyncio
-async def test_expired_lease_is_taken_over_and_audited(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_expired_lease_is_taken_over_and_audited(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     run = await make_run()
     ports = {

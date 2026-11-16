@@ -40,9 +40,9 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import delete, update
@@ -92,8 +92,7 @@ class LockAcquisition:
 class SynthesizeLockProvider(Protocol):
     """Serializes synthesize/submission requests for one seminar."""
 
-    @asynccontextmanager
-    async def acquire(self, seminar_id: str) -> AsyncIterator[LockAcquisition]:
+    def acquire(self, seminar_id: str) -> AbstractAsyncContextManager[LockAcquisition]:
         """Hold the seminar's synthesize lock for the block."""
         ...
 
@@ -137,7 +136,7 @@ def _as_aware(moment: datetime) -> datetime:
     ones. All writers store UTC, so naive reads are UTC.
     """
     if moment.tzinfo is None:
-        return moment.replace(tzinfo=timezone.utc)
+        return moment.replace(tzinfo=UTC)
     return moment
 
 
@@ -160,9 +159,7 @@ class LeaseLockProvider:
         if ttl_seconds <= 0:
             raise ValueError(f"ttl_seconds must be positive; got {ttl_seconds}.")
         if wait_timeout_seconds <= 0:
-            raise ValueError(
-                f"wait_timeout_seconds must be positive; got {wait_timeout_seconds}."
-            )
+            raise ValueError(f"wait_timeout_seconds must be positive; got {wait_timeout_seconds}.")
         self._session_factory = session_factory
         self._ttl_seconds = ttl_seconds
         self._wait_timeout_seconds = wait_timeout_seconds

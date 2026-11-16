@@ -46,7 +46,6 @@ stemming, character bigrams, or a pluggable embedding scorer).
 from __future__ import annotations
 
 import asyncio
-import time
 from collections.abc import Callable
 from typing import Any, NoReturn
 
@@ -268,9 +267,7 @@ class SeminarService:
             )
         return EmbeddingClaimSimilarity(self._vector_provider)
 
-    async def _seminar_config(
-        self, session: AsyncSession, seminar_id: str
-    ) -> SeminarConfig:
+    async def _seminar_config(self, session: AsyncSession, seminar_id: str) -> SeminarConfig:
         """Read ONLY the frozen config, without attaching the row.
 
         The synthesize lock must be chosen before any state is read
@@ -1808,9 +1805,7 @@ class SeminarService:
                 tokens_remaining=max(0, config.max_tokens - tokens_used),
             ).model_dump(mode="json"),
             diagnosis=compute_diagnosis(event_dicts).model_dump(mode="json"),
-            retention=(await self.get_audit_retention(session, seminar_id)).model_dump(
-                mode="json"
-            ),
+            retention=(await self.get_audit_retention(session, seminar_id)).model_dump(mode="json"),
         )
 
     async def list_audit_events(

@@ -122,9 +122,7 @@ async def test_lease_acquire_writes_a_row_and_release_deletes_it(
     assert await _lease_rows() == []
 
 
-async def test_lease_second_acquirer_waits_then_acquires(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_lease_second_acquirer_waits_then_acquires(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     seminar_id = await _make_seminar_row()
     first = LeaseLockProvider(_factory, ttl_seconds=60.0)
@@ -193,9 +191,7 @@ async def test_lease_invalid_config_refuses(monkeypatch, tmp_path: Path) -> None
 # --- lease provider: expiry takeover ----------------------------------------
 
 
-async def test_lease_expiry_takeover_bumps_the_fencing_token(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_lease_expiry_takeover_bumps_the_fencing_token(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     seminar_id = await _make_seminar_row()
     crashed = LeaseLockProvider(_factory, ttl_seconds=0.1)
@@ -214,9 +210,7 @@ async def test_lease_expiry_takeover_bumps_the_fencing_token(
     assert await _lease_rows() == []
 
 
-async def test_lease_live_lease_is_never_taken_over(
-    monkeypatch, tmp_path: Path
-) -> None:
+async def test_lease_live_lease_is_never_taken_over(monkeypatch, tmp_path: Path) -> None:
     setup_db(monkeypatch, tmp_path)
     seminar_id = await _make_seminar_row()
     holder = LeaseLockProvider(_factory, ttl_seconds=60.0)
@@ -236,9 +230,7 @@ async def test_lease_live_lease_is_never_taken_over(
 # --- multi-connection serialization (threads) --------------------------------
 
 
-def test_lease_serializes_across_connections_in_threads(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_lease_serializes_across_connections_in_threads(monkeypatch, tmp_path: Path) -> None:
     """Two threads, separate engines/connections, one SQLite file: the
     second acquirer must wait for the first holder's release — no
     overlap — proving the insert/takeover dance is atomic across
@@ -261,9 +253,7 @@ def test_lease_serializes_across_connections_in_threads(
 
     def _worker(name: str, hold_seconds: float, wait_for_start: bool) -> None:
         async def _run() -> None:
-            engine = create_async_engine(
-                url, poolclass=NullPool, connect_args={"timeout": 30}
-            )
+            engine = create_async_engine(url, poolclass=NullPool, connect_args={"timeout": 30})
             factory = async_sessionmaker(engine, expire_on_commit=False)
             provider = LeaseLockProvider(factory, ttl_seconds=60.0)
             if wait_for_start:

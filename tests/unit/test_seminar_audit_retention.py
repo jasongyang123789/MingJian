@@ -26,9 +26,7 @@ def _event(seq: int, *, age_days: float = 0.0, kind: str = "stage_call_finished"
         "seq": seq,
         "created_at": NOW - timedelta(days=age_days),
         "kind": kind,
-        "detail": (
-            {"usage": {"total_tokens": 10}} if kind == "stage_call_finished" else {}
-        ),
+        "detail": ({"usage": {"total_tokens": 10}} if kind == "stage_call_finished" else {}),
     }
 
 
@@ -41,7 +39,11 @@ def _seqs(victims: list[dict]) -> list[int]:
 
 def test_keep_last_n_deletes_oldest_only() -> None:
     events = [_event(seq) for seq in range(1, 6)]
-    assert _seqs(select_purge_victims(events, keep_last_n=2, older_than_days=None, now=NOW)) == [1, 2, 3]
+    assert _seqs(select_purge_victims(events, keep_last_n=2, older_than_days=None, now=NOW)) == [
+        1,
+        2,
+        3,
+    ]
 
 
 def test_keep_last_n_exact_limit_is_noop() -> None:
@@ -56,12 +58,20 @@ def test_keep_last_n_above_count_is_noop() -> None:
 
 def test_keep_last_n_zero_deletes_everything() -> None:
     events = [_event(seq) for seq in range(1, 4)]
-    assert _seqs(select_purge_victims(events, keep_last_n=0, older_than_days=None, now=NOW)) == [1, 2, 3]
+    assert _seqs(select_purge_victims(events, keep_last_n=0, older_than_days=None, now=NOW)) == [
+        1,
+        2,
+        3,
+    ]
 
 
 def test_keep_last_n_uses_seq_order_not_input_order() -> None:
     events = [_event(seq) for seq in (3, 1, 5, 2, 4)]
-    assert _seqs(select_purge_victims(events, keep_last_n=2, older_than_days=None, now=NOW)) == [1, 2, 3]
+    assert _seqs(select_purge_victims(events, keep_last_n=2, older_than_days=None, now=NOW)) == [
+        1,
+        2,
+        3,
+    ]
 
 
 # --- select_purge_victims: older_than_days ----------------------------------
@@ -74,7 +84,10 @@ def test_older_than_days_deletes_only_old_events() -> None:
         _event(3, age_days=1),
         _event(4, age_days=0),
     ]
-    assert _seqs(select_purge_victims(events, keep_last_n=None, older_than_days=3, now=NOW)) == [1, 2]
+    assert _seqs(select_purge_victims(events, keep_last_n=None, older_than_days=3, now=NOW)) == [
+        1,
+        2,
+    ]
 
 
 def test_event_exactly_at_cutoff_is_kept() -> None:
@@ -114,7 +127,11 @@ def test_both_criteria_intersection_is_strict() -> None:
     ]
     # Newest 3 are seqs 3,4,5; younger than 3 days are seqs 2,4,5.
     # Intersection keeps only 4,5 — seq 3 is new enough but too old.
-    assert _seqs(select_purge_victims(events, keep_last_n=3, older_than_days=3, now=NOW)) == [1, 2, 3]
+    assert _seqs(select_purge_victims(events, keep_last_n=3, older_than_days=3, now=NOW)) == [
+        1,
+        2,
+        3,
+    ]
 
 
 def test_no_criteria_deletes_nothing() -> None:
