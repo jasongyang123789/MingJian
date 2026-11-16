@@ -1542,3 +1542,564 @@ export interface ExpectationCatalogEntry {
   evidence_ref: string
   evaluated: boolean
 }
+
+// ==================== Sprint 20 — 多模型研讨 ====================
+// Shapes mirror src/planagent/services/seminar/models.py,
+// contracts.py, audit.py, and the composer document exactly; the
+// cockpit reads them, it never re-derives them.
+
+export interface SeminarEndpointConfig {
+  target?: string | null
+  base_url_env?: string | null
+  api_key_env?: string | null
+  model?: string | null
+}
+
+export interface SeminarModelPortConfig {
+  model_id: string
+  endpoint: SeminarEndpointConfig
+  temperature: number
+  timeout_seconds: number
+}
+
+export interface SeminarModelPortConfigInput {
+  model_id: string
+  endpoint?: SeminarEndpointConfig
+  temperature?: number
+  timeout_seconds?: number
+}
+
+export interface SeminarRosterEntry {
+  model_id: string
+  endpoint: SeminarEndpointConfig
+  temperature: number
+  timeout_seconds: number
+  max_rounds: number | null
+  role: 'participant' | 'chair'
+}
+
+export interface SeminarRosterEntryInput {
+  model_id: string
+  endpoint?: SeminarEndpointConfig
+  temperature?: number
+  timeout_seconds?: number
+  max_rounds?: number | null
+  role?: 'participant' | 'chair'
+}
+
+export type SeminarPipeline = 'strategy_team' | 'advisory_board'
+export type SeminarChairMode = 'model' | 'agent'
+
+export interface SeminarConfigRead {
+  pipeline: SeminarPipeline
+  mode: string
+  max_rounds: number
+  quiet_rounds: number
+  snapshot_policy: 'latest_per_model'
+  max_concurrency: number
+  output_language: string
+  include_premortem: boolean
+  failure_date: string
+  decision_question: string
+  options: string[]
+  context_lines: string[]
+  chair_participates: boolean
+  chair_mode: SeminarChairMode
+  max_stage_calls: number
+  max_tokens: number
+  max_retries: number
+  retry_backoff_seconds: number
+  near_duplicate_threshold: number
+}
+
+export interface SeminarCreateRequest {
+  topic: string
+  decision_question?: string
+  options?: string[]
+  roster?: SeminarRosterEntryInput[]
+  pipeline?: SeminarPipeline
+  mode?: string
+  max_rounds?: number
+  quiet_rounds?: number
+  snapshot_policy?: 'latest_per_model'
+  max_concurrency?: number
+  output_language?: string
+  include_premortem?: boolean
+  failure_date?: string
+  chair_model: SeminarModelPortConfigInput
+  context_lines?: string[]
+  chair_mode?: SeminarChairMode
+  max_stage_calls?: number
+  max_tokens?: number
+  max_retries?: number
+  retry_backoff_seconds?: number
+  near_duplicate_threshold?: number
+}
+
+export interface SeminarCreateRead {
+  seminar_id: string
+  run_id: string
+  status: string
+  case_snapshot_hash: string
+  topic: string
+  roster: SeminarRosterEntry[]
+  config: SeminarConfigRead
+  chair_model: SeminarModelPortConfig
+}
+
+export interface AdvanceModelRead {
+  model_id: string
+  round_no: number
+  status: string
+  board_snapshot_seq: number
+}
+
+export interface AdvanceRead {
+  seminar_id: string
+  wave_no: number
+  per_model: AdvanceModelRead[]
+  status: string
+}
+
+export interface FinalizeModelRead {
+  model_id: string
+  status: string
+  error: Record<string, unknown> | null
+}
+
+export interface FinalizeRead {
+  seminar_id: string
+  finals: FinalizeModelRead[]
+  status: string
+}
+
+export interface SynthesizeRequest {
+  allow_partial?: boolean
+  deterministic_fallback?: boolean
+}
+
+export interface PrepassItemRead {
+  item_id: string
+  model_id: string
+  round_no: number
+  field: string
+  text: string
+  normalized_text: string
+}
+
+export interface PrepassRead {
+  items: PrepassItemRead[]
+  exact_groups: string[][]
+  exact_duplicate_groups: number
+  near_duplicate_groups: string[][]
+  near_duplicate_group_count: number
+  near_duplicate_threshold: number
+  item_count: number
+}
+
+export interface ClusterSourceRead {
+  item_id: string
+  model_id: string
+  round_no: number
+  field: string
+  stance: string
+  original_text: string
+}
+
+export interface CanonicalClaimRead {
+  claim: string
+  sources: ClusterSourceRead[]
+  merge_map: string[]
+}
+
+export interface DisagreementPositionRead {
+  stance: string
+  sources: Array<{ model_id: string; round_no: number; field: string; original_text: string }>
+}
+
+export interface DisagreementRead {
+  claim_index: number
+  claim: string
+  stances: string[]
+  positions: DisagreementPositionRead[]
+}
+
+export interface ClustersRead {
+  claims: CanonicalClaimRead[]
+  disagreements: DisagreementRead[]
+  merge_map: Record<string, number>
+  prepass: PrepassRead
+  production: string
+  stage?: Record<string, unknown> | null
+}
+
+export interface RecommendationAgreementRead {
+  n_models: number
+  pairs_total: number
+  pairs_agreeing: number
+  rate: number | null
+}
+
+export interface BordaRead {
+  method: string
+  n_models: number
+  totals: Record<string, number>
+  ranked: string[]
+}
+
+export interface DedupStatisticsRead {
+  original_items: number
+  canonical_claims: number
+  exact_duplicate_groups: number
+  semantic_merge_groups: number
+  cluster_production: string
+}
+
+export interface AbsentModelRead {
+  model_id: string
+  status: string
+  reason: string
+}
+
+export interface RoundStatisticsRead {
+  per_model: Record<
+    string,
+    { rounds: number; status: string; board_snapshot_seqs: number[]; round_statuses: string[] }
+  >
+  total_rounds: number
+}
+
+export interface ComputedMetricsRead {
+  recommendation_agreement: RecommendationAgreementRead
+  confidence_distribution: Record<string, number>
+  borda: BordaRead
+  dedup: DedupStatisticsRead
+  disagreement_count: number
+  rounds: RoundStatisticsRead
+  finals_used: number
+  roster_size: number
+  absent_models: AbsentModelRead[]
+}
+
+export interface FinalVerdictRead {
+  recommendation: string
+  ranked_alternatives: string[]
+  confidence: string
+  key_evidence: string[]
+  load_bearing_assumptions: string[]
+  kill_criteria: string[]
+  dissent_held: string[]
+  rounds_summary: string
+  board_snapshot_seq: number
+}
+
+export interface StageRecordRead {
+  stage: string
+  template_id: string
+  template_version: string
+  contract_version: string
+  output: Record<string, unknown>
+  model: string | null
+  usage: Record<string, unknown> | null
+  duration_ms: number | null
+  attempts: number | null
+}
+
+export interface BriefVerdictEntryRead {
+  model_id: string
+  verdict: FinalVerdictRead
+  stage: StageRecordRead
+  board_snapshot_seq: number
+}
+
+export interface ChairBriefRead {
+  seminar_id: string
+  brief_version: number
+  brief_hash: string
+  topic: string
+  status: string
+  chair_mode: string
+  chair_model_id: string
+  prepass: PrepassRead
+  deterministic_clusters: ClustersRead
+  disagreements: DisagreementRead[]
+  computed_metrics: ComputedMetricsRead
+  verdicts: BriefVerdictEntryRead[]
+  participation_note: string
+  absent_models: AbsentModelRead[]
+  finals_used: number
+  roster_size: number
+  partial: boolean
+  submit_endpoint: string
+}
+
+export interface ChairSynthesisRequest {
+  clusters: Record<string, unknown>
+  synthesis: Record<string, unknown>
+  brief_version?: number | null
+}
+
+export interface SynthesizeRead {
+  report_id: string
+  seminar_id: string
+  version: number
+  partial: boolean
+  agreement_level: string | null
+  production_path: string
+  cluster_production: string
+  fallback_reason: string | null
+  report_hash: string
+  chair_model_id: string
+  status: string
+}
+
+export interface SeminarModelProgress {
+  model_id: string
+  status: string
+  rounds: number
+  has_final: boolean
+  latest_board_seq: number | null
+}
+
+export interface SeminarReportSummary {
+  version: number
+  partial: boolean
+  production_path: string
+  cluster_production: string
+  report_hash: string
+  chair_model_id: string
+}
+
+export interface SeminarBudgetsRead {
+  max_stage_calls: number
+  stage_calls_used: number
+  stage_calls_remaining: number
+  max_tokens: number
+  tokens_used: number
+  tokens_remaining: number
+}
+
+export interface SeminarDiagnosisRead {
+  error_counts: Record<string, number>
+  total_tokens: number
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_duration_ms: number
+  stage_calls: number
+  stage_call_attempts: number
+  retries: number
+  fallbacks: number
+  queue_waits: number
+}
+
+export interface SeminarDetailRead {
+  seminar_id: string
+  run_id: string
+  topic: string
+  status: string
+  case_snapshot_hash: string
+  roster: SeminarRosterEntry[]
+  config: SeminarConfigRead
+  chair_model: SeminarModelPortConfig
+  per_model: SeminarModelProgress[]
+  board_publications: number
+  board_latest_seq: number
+  finals_count: number
+  reports: SeminarReportSummary[]
+  budgets: SeminarBudgetsRead
+  diagnosis: SeminarDiagnosisRead
+}
+
+export interface SeminarSummaryRead {
+  seminar_id: string
+  run_id: string
+  topic: string
+  status: string
+  roster_size: number
+  finals_count: number
+  report_versions: number
+}
+
+export interface BoardDigestRead {
+  model_id: string
+  round_no: number
+  recommendation: string
+  confidence: 'low' | 'medium' | 'high' | null
+  key_arguments: string[]
+  kill_criteria: string[]
+  changes: string[]
+  reflection_missing: boolean
+  board_snapshot_seq: number
+}
+
+export interface BoardRowRead {
+  id: string
+  seminar_id: string
+  seq: number
+  model_id: string
+  round_no: number
+  digest: BoardDigestRead
+}
+
+export interface ReflectionRead {
+  critique: Array<{ weak_point: string; reason: string }>
+  responses: Array<{ model_id: string; stance: string; reason: string }>
+  changes: string[]
+  confidence: string
+  confidence_basis: string
+  open_questions: string[]
+}
+
+export interface RoundErrorRead {
+  kind: string
+  stage: string | null
+  message: string
+}
+
+export interface RoundRowRead {
+  id: string
+  seminar_id: string
+  model_id: string
+  round_no: number
+  board_snapshot_seq: number
+  stages: StageRecordRead[]
+  reflection: ReflectionRead | null
+  reflection_stage: StageRecordRead | null
+  status: string
+  error: RoundErrorRead | null
+}
+
+export interface FinalRowRead {
+  id: string
+  seminar_id: string
+  model_id: string
+  verdict: FinalVerdictRead
+  stage: StageRecordRead
+  board_snapshot_seq: number
+  status: string
+}
+
+export type SeminarProvenance = 'computed' | 'deliberated' | 'template'
+
+export interface SynthesisEvidenceItemRead {
+  text: string
+  source_models: string[]
+}
+
+export interface SeminarSynthesisRead {
+  unified_recommendation: string
+  recommendation_basis: string
+  agreement_level: string
+  alternatives_ranked: string[]
+  aggregation_rule: string
+  key_evidence: SynthesisEvidenceItemRead[]
+  kill_criteria: SynthesisEvidenceItemRead[]
+  minority_report: string
+  open_questions: string[]
+  chair_notes: string
+}
+
+export interface SeminarReportDocument {
+  header: {
+    seminar_id: string
+    run_id: string
+    topic: string
+    version: number
+    partial: boolean
+    chair_model_id: string
+    chair_mode: string
+    chair_participates: boolean
+    production_path: string
+    cluster_production: string
+    report_hash: string
+    finals_used: number
+    roster_size: number
+    absent_models: AbsentModelRead[]
+    brief_version?: number
+    brief_hash?: string | null
+    chair_provenance_note?: string
+    chair_participation_flag?: string
+    fallback_reason?: string
+  }
+  unified_recommendation: { text: string; basis: string | null; provenance: SeminarProvenance }
+  agreement: {
+    chair_level: string | null
+    chair_provenance: SeminarProvenance
+    computed: RecommendationAgreementRead | null
+    computed_provenance: SeminarProvenance
+    note: string
+  }
+  canonical_claims: {
+    claims: CanonicalClaimRead[]
+    merge_map: Record<string, number>
+    provenance: SeminarProvenance
+    production: string
+  }
+  disagreements: {
+    items: DisagreementRead[]
+    count: number
+    provenance: SeminarProvenance
+    note: string
+  }
+  alternatives: {
+    borda: BordaRead | null
+    borda_provenance: SeminarProvenance
+    chair_ranked: string[] | null
+    aggregation_rule: string
+    chair_provenance: SeminarProvenance
+  }
+  key_evidence: { items: SynthesisEvidenceItemRead[]; provenance: SeminarProvenance }
+  kill_criteria: { items: SynthesisEvidenceItemRead[]; provenance: SeminarProvenance }
+  minority_report: { text: string; provenance: SeminarProvenance; verbatim: boolean }
+  rounds_evolution: Array<{
+    model_id: string
+    rounds_summary: string
+    board_snapshot_seq: number
+    verbatim: boolean
+  }>
+  open_questions: { items: string[]; provenance: SeminarProvenance; note?: string }
+  chair_notes: { text: string; provenance: SeminarProvenance }
+  chair_synthesis: SeminarSynthesisRead | null
+  computed_metrics: ComputedMetricsRead
+  audit_appendix: {
+    case_snapshot_hash: string
+    cluster_stage: Record<string, unknown> | null
+    synthesis_stage: Record<string, unknown> | null
+    verdict_stages: Array<{
+      model_id: string
+      template_id: string
+      template_version: string
+      contract_version: string
+      model: string | null
+    }>
+    round_stage_counts: Record<string, number>
+    board_seq_range: number[]
+    board_publications: number
+    model_configs: Array<Record<string, unknown>>
+    chair_config: Record<string, unknown>
+    token_usage: Record<string, unknown> | string
+  }
+}
+
+export interface ReportDetailRead {
+  report_id: string
+  seminar_id: string
+  version: number
+  partial: boolean
+  chair_model_id: string
+  report_hash: string
+  document: SeminarReportDocument
+}
+
+export interface AuditEventRead {
+  id: string
+  seminar_id: string
+  seq: number
+  model_id: string | null
+  stage: string | null
+  kind: string
+  detail: Record<string, unknown>
+  round_no: number | null
+  stage_call_id: string | null
+  created_at: string
+}

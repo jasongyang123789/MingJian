@@ -66,6 +66,22 @@ import type {
   PromptReportRead,
   SalesLayerRead,
   SalesLayerRequest,
+  AdvanceRead,
+  AuditEventRead,
+  BoardRowRead,
+  ChairBriefRead,
+  ChairSynthesisRequest,
+  FinalRowRead,
+  FinalizeRead,
+  ReportDetailRead,
+  RoundRowRead,
+  SeminarCreateRead,
+  SeminarCreateRequest,
+  SeminarDetailRead,
+  SeminarReportSummary,
+  SeminarSummaryRead,
+  SynthesizeRead,
+  SynthesizeRequest,
 } from './engineTypes'
 
 // ==================== 错误解析 ====================
@@ -423,4 +439,53 @@ export const automotiveApi = {
   evaluatePrompts: (payload: { split_structure: unknown; dms_mandate_on?: boolean | null }) =>
     api.post<PromptReportRead>('/automotive/prompts/evaluate', payload),
   getExpectations: () => api.get<ExpectationCatalogEntry[]>('/automotive/expectations'),
+}
+
+// ==================== Sprint 20 — 多模型研讨 ====================
+// Endpoint paths + shapes from src/planagent/api/routes/seminars.py
+// (S16–S18). Synthesize answers one of two shapes: a report summary
+// in model-chair mode (201), a stored chair brief in agent-chair
+// mode (200) — callers tell them apart by `brief_version`.
+export const seminarApi = {
+  createSeminar: (runId: string, payload: SeminarCreateRequest) =>
+    api.post<SeminarCreateRead>(`/runs/${encodeURIComponent(runId)}/seminars`, payload),
+  listRunSeminars: (runId: string) =>
+    api.get<SeminarSummaryRead[]>(`/runs/${encodeURIComponent(runId)}/seminars`),
+  getDetail: (seminarId: string) =>
+    api.get<SeminarDetailRead>(`/seminars/${encodeURIComponent(seminarId)}`),
+  advance: (seminarId: string) =>
+    api.post<AdvanceRead>(`/seminars/${encodeURIComponent(seminarId)}/advance`),
+  finalize: (seminarId: string) =>
+    api.post<FinalizeRead>(`/seminars/${encodeURIComponent(seminarId)}/finalize`),
+  synthesize: (seminarId: string, payload: SynthesizeRequest) =>
+    api.post<SynthesizeRead | ChairBriefRead>(
+      `/seminars/${encodeURIComponent(seminarId)}/synthesize`,
+      payload,
+    ),
+  submitChairSynthesis: (seminarId: string, payload: ChairSynthesisRequest) =>
+    api.post<SynthesizeRead>(
+      `/seminars/${encodeURIComponent(seminarId)}/chair-synthesis`,
+      payload,
+    ),
+  listBoard: (seminarId: string) =>
+    api.get<BoardRowRead[]>(`/seminars/${encodeURIComponent(seminarId)}/board`),
+  listRounds: (seminarId: string) =>
+    api.get<RoundRowRead[]>(`/seminars/${encodeURIComponent(seminarId)}/rounds`),
+  listFinals: (seminarId: string) =>
+    api.get<FinalRowRead[]>(`/seminars/${encodeURIComponent(seminarId)}/finals`),
+  listReports: (seminarId: string) =>
+    api.get<SeminarReportSummary[]>(`/seminars/${encodeURIComponent(seminarId)}/reports`),
+  getReport: (seminarId: string, version: number) =>
+    api.get<ReportDetailRead>(
+      `/seminars/${encodeURIComponent(seminarId)}/reports/${version}`,
+    ),
+  listAudit: (seminarId: string, params?: { kind?: string; model_id?: string }) => {
+    const search = new URLSearchParams()
+    if (params?.kind) search.set('kind', params.kind)
+    if (params?.model_id) search.set('model_id', params.model_id)
+    const query = search.toString()
+    return api.get<AuditEventRead[]>(
+      `/seminars/${encodeURIComponent(seminarId)}/audit${query ? `?${query}` : ''}`,
+    )
+  },
 }
