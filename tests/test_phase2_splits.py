@@ -13,6 +13,7 @@ from planagent.services.splits import (
     OEMS_WITHOUT_TBOX,
     PO_SUBPRODUCTS,
     SplitStructure,
+    aggregate_units,
     classify_solution,
     dc_platform,
     effective_shares_for_nameplate,
@@ -367,6 +368,63 @@ def test_po_catalog_granularity_and_lines() -> None:
     assert product_line_of("UNKNOWN") is None
     assert is_po_basket("P.O") is True
     assert is_po_basket("HUD_AR") is False
+
+
+def test_hud_variants_coexist_no_slot_exclusivity() -> None:
+    """Ho 2026-11-17 ruling: P-HUD coexists with W/AR-HUD on the same
+    vehicle; HUD penetration rates are non-exclusive. The catalog must
+    state coexistence (never substitution), and one trim carrying all
+    three HUD variants at rates summing above 1 must validate and
+    aggregate independently: each variant is its own slot with its
+    own rate (Ho Q7), never a share of one HUD slot."""
+    for sub_id in ("HUD_AR", "HUD_W", "HUD_P"):
+        assert PO_SUBPRODUCTS[sub_id].fitment_kind == "rate"
+        assert "substitut" not in PO_SUBPRODUCTS[sub_id].notes.lower()
+    assert "coexist" in PO_SUBPRODUCTS["HUD_AR"].notes.lower()
+    assert "coexist" in PO_SUBPRODUCTS["HUD_P"].notes.lower()
+    fitments = [
+        {
+            "product_id": sub_id,
+            "fitment_kind": "rate",
+            "fitment": rate,
+            "supplier_id": "ho",
+            "supplier_share": 1.0,
+            "price": 1000.0,
+            "solution_code": "HUD",
+        }
+        for sub_id, rate in (("HUD_AR", 0.6), ("HUD_W", 0.5), ("HUD_P", 0.4))
+    ]
+    structure = SplitStructure.model_validate(
+        {
+            "oems": [
+                {
+                    "oem_id": "faw-vw",
+                    "customer_status": "existing",
+                    "nameplates": [
+                        {
+                            "nameplate_id": "t-roc",
+                            "energy": "ICE",
+                            "price_band": "15-20",
+                            "share": 1.0,
+                            "generations": [
+                                {
+                                    "generation_id": "g1",
+                                    "lifecycle_phase": "mature",
+                                    "share": 1.0,
+                                    "trims": [{"trim_id": "t", "share": 1.0, "fitments": fitments}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    assert sum(row["fitment"] for row in fitments) == pytest.approx(1.5)
+    assert validate_split_structure(structure).is_valid is True
+    slots = aggregate_units(structure, {"faw-vw": 100.0})
+    assert [slot["product_id"] for slot in slots] == ["HUD_AR", "HUD_W", "HUD_P"]
+    assert [slot["units"] for slot in slots] == pytest.approx([60.0, 50.0, 40.0])
 
 
 # --- Aliases (Ho Q4) -----------------------------------------------------

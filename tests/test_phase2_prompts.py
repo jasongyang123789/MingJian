@@ -417,6 +417,25 @@ def test_r13_bare_po_basket_flags_for_decomposition() -> None:
     assert "R13" not in _rule_ids(report_ok)
 
 
+def test_hud_variants_coexisting_draw_no_overlap_prompt() -> None:
+    """Ho 2026-11-17 ruling: P-HUD coexists with W/AR-HUD on the same
+    vehicle; no prompt treats HUD variants as mutually exclusive. A
+    trim carrying all three variants at rates summing above 1 draws
+    no anomaly prompt (the substitution prompts R6/R7/R9 cover
+    P02/P03/P04 only; no HUD overlap rule exists)."""
+    report = evaluate_prompts(
+        _structure(
+            [
+                _row("HUD_AR", 0.6, code="HUD"),
+                _row("HUD_W", 0.5, code="HUD"),
+                _row("HUD_P", 0.4, code="HUD"),
+            ]
+        )
+    )
+    assert report.anomaly_count == 0
+    assert all("HUD" not in prompt.title for prompt in report.prompts)
+
+
 # --- AVM1 / BUNDLE1 / SCREEN1 / EMBED1 -----------------------------------
 
 
