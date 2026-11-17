@@ -29,7 +29,8 @@ reason (design §7.4/§10.1).
 
 Sprint 18 hardening: every port is wrapped in
 :class:`~planagent.services.seminar.instrumentation.InstrumentedPort`
-(timeout-only retries, per-seminar budgets, audit observation);
+(retries for timeouts, truncations, and empty responses; per-seminar
+budgets; audit observation);
 synthesizes to one seminar serialize on a per-seminar lock instead
 of refusing; agent-chair seminars (``chair_mode="agent"``) produce a
 stored chair brief on synthesize and accept a validated chair

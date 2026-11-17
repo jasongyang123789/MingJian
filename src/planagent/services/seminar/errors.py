@@ -6,15 +6,22 @@ finalize errors, report absent-model reasons, and audit events. The
 kinds:
 
 * ``timeout`` — a stage call exceeded its timeout (including SDK
-  internal retries exhausted). The ONLY retryable kind.
-* ``contract`` — output arrived but failed contract validation.
-  Never retried: the same prompt will most likely fail again.
+  internal retries exhausted). Retryable.
+* ``contract`` — output arrived but failed contract validation, or
+  arrived malformed (non-empty content that did not parse). Never
+  retried: the same prompt will most likely fail again.
 * ``truncated`` — the provider cut the output at the token cap
   (``finish_reason="length"``), so the JSON is incomplete by
-  construction (fix batch 2). Never retried under the current
-  policy: retrying the same capped call would truncate again.
-  Retry-on-truncation with a raised cap is a follow-up option,
-  deliberately NOT implemented here.
+  construction (fix batch 2). Retryable (retry track): sampling
+  variance may produce an output that fits the cap on a re-call;
+  the retry is bounded (max 2, budget-checked, audited) and
+  exhaustion still classifies as ``truncated``.
+* ``empty_response`` — the upstream returned no content at all
+  (no choices, or empty/whitespace-only content), as the port
+  affirmatively reports it (retry track; the 2026-11-17 live
+  failure). Retryable: a transient upstream gap, not a property
+  of the prompt. A bare payload-None response with no signal is
+  NOT this kind — it stays ``contract``.
 * ``unavailable`` — no endpoint configured / auth failure / 5xx
   collapsed by the port into an empty response. Never retried.
 * ``budget_exhausted`` — a seminar budget (stage calls or tokens)
@@ -25,6 +32,12 @@ kinds:
   retrying a cancellation would swallow the cancel.
 * ``error`` — anything else (an unexpected exception). Never
   retried; the message is preserved for diagnosis.
+
+Retryable kinds are ``timeout``, ``truncated``, and
+``empty_response`` — see :func:`is_retryable_error`. The retry
+wrapper retries both raised failures of these kinds AND returned
+responses carrying their signals (``finish_reason="length"``,
+``empty_response``); malformed content is never retried.
 
 Queue waits are NOT an error kind: a synthesize request waiting for
 the per-seminar lock is recorded as a ``queue_wait`` audit event
@@ -37,6 +50,8 @@ from __future__ import annotations
 import asyncio
 from enum import Enum
 
+from planagent.services.skills.contracts import SkillEmptyResponseError, SkillTruncatedError
+
 
 class ErrorKind(str, Enum):
     """The seminar failure taxonomy (design §10.2, formalized S18)."""
@@ -44,6 +59,7 @@ class ErrorKind(str, Enum):
     TIMEOUT = "timeout"
     CONTRACT = "contract"
     TRUNCATED = "truncated"
+    EMPTY_RESPONSE = "empty_response"
     UNAVAILABLE = "unavailable"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
@@ -89,12 +105,19 @@ def is_timeout_exception(exc: BaseException) -> bool:
 
 
 def is_retryable_error(exc: BaseException) -> bool:
-    """True only for timeout errors (design §10.3).
+    """True for the retryable failure kinds (design §10.3, retry track).
 
-    Contract failures, truncations, unavailability, budget
-    exhaustion, and cancellations are never retried.
+    Timeouts, truncations, and empty upstream responses are retried:
+    all three are transient — a re-call may succeed. Contract
+    failures (malformed content), unavailability, budget exhaustion,
+    and cancellations are never retried.
     """
-    return is_timeout_exception(exc)
+    if is_timeout_exception(exc):
+        return True
+    # Truncation and empty-response errors are distinct classes (both
+    # subclass SkillContractError, so they must be matched before any
+    # plain-contract check by callers that distinguish them).
+    return isinstance(exc, (SkillTruncatedError, SkillEmptyResponseError))
 
 
 __all__ = [

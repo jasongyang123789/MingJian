@@ -61,6 +61,7 @@ from planagent.services.skills.contracts import (
     PreMortem,
     Shortlist,
     SkillContractError,
+    SkillEmptyResponseError,
     SkillTruncatedError,
     Synthesis,
     TournamentJudgment,
@@ -136,6 +137,16 @@ class SkillLLMResponse:
     # stage runners classify distinctly from a malformed response.
     # None means "not reported" — never a fabricated value.
     finish_reason: str | None = None
+    # The upstream returned no content at all (retry track): True
+    # ONLY when the port inspected the raw response and found no
+    # choices, or empty/whitespace-only content. The default False
+    # means "content arrived, or the cause is unknown" — a bare
+    # payload-None response must never be misread as empty. The
+    # seminar retry wrapper retries empty responses, and the stage
+    # runners raise SkillEmptyResponseError for them; malformed
+    # (non-empty, unparseable) content leaves this False and stays a
+    # plain contract failure.
+    empty_response: bool = False
 
 
 class SkillLLMPort(Protocol):
@@ -233,8 +244,10 @@ async def run_stage(
 
     Raises :class:`SkillLLMUnavailable` when no LLM is configured,
     :class:`SkillTruncatedError` when the response was cut at the
-    token cap (``finish_reason="length"``), and
-    :class:`SkillContractError` when the response is empty or malformed.
+    token cap (``finish_reason="length"``),
+    :class:`SkillEmptyResponseError` when the port affirmatively
+    reports an empty upstream response, and
+    :class:`SkillContractError` when the response is malformed.
     """
     template = get_template(template_id)
     system_prompt, user_content = render_template(template, inputs)
@@ -257,6 +270,12 @@ async def run_stage(
             # cap mid-output. Classified distinctly (fix batch 2) so
             # it is never again misreported as a contract failure.
             raise SkillTruncatedError(template_id, max_tokens=template.max_tokens)
+        if response.empty_response:
+            # Empty, not malformed: the port inspected the raw
+            # response and found no content. Classified distinctly
+            # (retry track) so the 2026-11-17 live failure class is
+            # never again misreported as a contract failure.
+            raise SkillEmptyResponseError(template_id)
         raise SkillContractError(
             template_id,
             [

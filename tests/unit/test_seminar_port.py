@@ -238,3 +238,107 @@ async def test_port_reports_no_finish_reason_when_sdk_omits_it() -> None:
     )
     assert response.payload == {"a": 1}
     assert response.finish_reason is None
+
+
+# ---------------------------------------------------------------------------
+# Empty-response signal (retry track): the port inspects the raw
+# content and flags an EMPTY response explicitly, so the retry
+# wrapper can retry a transient upstream gap while malformed content
+# stays a plain contract failure. The 2026-11-17 live shape is
+# empty content + no finish reason + no usage.
+# ---------------------------------------------------------------------------
+
+
+async def _call_port(port: ParameterizedSkillPort):
+    return await port.generate_json(
+        template_id="seminar.reflect",
+        system_prompt="s",
+        user_content="u",
+        max_tokens=8000,
+    )
+
+
+async def test_port_flags_empty_content_as_empty_response() -> None:
+    completions = _FakePortCompletions("", finish_reason=None, usage=None)
+    port = _port_with_fake_client(completions)
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is True
+    assert response.finish_reason is None
+    assert response.usage is None
+    assert response.model == "fake-model"
+
+
+async def test_port_flags_whitespace_content_as_empty_response() -> None:
+    completions = _FakePortCompletions("  \n\t ", finish_reason=None)
+    port = _port_with_fake_client(completions)
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is True
+
+
+async def test_port_flags_missing_choices_as_empty_response() -> None:
+    class _NoChoiceCompletions:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(choices=[], usage=None)
+
+    port = _port_with_fake_client(_NoChoiceCompletions())  # type: ignore[arg-type]
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is True
+    assert response.finish_reason is None
+
+
+async def test_port_flags_null_content_as_empty_response() -> None:
+    class _NullContentCompletions:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            choice = SimpleNamespace(message=SimpleNamespace(content=None))
+            return SimpleNamespace(choices=[choice], usage=None)
+
+    port = _port_with_fake_client(_NullContentCompletions())  # type: ignore[arg-type]
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is True
+
+
+async def test_port_does_not_flag_malformed_content_as_empty() -> None:
+    # Non-empty content that does not parse: malformed, never
+    # retried — the empty flag stays False.
+    completions = _FakePortCompletions("not json at all", finish_reason="stop")
+    port = _port_with_fake_client(completions)
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is False
+    assert response.finish_reason == "stop"
+
+
+async def test_port_does_not_flag_truncated_content_as_empty() -> None:
+    truncated = '{"critique": [{"weak_point": "x", "reason": "y"}], "responses": ["cut'
+    completions = _FakePortCompletions(truncated, finish_reason="length")
+    port = _port_with_fake_client(completions)
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is False
+    assert response.finish_reason == "length"
+
+
+async def test_port_does_not_flag_sdk_failure_as_empty() -> None:
+    # A failed SDK call collapses to payload None with NO signal: a
+    # failed call is not an observed empty response.
+    class _RaisingCompletions:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            raise RuntimeError("upstream 500")
+
+    port = _port_with_fake_client(_RaisingCompletions())  # type: ignore[arg-type]
+    response = await _call_port(port)
+    assert response.payload is None
+    assert response.empty_response is False
+    assert response.model is None
+
+
+async def test_port_does_not_flag_valid_json_as_empty() -> None:
+    completions = _FakePortCompletions('{"a": 1}', finish_reason="stop")
+    port = _port_with_fake_client(completions)
+    response = await _call_port(port)
+    assert response.payload == {"a": 1}
+    assert response.empty_response is False
