@@ -61,15 +61,29 @@ from planagent.services.narratives.models import (
     DirectionMappingListRead,
     DirectionMappingRead,
     DirectionMappingUpdate,
+    DirectionProposeRead,
+    DirectionProposeRequest,
     NarrativeBody,
     NarrativeError,
     NarrativeGenerateRequest,
     NarrativePolishRead,
+    ProposalOutcome,
 )
 from planagent.services.narratives.polish import (
     POLISH_TEMPLATE_ID,
     POLISH_TEMPLATE_VERSION,
     polish_markdown,
+)
+from planagent.services.narratives.proposals import (
+    PROPOSAL_TEMPLATE_ID,
+    PROPOSAL_TEMPLATE_VERSION,
+    DirectionProposal,
+    DirectionProposals,
+    ProposalContext,
+    ProposalFamilyRun,
+    ProposalVariable,
+    build_proposal_user_content,
+    propose_directions,
 )
 from planagent.services.narratives.recheck import check_polish
 from planagent.services.openai_client import OpenAIService
@@ -88,7 +102,7 @@ from planagent.services.simulation.robustness import (
     DECISION_GATES_SUMMARY_KEY,
     ROBUSTNESS_SUMMARY_KEY,
 )
-from planagent.services.skills.contracts import SkillContractError
+from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
 from planagent.services.skills.models import SkillDeliberationRecord
 from planagent.services.skills.orchestration import (
     OpenAIServiceSkillPort,
@@ -97,6 +111,7 @@ from planagent.services.skills.orchestration import (
     SkillLLMUnavailable,
 )
 from planagent.services.skills.service import SKILL_DELIBERATIONS_SUMMARY_KEY
+from planagent.services.variables.models import VariableSet
 
 _MECE_CONFIGURATION_KEY = "mece"
 
@@ -458,7 +473,7 @@ class NarrativeService:
         """
         if request.directions is not None:
             return list(request.directions), []
-        rows = (await self._mapping_rows(session, anchor.id))[:MAX_DIRECTIONS]
+        rows = (await self._mapping_rows(session, anchor.id, active_only=True))[:MAX_DIRECTIONS]
         if not rows:
             raise NarrativeError(
                 "narrative_requires_directions",
@@ -524,6 +539,23 @@ class NarrativeService:
                             "status": "skipped",
                             "reason": (
                                 f"A user-edited mapping named "
+                                f"{outcome.direction_name!r} exists; left untouched."
+                            ),
+                        }
+                    )
+                )
+                continue
+            if row is not None and row.status != "active":
+                # Option C: derive never overwrites a pending or
+                # rejected proposal either — the no-clobber rule
+                # extends to proposal rows, which only an explicit
+                # human accept/reject/delete may resolve.
+                outcomes.append(
+                    outcome.model_copy(
+                        update={
+                            "status": "skipped",
+                            "reason": (
+                                f"A {row.status} mapping named "
                                 f"{outcome.direction_name!r} exists; left untouched."
                             ),
                         }
@@ -654,6 +686,326 @@ class NarrativeService:
                 )
         return candidates
 
+    # -- LLM proposals (option C) ------------------------------------------
+
+    async def propose(
+        self, session: AsyncSession, run_id: str, request: DirectionProposeRequest
+    ) -> DirectionProposeRead:
+        """Run one LLM proposal pass over the anchor run's artifacts.
+
+        Explicit trigger only: proposing never runs automatically.
+        Refusals that need no LLM call (missing/non-completed anchor,
+        no MECE tree, no ensemble in the family) happen BEFORE the
+        port is touched. The LLM's output is then grounding-validated
+        as a whole: any proposal naming a non-existent MECE branch,
+        scenario-family run, or variable refuses the entire request
+        before any row is written (refuse, not flag — a hallucinated
+        reference impeaches the whole proposal set, and proposing is
+        cheap, explicit, and retryable). Proposals that pass
+        validation are stored as ``proposed`` mappings; a proposal
+        whose name is already taken is reported ``skipped`` and the
+        existing row is left untouched — proposals never overwrite
+        anything, including user-edited mappings.
+        """
+        anchor = await session.get(SimulationRun, run_id)
+        if anchor is None:
+            raise LookupError(f"Simulation run {run_id} was not found.")
+        if anchor.status != SimulationRunStatus.COMPLETED.value:
+            raise DirectionError(
+                "direction_requires_completed_run",
+                "Direction proposals require a completed anchor run.",
+            )
+        try:
+            tree, _validation = self._read_mece(anchor)
+        except NarrativeError as exc:
+            raise DirectionError("direction_corrupt_fragment", str(exc)) from exc
+        if tree is None:
+            raise DirectionError(
+                "direction_proposal_requires_tree",
+                "Direction proposals must trace to MECE branches, but the "
+                f"anchor run {run_id!r} has no stored MECE tree.",
+            )
+        family = await self._family_runs(session, anchor)
+        candidates = await self._assemble_candidates(session, family)
+        if not candidates:
+            raise DirectionError(
+                "direction_no_ensemble",
+                f"No run in the scenario family of {run_id!r} has a stored "
+                f"ensemble. Run POST /runs/{run_id}/monte-carlo first.",
+            )
+        variables = self._read_anchor_variables(anchor)
+        family_runs = self._proposal_family_runs(family, candidates)
+        context = ProposalContext(
+            topic=tree.topic or f"run {anchor.id}",
+            branches=_collect_branches(tree),
+            family_runs=family_runs,
+            variables=variables,
+            guidance=request.guidance,
+        )
+        try:
+            proposals, model = await propose_directions(
+                self._port, build_proposal_user_content(context)
+            )
+        except SkillLLMUnavailable as exc:
+            raise DirectionError("direction_propose_unavailable", str(exc)) from exc
+        except SkillTruncatedError as exc:
+            raise DirectionError("direction_propose_truncated", str(exc)) from exc
+        except SkillContractError as exc:
+            raise DirectionError("direction_propose_contract_failed", str(exc)) from exc
+        proposal_hash = sha256_hash(proposals.model_dump(mode="json"))
+        family_by_id = {run.id: run for run in family}
+        self._validate_proposals(
+            family_by_id, {variable.id for variable in variables}, tree, proposals
+        )
+        existing = {row.name: row for row in await self._mapping_rows(session, anchor.id)}
+        next_position = max((row.position for row in existing.values()), default=-1) + 1
+        staged: list[tuple[DirectionProposal, DirectionMappingRecord | None]] = []
+        for proposal in proposals.proposals:
+            row = existing.get(proposal.name)
+            if row is not None:
+                staged.append((proposal, None))
+                continue
+            record = DirectionMappingRecord(
+                anchor_run_id=anchor.id,
+                name=proposal.name,
+                source_run_id=proposal.source_run_id,
+                arm=proposal.arm,
+                mece_branches=list(proposal.mece_branches),
+                deliberation_id=None,
+                origin="llm_proposal",
+                rule_id=None,
+                rules_version=None,
+                rule_record=None,
+                status="proposed",
+                proposal_record={
+                    "rationale": proposal.rationale,
+                    "key_variables": list(proposal.key_variables),
+                    "model": model,
+                    "template_id": PROPOSAL_TEMPLATE_ID,
+                    "template_version": PROPOSAL_TEMPLATE_VERSION,
+                    "proposal_hash": proposal_hash,
+                },
+                user_edited=False,
+                position=next_position,
+            )
+            session.add(record)
+            next_position += 1
+            staged.append((proposal, record))
+        await session.flush()
+        outcomes: list[ProposalOutcome] = []
+        for proposal, stored in staged:
+            if stored is None:
+                existing_row = existing[proposal.name]
+                outcomes.append(
+                    ProposalOutcome(
+                        name=proposal.name,
+                        status="skipped",
+                        reason=(
+                            f"A mapping named {proposal.name!r} already exists "
+                            f"(origin {existing_row.origin}, status "
+                            f"{existing_row.status}); left untouched."
+                        ),
+                        mapping_id=None,
+                        source_run_id=proposal.source_run_id,
+                        arm=proposal.arm,
+                        mece_branches=list(proposal.mece_branches),
+                    )
+                )
+            else:
+                outcomes.append(
+                    ProposalOutcome(
+                        name=proposal.name,
+                        status="stored",
+                        reason="Proposal passed grounding validation and awaits review.",
+                        mapping_id=stored.id,
+                        source_run_id=proposal.source_run_id,
+                        arm=proposal.arm,
+                        mece_branches=list(proposal.mece_branches),
+                    )
+                )
+        await session.commit()
+        rows = await self._mapping_rows(session, anchor.id)
+        return DirectionProposeRead(
+            anchor_run_id=anchor.id,
+            template_id=PROPOSAL_TEMPLATE_ID,
+            template_version=PROPOSAL_TEMPLATE_VERSION,
+            model=model,
+            proposal_hash=proposal_hash,
+            family_runs_considered=len(family_runs),
+            outcomes=outcomes,
+            mappings=[self._mapping_to_read(row) for row in rows],
+        )
+
+    def _validate_proposals(
+        self,
+        family_by_id: dict[str, SimulationRun],
+        variable_ids: set[str],
+        tree: DecompositionTree,
+        proposals: DirectionProposals,
+    ) -> None:
+        """Ground every proposal against stored artifacts, or refuse all.
+
+        Runs synchronously: every check reads already-loaded state
+        (family runs, the anchor tree, the anchor's variable ids).
+        The first failure refuses the whole request — nothing is
+        written, including valid proposals in the same set.
+        """
+        valid_branches = [name for name, _scope in _collect_branches(tree)]
+        for proposal in proposals.proposals:
+            source = family_by_id.get(proposal.source_run_id)
+            if source is None:
+                raise DirectionError(
+                    "direction_proposal_unknown_source_run",
+                    f"Proposal {proposal.name!r} names source run "
+                    f"{proposal.source_run_id!r}, which is not in the anchor "
+                    f"run's scenario family. Valid runs: "
+                    f"{', '.join(sorted(family_by_id))}.",
+                )
+            if source.status != SimulationRunStatus.COMPLETED.value:
+                raise DirectionError(
+                    "direction_proposal_source_run_not_completed",
+                    f"Proposal {proposal.name!r} draws on run "
+                    f"{proposal.source_run_id!r}, which is not completed.",
+                )
+            ensemble_fragment = (source.summary or {}).get(MONTE_CARLO_SUMMARY_KEY)
+            if ensemble_fragment is None:
+                raise DirectionError(
+                    "direction_proposal_source_run_no_ensemble",
+                    f"Proposal {proposal.name!r} draws on run "
+                    f"{proposal.source_run_id!r}, which has no stored ensemble. "
+                    f"Run POST /runs/{proposal.source_run_id}/monte-carlo first.",
+                )
+            try:
+                MonteCarloResult.model_validate(ensemble_fragment)
+            except ValidationError as exc:
+                raise _direction_corrupt("monte_carlo", exc) from exc
+            for branch in proposal.mece_branches:
+                if branch not in valid_branches:
+                    raise DirectionError(
+                        "direction_proposal_unknown_mece_branch",
+                        f"Proposal {proposal.name!r} names unknown MECE branch "
+                        f"{branch!r}. Valid branches: "
+                        f"{', '.join(valid_branches) or '(none)'}",
+                    )
+            for variable_id in proposal.key_variables:
+                if variable_id not in variable_ids:
+                    raise DirectionError(
+                        "direction_proposal_unknown_variable",
+                        f"Proposal {proposal.name!r} names unknown variable "
+                        f"{variable_id!r}. Valid variables: "
+                        f"{', '.join(sorted(variable_ids)) or '(none)'}",
+                    )
+
+    def _read_anchor_variables(self, anchor: SimulationRun) -> list[ProposalVariable]:
+        """Variable ids bound to the anchor run (the grounding surface).
+
+        Mirrors the distributions reader: the fragment is
+        ``configuration["variables"]["bindings"]``, a ``VariableSet``
+        dump. Absent or non-dict fragments mean no bindings; a
+        present-but-malformed bindings value is corrupt stored data.
+        """
+        fragment = (anchor.configuration or {}).get("variables")
+        if not isinstance(fragment, dict):
+            return []
+        bindings = fragment.get("bindings")
+        if not isinstance(bindings, dict):
+            return []
+        try:
+            variable_set = VariableSet.model_validate(bindings)
+        except ValidationError as exc:
+            raise DirectionError(
+                "direction_corrupt_fragment",
+                f"Stored variables fragment fails its model: {exc}",
+            ) from exc
+        return [
+            ProposalVariable(id=variable.id, unit=variable.unit, description=variable.description)
+            for variable in variable_set.variables
+        ]
+
+    @staticmethod
+    def _proposal_family_runs(
+        family: list[SimulationRun], candidates: list[DerivationCandidate]
+    ) -> list[ProposalFamilyRun]:
+        """One prompt row per family run that has an ensemble."""
+        by_run: dict[str, dict[str, DerivationCandidate]] = {}
+        for candidate in candidates:
+            by_run.setdefault(candidate.run_id, {})[candidate.arm] = candidate
+        parents = {run.id: run.parent_run_id for run in family}
+        rows: list[ProposalFamilyRun] = []
+        for run_id in sorted(by_run):
+            arms = by_run[run_id]
+            baseline = arms["baseline"]
+            strategy = arms["strategy"]
+            rows.append(
+                ProposalFamilyRun(
+                    run_id=run_id,
+                    parent_run_id=parents.get(run_id),
+                    ensemble_id=baseline.ensemble_id,
+                    baseline_p50=baseline.p50,
+                    baseline_p_loss=baseline.p_loss,
+                    strategy_p50=strategy.p50,
+                    strategy_p_loss=strategy.p_loss,
+                )
+            )
+        return rows
+
+    async def accept_mapping(
+        self, session: AsyncSession, run_id: str, mapping_id: str
+    ) -> DirectionMappingRead:
+        """Accept a proposed mapping: it becomes usable for generation.
+
+        Re-validates the mapping's references before flipping the
+        status — a proposal accepted after its grounding went stale
+        refuses and stays ``proposed``. Accepting changes the status
+        only: the row's content, origin, and proposal record are
+        untouched, and ``user_edited`` is not set by acceptance.
+        """
+        row = await self._mapping_for_run(session, run_id, mapping_id)
+        if row.status != "proposed":
+            raise DirectionError(
+                "direction_mapping_not_proposed",
+                f"Mapping {row.name!r} has status {row.status!r}; only "
+                f"proposed mappings can be accepted.",
+            )
+        anchor = await self._completed_anchor(session, run_id)
+        await self._validate_mapping_references(
+            session,
+            anchor,
+            DirectionDefinition(
+                name=row.name,
+                source_run_id=row.source_run_id,
+                arm=cast(Literal["baseline", "strategy"], row.arm),
+                mece_branches=list(row.mece_branches),
+                deliberation_id=row.deliberation_id,
+            ),
+        )
+        row.status = "active"
+        await session.commit()
+        await session.refresh(row)
+        return self._mapping_to_read(row)
+
+    async def reject_mapping(
+        self, session: AsyncSession, run_id: str, mapping_id: str
+    ) -> DirectionMappingRead:
+        """Reject a proposed mapping: retained for audit, never used.
+
+        Rejection needs no grounding validation — it removes the
+        proposal from consideration. The row keeps its content,
+        origin, and proposal record; only the status changes.
+        Rejected is terminal: the row can only be deleted afterward.
+        """
+        row = await self._mapping_for_run(session, run_id, mapping_id)
+        if row.status != "proposed":
+            raise DirectionError(
+                "direction_mapping_not_proposed",
+                f"Mapping {row.name!r} has status {row.status!r}; only "
+                f"proposed mappings can be rejected.",
+            )
+        row.status = "rejected"
+        await session.commit()
+        await session.refresh(row)
+        return self._mapping_to_read(row)
+
     # -- mappings ----------------------------------------------------------
 
     async def list_mappings(self, session: AsyncSession, run_id: str) -> DirectionMappingListRead:
@@ -757,13 +1109,21 @@ class NarrativeService:
         return anchor
 
     async def _mapping_rows(
-        self, session: AsyncSession, anchor_run_id: str
+        self,
+        session: AsyncSession,
+        anchor_run_id: str,
+        *,
+        active_only: bool = False,
     ) -> list[DirectionMappingRecord]:
-        result = await session.execute(
-            select(DirectionMappingRecord)
-            .where(DirectionMappingRecord.anchor_run_id == anchor_run_id)
-            .order_by(DirectionMappingRecord.position.asc(), DirectionMappingRecord.id.asc())
+        stmt = select(DirectionMappingRecord).where(
+            DirectionMappingRecord.anchor_run_id == anchor_run_id
         )
+        if active_only:
+            # Generation resolves only active rows: proposed rows
+            # await human review and rejected rows are audit-only.
+            stmt = stmt.where(DirectionMappingRecord.status == "active")
+        stmt = stmt.order_by(DirectionMappingRecord.position.asc(), DirectionMappingRecord.id.asc())
+        result = await session.execute(stmt)
         return list(result.scalars().all())
 
     async def _mapping_for_run(
@@ -873,10 +1233,14 @@ class NarrativeService:
             arm=cast(Literal["baseline", "strategy"], row.arm),
             mece_branches=list(row.mece_branches),
             deliberation_id=row.deliberation_id,
-            origin=cast(Literal["derived", "authored"], row.origin),
+            origin=cast(Literal["derived", "authored", "llm_proposal"], row.origin),
             rule_id=row.rule_id,
             rules_version=row.rules_version,
             rule_record=dict(row.rule_record) if row.rule_record is not None else None,
+            status=cast(Literal["active", "proposed", "rejected"], row.status),
+            proposal_record=(
+                dict(row.proposal_record) if row.proposal_record is not None else None
+            ),
             user_edited=row.user_edited,
             position=row.position,
             created_at=row.created_at.isoformat(),

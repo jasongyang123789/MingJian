@@ -207,7 +207,15 @@ class DirectionMappingUpdate(BaseModel):
 
 
 class DirectionMappingRead(BaseModel):
-    """One stored direction mapping."""
+    """One stored direction mapping.
+
+    ``origin`` records how the row was written: ``derived`` (Sprint
+    14 rules), ``authored`` (a user), or ``llm_proposal`` (option C:
+    an LLM proposal). ``status`` is the review state: ``active``
+    rows are usable for generation; ``proposed`` rows await an
+    explicit human accept/reject; ``rejected`` rows are retained
+    for audit and never used. All pre-option-C rows are ``active``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -218,10 +226,12 @@ class DirectionMappingRead(BaseModel):
     arm: Literal["baseline", "strategy"]
     mece_branches: list[str] = Field(default_factory=list)
     deliberation_id: str | None = None
-    origin: Literal["derived", "authored"]
+    origin: Literal["derived", "authored", "llm_proposal"]
     rule_id: str | None = None
     rules_version: str | None = None
     rule_record: dict[str, Any] | None = None
+    status: Literal["active", "proposed", "rejected"]
+    proposal_record: dict[str, Any] | None = None
     user_edited: bool
     position: int
     created_at: str
@@ -291,6 +301,71 @@ class DerivationRead(BaseModel):
     family_size: int
     candidates_considered: int
     outcomes: list[DerivationRuleOutcome] = Field(default_factory=list)
+    mappings: list[DirectionMappingRead] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# LLM-proposed directions (option C)
+# ---------------------------------------------------------------------------
+
+
+class DirectionProposeRequest(BaseModel):
+    """Request one LLM proposal pass for an anchor run.
+
+    ``guidance`` is optional free text from the chair, passed to the
+    proposer verbatim (e.g. "favor low-cash-exposure directions").
+    It never overrides grounding: proposals are still validated
+    against the stored artifacts, whatever the guidance says.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    guidance: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("guidance", mode="before")
+    @classmethod
+    def _normalize_guidance(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
+class ProposalOutcome(BaseModel):
+    """One proposal's outcome in a proposal run.
+
+    ``stored``: the proposal passed grounding validation and was
+    written as a ``proposed`` mapping (``mapping_id`` set).
+    ``skipped``: a mapping of the same name already exists — the
+    proposal never overwrites anything, and the existing row is
+    left untouched (the no-clobber rule, extended to proposals).
+    Ungrounded proposals never reach this list: they refuse the
+    whole request before any write.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    status: Literal["stored", "skipped"]
+    reason: str
+    mapping_id: str | None = None
+    source_run_id: str
+    arm: Literal["baseline", "strategy"]
+    mece_branches: list[str] = Field(default_factory=list)
+
+
+class DirectionProposeRead(BaseModel):
+    """A proposal run: per-proposal outcomes plus the mappings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    anchor_run_id: str
+    template_id: str
+    template_version: str
+    model: str | None
+    proposal_hash: str
+    family_runs_considered: int
+    outcomes: list[ProposalOutcome] = Field(default_factory=list)
     mappings: list[DirectionMappingRead] = Field(default_factory=list)
 
 
