@@ -373,4 +373,7 @@ added or touched has passed in a gate-open window.
 
 ## 7. Commits on this branch
 
-- (to be filled in at commit time)
+- `484b47bf92a05f25e3e7a8b7bc9438f86145611c` — Polish re-check
+  implementation, tests, and report (7 files, +1023/−9). This
+  section was filled in by a follow-up report-only commit on the
+  same branch.
