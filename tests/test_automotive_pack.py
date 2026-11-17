@@ -2,17 +2,22 @@
 (Phase 1 automotive pack).
 
 Covers pack registration and state fields/defaults, the action/event/
-actor surface, the built-in template synthesis (24 variables, 8
-formulas, 5 drivers, assumption data), corporate-template invariance,
+actor surface, the built-in template synthesis (32 variables, 16
+formulas, 13 drivers, assumption data), corporate-template invariance,
 assumption-data merging, and ``resolve_assumption_data`` precedence.
 """
 
 from __future__ import annotations
 
 import copy
+import random
 
-from planagent.services.variables import validate_template
-from planagent.services.variables.models import VariableSet
+from planagent.services.distributions import sample_variable_set
+from planagent.services.variables import evaluate_tick_drivers, validate_template
+from planagent.services.variables.models import (
+    DistributionType,
+    VariableSet,
+)
 from planagent.services.variables.presets import (
     builtin_template,
     resolve_assumption_data,
@@ -87,7 +92,7 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 30
+    assert len(TEMPLATE_VARIABLES) == 32
     assert len(TEMPLATE_FORMULAS) == 16
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
     assert len(drivers) == 13
@@ -110,9 +115,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 23 of 30 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 7 sensitivity coefficients are
-    # formula parameters, not state fields.
+    # 23 of 32 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 9 formula parameters are the 7
+    # sensitivity coefficients plus the 2 rates promoted from Phase 2
+    # literals when the cap was raised from 30 to 100.
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -123,6 +129,8 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "material_passthrough",
         "price_sensitivity",
         "margin_material_sensitivity",
+        "income_growth_rate_annual",
+        "nev_penetration_monthly_drift",
     }
 
 
@@ -130,7 +138,7 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 30
+    assert len(template.variables) == 32
     assert len(template.formulas) == 16
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
@@ -142,6 +150,60 @@ def test_builtin_automotive_template_validates() -> None:
     by_id = {variable.id: variable for variable in template.variables}
     for var_id in ("annual_cut_rate", "payment_terms_months", "tier1_gross_margin"):
         assert by_id[var_id].evidence_ref.startswith("simulated:industry-average"), var_id
+
+
+def test_promoted_rate_variables_resolve_in_drivers() -> None:
+    """The two Phase 2 literal rates are template variables whose sampled
+    values resolve inside their tick drivers (cap raised 30 -> 100)."""
+
+    def _refs(node: object, found: set[str]) -> None:
+        if isinstance(node, dict):
+            if set(node) == {"ref"}:
+                found.add(str(node["ref"]))
+            for value in node.values():
+                _refs(value, found)
+        elif isinstance(node, list):
+            for value in node:
+                _refs(value, found)
+
+    template = builtin_template("automotive")
+    by_id = {variable.id: variable for variable in template.variables}
+
+    income_rate = by_id["income_growth_rate_annual"]
+    assert income_rate.unit == "rate/year"
+    assert income_rate.distribution.type == DistributionType.FIXED
+    assert income_rate.distribution.value == 0.05
+    assert income_rate.evidence_ref.startswith("NBS")
+
+    drift = by_id["nev_penetration_monthly_drift"]
+    assert drift.unit == "rate points/month"
+    assert drift.distribution.type == DistributionType.FIXED
+    assert drift.distribution.value == 0.002
+    assert drift.evidence_ref.startswith("assumption:pending-calibration")
+
+    # The drivers reference the promoted variables, not literals.
+    by_output = {formula.output: formula for formula in template.formulas}
+    income_refs: set[str] = set()
+    _refs(by_output["income_index"].expression, income_refs)
+    assert income_refs == {"income_index", "income_growth_rate_annual"}
+    penetration_refs: set[str] = set()
+    _refs(by_output["nev_penetration"].expression, penetration_refs)
+    assert penetration_refs == {"nev_penetration", "nev_penetration_monthly_drift"}
+
+    # Sampling the template resolves both rates, and the drivers evaluate
+    # to exactly the old literal behavior (fixed values, no drift).
+    sampled = sample_variable_set(
+        VariableSet(variables=list(template.variables)), random.Random(7)
+    )
+    assert sampled["income_growth_rate_annual"] == 0.05
+    assert sampled["nev_penetration_monthly_drift"] == 0.002
+    updates = evaluate_tick_drivers(
+        [by_output["income_index"], by_output["nev_penetration"]],
+        sampled,
+        {"income_index": 1.0, "nev_penetration": 0.479},
+        1,
+    )
+    assert updates == {"income_index": 1.0042, "nev_penetration": 0.481}
 
 
 def test_builtin_corporate_template_unchanged() -> None:

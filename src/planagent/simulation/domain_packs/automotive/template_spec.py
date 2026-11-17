@@ -75,6 +75,13 @@ TEMPLATE_VARIABLES: list[dict] = [
         "description": "Disposable-income level, 1.0 = 2025. Compounds monthly at income_growth_rate_annual/12 via the income tick driver (Phase 2); the retail driver reads the current level each tick (C2 link: income -> demand).",
     },
     {
+        "id": "income_growth_rate_annual",
+        "unit": "rate/year",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "NBS via synthesis B4 (per-capita disposable income nominal +5.0% in 2025; same anchor as income_index)",
+        "description": "Annual disposable-income growth rate. The income tick driver compounds the income_index monthly at this rate / 12 (C2 link: income -> demand). Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; fixed at the NBS 2025 value, a lever handle for income-growth scenarios.",
+    },
+    {
         "id": "lpr_proxy",
         "unit": "index (1.0 = baseline)",
         "distribution": {"type": "fixed", "value": 1.0},
@@ -153,6 +160,13 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "fixed", "value": 0.479},
         "evidence_ref": "CAAM via synthesis B1 (2025 total-volume NEV penetration 47.9%; retail caliber is higher and must never be mixed in)",
         "description": "NEV share of total vehicle sales (CAAM total-volume caliber). Drifts monthly via the penetration driver (Phase 2 dual track); the NEV/ICE split drivers derive each track from the shared spine x this penetration.",
+    },
+    {
+        "id": "nev_penetration_monthly_drift",
+        "unit": "rate points/month",
+        "distribution": {"type": "fixed", "value": 0.002},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: placeholder drift; no public monthly penetration-drift series exists — direction and mechanism are the Phase 2 deliverable, magnitude is a sensitivity-analysis input)",
+        "description": "Monthly NEV penetration drift applied by the penetration tick driver, capped at 1.0. Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; placeholder magnitude, a lever handle for adoption-speed scenarios.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
@@ -276,12 +290,12 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; placeholder sensitivity)",
         "description": "Tier-1 margin points lost per tick per point of unpassed material-cost pressure (material_cost_index minus the current price index). Price passthrough mitigates the squeeze.",
     },
-    # NOTE (Phase 2, template size): the variable-set limit is 30
-    # (Sprint 2 design), and this template holds exactly 30. Two
-    # Phase 2 parameters stay formula LITERALS by that precedent —
-    # the income growth rate (0.05/year, NBS) in the income driver
-    # and the penetration drift (0.002/month, placeholder) in the
-    # penetration driver — promoted to variables when calibrated.
+    # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
+    # (Sprint 2 design pin) and this template held exactly 30, so the
+    # income growth rate and the penetration drift stayed formula
+    # literals in Phase 2. Ho raised the cap to 100; both rates are
+    # now template variables (income_growth_rate_annual,
+    # nev_penetration_monthly_drift) and the drivers reference them.
     # The income LEVEL (income_index) and penetration LEVEL
     # (nev_penetration) remain sampled lever handles.
 ]
@@ -379,12 +393,12 @@ TEMPLATE_FORMULAS: list[dict] = [
                     "op": "add",
                     "args": [
                         1,
-                        {"op": "divide", "args": [0.05, 12]},
+                        {"op": "divide", "args": [{"ref": "income_growth_rate_annual"}, 12]},
                     ],
                 },
             ],
         },
-        "description": "Tick driver (C2 link: income -> demand, Phase 2): disposable income compounds monthly at 5.0%/year / 12 (NBS 2025 nominal growth; the rate is a literal — the template holds the 30-variable Sprint 2 limit — promoted to a variable when calibrated). The retail driver reads the current level each tick.",
+        "description": "Tick driver (C2 link: income -> demand, Phase 2): disposable income compounds monthly at income_growth_rate_annual / 12 (NBS 2025 nominal growth, 5.0%/year; promoted from a Phase 2 literal when the cap was raised to 100). The retail driver reads the current level each tick.",
     },
     {
         "output": "sales_volume_retail",
@@ -589,12 +603,12 @@ TEMPLATE_FORMULAS: list[dict] = [
             "args": [
                 {
                     "op": "add",
-                    "args": [{"ref": "nev_penetration"}, 0.002],
+                    "args": [{"ref": "nev_penetration"}, {"ref": "nev_penetration_monthly_drift"}],
                 },
                 1,
             ],
         },
-        "description": "Tick driver (Phase 2 dual track): NEV penetration drifts 0.002/month, capped at 1.0. The drift is a placeholder assumption parameter (literal — the template holds the 30-variable Sprint 2 limit — promoted to a variable when calibrated); the split drivers below read the same-tick value.",
+        "description": "Tick driver (Phase 2 dual track): NEV penetration drifts nev_penetration_monthly_drift per month (0.002 placeholder), capped at 1.0. The drift is a placeholder assumption parameter (promoted from a Phase 2 literal when the cap was raised to 100); the split drivers below read the same-tick value.",
     },
     {
         "output": "nev_retail_volume",
