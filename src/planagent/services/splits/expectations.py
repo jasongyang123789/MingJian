@@ -17,9 +17,13 @@ the Corolla-2027 switch stays a Corolla-only registry fact.
 
 Evaluation is at the CONFIGURATION (trim / sub-population) layer:
 block-level co-occurrence is an upper bound, so prompts fire per
-trim, where one car = one solution per function. Checks that cannot
-be evaluated (no solution codes, uncountable camera labels, no
-registry fact, PHEV detail absent) are recorded in ``skipped``
+trim, the level at which one vehicle's fitment combination is
+observed. One solution per function is the normal case behind the
+substitution prompts, never a universal rule: P-HUD coexists with
+W-HUD/AR-HUD on the same vehicle (Ho 2026-11-17 ruling), and
+fitment rates are independent penetrations (Ho Q7). Checks that
+cannot be evaluated (no solution codes, uncountable camera labels,
+no registry fact, PHEV detail absent) are recorded in ``skipped``
 with the reason — never silently dropped, never assumed.
 """
 

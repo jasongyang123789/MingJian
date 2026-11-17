@@ -64,7 +64,7 @@ PO_SUBPRODUCTS: dict[str, PoSubProduct] = {
             "rate",
             "B: industry-average table 0.116->0.35 (2026-2031); GGAI 2024 88.43k units (+273%)",
             False,
-            "AR-HUD substitutes with W-HUD/P-HUD within the HUD slot (same-function overlap is a prompt, not a gate).",
+            "HUD variant rates are independent penetrations (Ho Q7): P-HUD coexists with W-HUD/AR-HUD on the same vehicle (Ho 2026-11-17 ruling), so variant rates are never summed to 1 and no HUD-slot exclusivity is assumed.",
         ),
         PoSubProduct(
             "HUD_W",
@@ -79,6 +79,7 @@ PO_SUBPRODUCTS: dict[str, PoSubProduct] = {
             "rate",
             "B: industry-average table 0.015->0.06",
             False,
+            "Coexists with W-HUD/AR-HUD on the same vehicle; penetration rates are non-exclusive (Ho 2026-11-17 ruling). An independent rate per model x trim (Ho Q7), never summed with other HUD variants.",
         ),
         PoSubProduct(
             "RADAR",
