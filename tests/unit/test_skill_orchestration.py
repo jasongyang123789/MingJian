@@ -6,7 +6,12 @@ from __future__ import annotations
 
 import pytest
 
-from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
+from planagent.services.skills.contracts import (
+    LensPosition,
+    SkillContractError,
+    SkillEmptyResponseError,
+    SkillTruncatedError,
+)
 from planagent.services.skills.orchestration import (
     OpenAIServiceSkillPort,
     SkillLLMUnavailable,
@@ -19,7 +24,6 @@ from planagent.services.skills.orchestration import (
     tally_panel_flags,
     unanimity_note,
 )
-from planagent.services.skills.contracts import LensPosition
 from tests.skill_fixtures import (
     ScriptedSkillPort,
     advisory_board_script,
@@ -234,6 +238,33 @@ async def test_run_stage_truncated_response_is_a_truncation_error_naming_the_cap
     assert "8000" in str(excinfo.value)
     assert excinfo.value.max_tokens == 8000
     assert excinfo.value.template_id == "mckinsey.diagnose"
+
+
+async def test_run_stage_empty_signal_is_an_empty_response_error() -> None:
+    # Retry track: payload None + the port's affirmative empty
+    # signal raises the DISTINCT empty-response error — never the
+    # generic "no usable JSON" contract message, and never
+    # truncation. The skills-family message names the empty response.
+    port = ScriptedSkillPort(
+        {"mckinsey.diagnose": [None]},  # type: ignore[list-item]
+        empty_response_script={"mckinsey.diagnose": [True]},
+    )
+    with pytest.raises(SkillEmptyResponseError, match="empty response") as excinfo:
+        await run_stage(
+            port,
+            stage="diagnose",
+            template_id="mckinsey.diagnose",
+            inputs={
+                "topic": "T",
+                "decision_question": "Q",
+                "context": "C",
+                "intake": "{}",
+                "output_language": "English",
+            },
+        )
+    assert "skills-v2" in str(excinfo.value)
+    assert excinfo.value.template_id == "mckinsey.diagnose"
+    assert not isinstance(excinfo.value, SkillTruncatedError)
 
 
 async def test_openai_service_port_maps_meta_and_payload() -> None:

@@ -33,6 +33,12 @@ class ScriptedSkillPort:
     per template id, so tests can pin truncation classification.
     Queues shorter than the payload queues yield ``None`` (not
     reported) for the remaining calls.
+
+    ``empty_response_script`` (retry track) is the same idea for the
+    port's empty-response signal: a parallel queue of scripted
+    booleans per template id, so tests can pin empty-response
+    classification and retries. Queues shorter than the payload
+    queues yield ``False`` for the remaining calls.
     """
 
     def __init__(
@@ -42,6 +48,7 @@ class ScriptedSkillPort:
         available: bool = True,
         usage_script: dict[str, list[TokenUsage]] | None = None,
         finish_reason_script: dict[str, list[str | None]] | None = None,
+        empty_response_script: dict[str, list[bool]] | None = None,
     ) -> None:
         self._script = {key: [copy.deepcopy(item) for item in queue] for key, queue in script.items()}
         self._usage_script = {
@@ -49,6 +56,9 @@ class ScriptedSkillPort:
         }
         self._finish_reason_script = {
             key: list(queue) for key, queue in (finish_reason_script or {}).items()
+        }
+        self._empty_response_script = {
+            key: list(queue) for key, queue in (empty_response_script or {}).items()
         }
         self._available = available
         self.calls: list[dict[str, str]] = []
@@ -79,8 +89,14 @@ class ScriptedSkillPort:
         usage = usage_queue.pop(0) if usage_queue else None
         finish_queue = self._finish_reason_script.get(template_id) or []
         finish_reason = finish_queue.pop(0) if finish_queue else None
+        empty_queue = self._empty_response_script.get(template_id) or []
+        empty_response = empty_queue.pop(0) if empty_queue else False
         return SkillLLMResponse(
-            model="fixture", payload=queue.pop(0), usage=usage, finish_reason=finish_reason
+            model="fixture",
+            payload=queue.pop(0),
+            usage=usage,
+            finish_reason=finish_reason,
+            empty_response=empty_response,
         )
 
     def assert_exhausted(self) -> None:

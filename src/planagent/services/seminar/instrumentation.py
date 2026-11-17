@@ -5,10 +5,20 @@ single choke point for every seminar stage call — analysis stages
 (via ``run_stage``), reflection, verdict, cluster, and synthesize all
 flow through ``generate_json``. It provides, in one place:
 
-* **Timeout-only retries** (design §10.3): a stage call that raises
-  a timeout is retried up to ``max_retries`` times with a fixed
-  backoff. Contract failures, unavailability, budget exhaustion, and
-  cancellations are never retried. Every attempt is recorded.
+* **Retries** (design §10.3, retry track): a stage call that
+  fails transiently is retried up to ``max_retries`` times with a
+  fixed backoff. Two failure shapes retry: RAISED failures of a
+  retryable kind (timeout, truncation, empty response — see
+  :func:`is_retryable_error`), and RETURNED responses that carry a
+  retryable unusable signal (``finish_reason="length"`` for
+  truncation, ``empty_response`` for an empty upstream response).
+  Returned responses retry because truncation/emptiness surface as
+  ``payload=None`` responses, not exceptions — the stage runners
+  raise only after the wrapper returns. Malformed content
+  (``payload=None`` with no signal), contract failures,
+  unavailability, budget exhaustion, and cancellations are never
+  retried. Every attempt is recorded, and every retry event names
+  its reason (``error_kind`` + ``error_message``).
 * **Budgets** (design §10.3): before every ATTEMPT, the shared
   :class:`BudgetTracker` is checked — stage-call count and tokens
   consumed so far, seeded from the audit ledger at operation start
@@ -24,8 +34,12 @@ flow through ``generate_json``. It provides, in one place:
   :class:`~planagent.services.seminar.audit.AuditRecorder`, with
   duration, token usage, outcome, the finish reason where the port
   reports it (fix batch 2: ``"length"`` on a finished call means the
-  output was cut at the token cap), and the budget position. The
-  recorder flushes with the operation's state change.
+  output was cut at the token cap), the empty-response flag where
+  the port reports it (retry track), and the budget position. The
+  recorder flushes with the operation's state change. The finished
+  outcome names the attempt result truthfully: ``"ok"`` only when
+  a payload arrived; ``"truncated"``, ``"empty_response"``, or
+  ``"contract"`` when the returned response carried no payload.
 * **Attempt accounting**: the returned response carries
   ``attempts`` (total attempts the logical call took) and the
   port-reported ``usage``, so stage runners can store both on the
@@ -54,6 +68,7 @@ from planagent.services.seminar.errors import (
     ErrorKind,
     is_retryable_error,
 )
+from planagent.services.skills.contracts import SkillEmptyResponseError, SkillTruncatedError
 from planagent.services.skills.orchestration import SkillLLMPort, SkillLLMResponse
 
 
@@ -209,7 +224,7 @@ class InstrumentedPort:
                             "attempt": attempt,
                             "next_attempt": attempt + 1,
                             "backoff_seconds": self._backoff_seconds,
-                            "error_kind": ErrorKind.TIMEOUT.value,
+                            "error_kind": outcome,
                             "error_message": str(exc)[:300],
                         },
                         round_no=self._round_no,
@@ -222,6 +237,7 @@ class InstrumentedPort:
             usage = response.usage.to_dict() if response.usage is not None else None
             total_tokens = int(response.usage.total_tokens) if response.usage is not None else 0
             self._tracker.record_completed_call(total_tokens=total_tokens)
+            outcome = _response_outcome(response)
             self._recorder.record(
                 AuditEventKind.STAGE_CALL_FINISHED,
                 model_id=self._model_id,
@@ -230,27 +246,112 @@ class InstrumentedPort:
                     "stage_call_id": stage_call_id,
                     "attempt": attempt,
                     "duration_ms": duration_ms,
-                    "outcome": "ok",
+                    "outcome": outcome,
                     "usage": usage,
                     "finish_reason": response.finish_reason,
+                    "empty_response": response.empty_response,
                     "budget": self._tracker.position(),
                 },
                 round_no=self._round_no,
                 stage_call_id=stage_call_id,
             )
+            retry_kind = _retryable_response_kind(response)
+            if retry_kind is not None and attempt <= self._max_retries:
+                self._recorder.record(
+                    AuditEventKind.RETRY,
+                    model_id=self._model_id,
+                    stage=template_id,
+                    detail={
+                        "stage_call_id": stage_call_id,
+                        "attempt": attempt,
+                        "next_attempt": attempt + 1,
+                        "backoff_seconds": self._backoff_seconds,
+                        "error_kind": retry_kind,
+                        "error_message": _retryable_response_message(
+                            retry_kind, max_tokens=max_tokens
+                        ),
+                    },
+                    round_no=self._round_no,
+                    stage_call_id=stage_call_id,
+                )
+                await self._sleep(self._backoff_seconds)
+                continue
             return replace(response, attempts=attempt)
         # Unreachable: the loop either returns or raises on every path.
         raise RuntimeError("InstrumentedPort retry loop fell through without returning.")
 
 
 def _outcome_of(exc: BaseException) -> str:
+    """The taxonomy kind of a raised failure, for audit outcomes.
+
+    Truncation and empty-response errors classify distinctly (they
+    subclass SkillContractError, so they are checked before any
+    generic handling); a timeout stays ``timeout``; anything else
+    unrecognized is ``error``.
+    """
     if isinstance(exc, asyncio.CancelledError):
         return ErrorKind.CANCELLED.value
-    if is_retryable_error(exc):
-        return ErrorKind.TIMEOUT.value
+    if isinstance(exc, SkillTruncatedError):
+        return ErrorKind.TRUNCATED.value
+    if isinstance(exc, SkillEmptyResponseError):
+        return ErrorKind.EMPTY_RESPONSE.value
     if isinstance(exc, BudgetExhaustedError):
         return ErrorKind.BUDGET_EXHAUSTED.value
+    if is_retryable_error(exc):
+        return ErrorKind.TIMEOUT.value
     return ErrorKind.ERROR.value
+
+
+def _response_outcome(response: SkillLLMResponse) -> str:
+    """The audit outcome of a returned response.
+
+    ``"ok"`` only when a payload arrived. A payload-None response
+    names its cause: truncation first (a response cut at the cap is
+    truncated even if the port also flagged it empty), then the
+    affirmative empty-response signal, else ``"contract"`` for
+    malformed content. The stage runner raises the matching error
+    for the non-``"ok"`` cases; the outcome here keeps the audit
+    truthful before that raise happens.
+    """
+    if response.payload is not None:
+        return "ok"
+    retry_kind = _retryable_response_kind(response)
+    if retry_kind is not None:
+        return retry_kind
+    return ErrorKind.CONTRACT.value
+
+
+def _retryable_response_kind(response: SkillLLMResponse) -> str | None:
+    """The retryable kind of a returned response, or None.
+
+    Only responses that arrived unusable for a transient reason
+    retry: truncation (``finish_reason="length"``) and the port's
+    affirmative empty-response signal. A payload, or a payload-None
+    response with neither signal (malformed content), never retries
+    on this path.
+    """
+    if response.payload is not None:
+        return None
+    if response.finish_reason == "length":
+        return ErrorKind.TRUNCATED.value
+    if response.empty_response:
+        return ErrorKind.EMPTY_RESPONSE.value
+    return None
+
+
+def _retryable_response_message(kind: str, *, max_tokens: int) -> str:
+    """The retry reason recorded for a retried unusable response.
+
+    Derived from the response signals and the requested cap — the
+    same wording the stage runners use when they raise for the
+    same cause, so the retry event and the eventual failure agree.
+    """
+    if kind == ErrorKind.TRUNCATED.value:
+        return (
+            f"response truncated at the max_tokens cap of {max_tokens} tokens "
+            "(finish_reason='length'); the JSON output is incomplete"
+        )
+    return "upstream returned an empty response (no usable content); no JSON output arrived"
 
 
 __all__ = ["BudgetTracker", "InstrumentedPort"]

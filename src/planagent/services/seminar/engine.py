@@ -52,7 +52,11 @@ from planagent.services.seminar.templates import (
     get_seminar_template,
     render_template,
 )
-from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
+from planagent.services.skills.contracts import (
+    SkillContractError,
+    SkillEmptyResponseError,
+    SkillTruncatedError,
+)
 from planagent.services.skills.orchestration import (
     AdvisoryBoardResult,
     SkillLLMPort,
@@ -77,8 +81,10 @@ async def run_seminar_stage(
     over the seminar template registry and seminar contracts
     (version 1). Raises :class:`SkillLLMUnavailable` when no LLM is
     configured, :class:`SkillTruncatedError` when the response was
-    cut at the token cap (``finish_reason="length"``), and
-    :class:`SkillContractError` when the response is empty or malformed.
+    cut at the token cap (``finish_reason="length"``),
+    :class:`SkillEmptyResponseError` when the port affirmatively
+    reports an empty upstream response, and
+    :class:`SkillContractError` when the response is malformed.
     """
     template = get_seminar_template(template_id)
     system_prompt, user_content = render_template(template, inputs)
@@ -102,6 +108,15 @@ async def run_seminar_stage(
             raise SkillTruncatedError(
                 template_id,
                 max_tokens=template.max_tokens,
+                contract_version=SEMINAR_CONTRACT_VERSION,
+                contract_family="seminar",
+            )
+        if response.empty_response:
+            # Empty, not malformed: the port inspected the raw
+            # response and found no content. Classified distinctly
+            # (retry track).
+            raise SkillEmptyResponseError(
+                template_id,
                 contract_version=SEMINAR_CONTRACT_VERSION,
                 contract_family="seminar",
             )
@@ -146,9 +161,12 @@ def classify_error(exc: BaseException) -> str:
         return ErrorKind.UNAVAILABLE.value
     # Truncation BEFORE contract: SkillTruncatedError subclasses
     # SkillContractError (so existing handlers keep catching it), but
-    # the taxonomy must report the true cause (fix batch 2).
+    # the taxonomy must report the true cause (fix batch 2). The
+    # empty-response error is ordered the same way (retry track).
     if isinstance(exc, SkillTruncatedError):
         return ErrorKind.TRUNCATED.value
+    if isinstance(exc, SkillEmptyResponseError):
+        return ErrorKind.EMPTY_RESPONSE.value
     if isinstance(exc, SkillContractError):
         return ErrorKind.CONTRACT.value
     if is_timeout_exception(exc):

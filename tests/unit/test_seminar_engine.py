@@ -26,7 +26,11 @@ from planagent.services.seminar.engine import (
     run_seminar_stage,
 )
 from planagent.services.seminar.models import validate_seminar_transition
-from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
+from planagent.services.skills.contracts import (
+    SkillContractError,
+    SkillEmptyResponseError,
+    SkillTruncatedError,
+)
 from planagent.services.skills.orchestration import SkillLLMResponse, SkillLLMUnavailable
 
 
@@ -428,3 +432,30 @@ async def test_run_seminar_stage_empty_response_stays_a_plain_contract_error() -
         )
     assert not isinstance(excinfo.value, SkillTruncatedError)
     assert classify_error(excinfo.value) == "contract"
+
+
+class _EmptySignalPort:
+    """A port that affirmatively reports an empty upstream response."""
+
+    def is_available(self) -> bool:
+        return True
+
+    async def generate_json(self, **kwargs: object) -> SkillLLMResponse:
+        return SkillLLMResponse(model="fake-model", payload=None, empty_response=True)
+
+
+async def test_run_seminar_stage_empty_signal_raises_empty_response_error() -> None:
+    # Retry track: payload None + the port's affirmative empty
+    # signal raises the DISTINCT empty-response error (seminar
+    # family), classifying as empty_response — never the generic
+    # "no usable JSON" contract message, and never truncation.
+    with pytest.raises(SkillEmptyResponseError, match="empty response") as excinfo:
+        await run_seminar_stage(
+            _EmptySignalPort(),  # type: ignore[arg-type]
+            stage="reflection",
+            template_id="seminar.reflect",
+            inputs=dict(_REFLECT_INPUTS),
+        )
+    assert "seminar-v1" in str(excinfo.value)
+    assert not isinstance(excinfo.value, SkillTruncatedError)
+    assert classify_error(excinfo.value) == "empty_response"

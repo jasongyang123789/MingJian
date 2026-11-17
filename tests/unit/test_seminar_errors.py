@@ -1,8 +1,9 @@
-"""Error taxonomy tests (Sprint 18, design §10.2).
+"""Error taxonomy tests (Sprint 18, design §10.2; retry track).
 
 Pins the formal taxonomy: every failure classifies into exactly one
-kind, and ONLY timeouts are retryable. CancelledError classifies as
-``cancelled`` for diagnosis but is never retried.
+kind, and timeouts, truncations, and empty responses are retryable.
+CancelledError classifies as ``cancelled`` for diagnosis but is
+never retried.
 """
 
 from __future__ import annotations
@@ -19,7 +20,11 @@ from planagent.services.seminar.errors import (
     is_retryable_error,
     is_timeout_exception,
 )
-from planagent.services.skills.contracts import SkillContractError, SkillTruncatedError
+from planagent.services.skills.contracts import (
+    SkillContractError,
+    SkillEmptyResponseError,
+    SkillTruncatedError,
+)
 from planagent.services.skills.orchestration import SkillLLMUnavailable
 
 
@@ -28,6 +33,7 @@ def test_taxonomy_kinds_are_exactly_the_design_set() -> None:
         "timeout",
         "contract",
         "truncated",
+        "empty_response",
         "unavailable",
         "budget_exhausted",
         "cancelled",
@@ -51,6 +57,9 @@ def test_classify_error_maps_each_failure_class() -> None:
     # subclasses SkillContractError (fix batch 2): the check order in
     # classify_error is the whole point.
     assert classify_error(SkillTruncatedError("t", max_tokens=8000)) == "truncated"
+    # Empty responses classify distinctly for the same reason (retry
+    # track): the check order, not the class hierarchy, decides.
+    assert classify_error(SkillEmptyResponseError("t")) == "empty_response"
     assert classify_error(SkillLLMUnavailable("none")) == "unavailable"
     assert (
         classify_error(BudgetExhaustedError(budget="max_tokens", used=10, limit=10))
@@ -75,7 +84,24 @@ def test_truncation_error_names_truncation_and_the_cap() -> None:
     assert isinstance(exc, SkillContractError)
 
 
-def test_only_timeouts_are_retryable() -> None:
+def test_empty_response_error_names_the_empty_response() -> None:
+    # The message must name the true cause — no content arrived — so
+    # a reader of the audit never has to guess why there is no JSON.
+    exc = SkillEmptyResponseError("mckinsey.verify_assumptions")
+    assert "empty response" in str(exc)
+    assert exc.empty_response is True
+    assert exc.template_id == "mckinsey.verify_assumptions"
+    # Subclassing is deliberate: existing contract-error handlers
+    # (skills 502 mapping, seminar failure isolation) keep catching it.
+    assert isinstance(exc, SkillContractError)
+    assert not isinstance(exc, SkillTruncatedError)
+
+
+def test_retryable_kinds_are_timeout_truncated_and_empty() -> None:
+    # Retry track: timeouts, truncations, and empty responses retry;
+    # the timeout-only policy of S18 / fix batch 2 is superseded.
+    # Sampling variance may produce a fitting output on a re-call,
+    # and an empty response is a transient upstream gap.
     assert is_retryable_error(TimeoutError("slow")) is True
     # Alias spelling pinned deliberately (see above).
     assert is_retryable_error(asyncio.TimeoutError()) is True  # noqa: UP041
@@ -85,10 +111,9 @@ def test_only_timeouts_are_retryable() -> None:
         )
         is True
     )
+    assert is_retryable_error(SkillTruncatedError("t", max_tokens=8000)) is True
+    assert is_retryable_error(SkillEmptyResponseError("t")) is True
     assert is_retryable_error(SkillContractError("t", [{"loc": (), "msg": "bad"}])) is False
-    # Truncation is never retried under the current policy: the same
-    # capped call would truncate again (fix batch 2).
-    assert is_retryable_error(SkillTruncatedError("t", max_tokens=8000)) is False
     assert is_retryable_error(SkillLLMUnavailable("none")) is False
     assert (
         is_retryable_error(BudgetExhaustedError(budget="max_tokens", used=10, limit=10))

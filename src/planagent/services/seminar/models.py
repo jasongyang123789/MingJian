@@ -41,7 +41,7 @@ DEFAULT_MAX_STAGE_CALLS = 200
 #: purpose — the guardrail catches runaway seminars, not normal ones.
 DEFAULT_MAX_TOKENS = 1_000_000
 
-#: Default timeout-only retries (design §10.3): 2 retries = 3 attempts.
+#: Default retries (design §10.3, retry track): 2 retries = 3 attempts.
 DEFAULT_MAX_RETRIES = 2
 
 #: Default fixed backoff between timeout retries (seconds).

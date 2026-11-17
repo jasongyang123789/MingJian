@@ -109,6 +109,55 @@ class SkillTruncatedError(SkillContractError):
         )
 
 
+class SkillEmptyResponseError(SkillContractError):
+    """A stage's LLM output never arrived: the upstream returned an
+    empty response (retry track, 2026-11-17 live failure).
+
+    Raised when the port affirmatively reports that no content
+    arrived — no choices, or empty/whitespace-only content — so no
+    JSON output exists to validate. This is a DISTINCT failure from
+    a malformed response: content that arrived but did not parse
+    stays a plain :class:`SkillContractError` and is never retried,
+    while an empty response is transient (the 2026-11-17 seminar
+    smoke lost model-b to exactly one upstream empty response) and
+    IS retried by the seminar retry wrapper. The seminar taxonomy
+    classifies it as ``empty_response`` (see
+    :func:`planagent.services.seminar.engine.classify_error`, which
+    checks this class BEFORE :class:`SkillContractError`).
+
+    It subclasses :class:`SkillContractError` deliberately, like
+    :class:`SkillTruncatedError`: every existing handler (the skills
+    502 mapping, the seminar failure isolation) keeps catching it,
+    while the classifier and the message name the true cause. Only
+    ports that inspect the raw response raise it (via the
+    ``empty_response`` signal on the response); a bare payload-None
+    response with no signal stays a plain contract error, so an
+    unknown cause is never misreported as an empty response.
+    """
+
+    def __init__(
+        self,
+        template_id: str,
+        contract_version: str = SKILL_CONTRACT_VERSION,
+        contract_family: str = "skills",
+    ) -> None:
+        self.empty_response = True
+        super().__init__(
+            template_id,
+            [
+                {
+                    "loc": ("root",),
+                    "msg": (
+                        "upstream returned an empty response "
+                        "(no usable content); no JSON output arrived"
+                    ),
+                }
+            ],
+            contract_version=contract_version,
+            contract_family=contract_family,
+        )
+
+
 class _Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -529,6 +578,7 @@ __all__ = [
     "PreMortem",
     "Shortlist",
     "SkillContractError",
+    "SkillEmptyResponseError",
     "SkillTruncatedError",
     "Synthesis",
     "TournamentJudgment",

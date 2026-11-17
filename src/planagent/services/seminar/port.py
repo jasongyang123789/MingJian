@@ -28,6 +28,14 @@ Fix batch 2 adds a third difference: the SDK finish reason is
 captured onto the response, so a response cut at the token cap
 (``finish_reason="length"``) is classified as truncation, never as a
 generic contract failure.
+
+The retry track adds a fourth: the port inspects the raw content
+and flags an EMPTY response (no choices, or empty/whitespace-only
+content) on the response, so the retry wrapper can retry a
+transient upstream gap while malformed (non-empty, unparseable)
+content stays a plain contract failure that is never retried. SDK
+call failures still collapse to ``payload=None`` with no signal:
+a failed call is not an observed empty response.
 """
 
 from __future__ import annotations
@@ -135,16 +143,30 @@ class ParameterizedSkillPort:
             )
         except APITimeoutError as exc:
             # Timeouts surface distinctly (S18): the retry wrapper
-            # retries exactly these, and the taxonomy classifies them
-            # as timeout rather than contract. Raised as stdlib
+            # retries them, and the taxonomy classifies them as
+            # timeout rather than contract. Raised as stdlib
             # TimeoutError so every classifier sees one type.
             raise TimeoutError(f"LLM stage call timed out: {exc}") from exc
         except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
             return SkillLLMResponse(model=None, payload=None)
         try:
-            text = response.choices[0].message.content or "{}"
+            content = _sdk_content(response)
+            if content is None or not content.strip():
+                # Empty response: the provider answered with nothing
+                # (no choices, or empty/whitespace-only content).
+                # Flagged explicitly — the retry wrapper retries
+                # these, and the stage runner raises the distinct
+                # empty-response error. Malformed content (below)
+                # stays a plain contract failure.
+                return SkillLLMResponse(
+                    model=self._resolved.model,
+                    payload=None,
+                    usage=_sdk_usage(response),
+                    finish_reason=_sdk_finish_reason(response),
+                    empty_response=True,
+                )
             try:
-                parsed = json.loads(extract_json_payload(text))
+                parsed = json.loads(extract_json_payload(content))
             except json.JSONDecodeError:
                 parsed = None
             return SkillLLMResponse(
@@ -155,6 +177,27 @@ class ParameterizedSkillPort:
             )
         except Exception:  # noqa: BLE001 — mirrors generate_json_for_target
             return SkillLLMResponse(model=None, payload=None)
+
+
+def _sdk_content(response: object) -> str | None:
+    """Read the first choice's message content off an SDK response.
+
+    ``None`` when the response carries no choices, no message, or no
+    string content — the empty-response signal, never a fabricated
+    ``"{}"``. Non-string content (content-part lists) renders via
+    ``str`` so it reaches the JSON parser instead of being misread
+    as empty.
+    """
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None
+    message = getattr(choices[0], "message", None)
+    if message is None:
+        return None
+    content = getattr(message, "content", None)
+    if content is None:
+        return None
+    return content if isinstance(content, str) else str(content)
 
 
 def _sdk_finish_reason(response: object) -> str | None:
