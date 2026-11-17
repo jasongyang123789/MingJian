@@ -399,7 +399,7 @@ export function TemplateForm({
       </div>
 
       <div>
-        <SectionTitle>变量表（{draft.variables.length} 个变量，最多 30 个）</SectionTitle>
+        <SectionTitle>变量表（{draft.variables.length} 个变量，最多 100 个）</SectionTitle>
         {draft.variables.length === 0 && (
           <p className="mb-2 text-sm text-slate-500">模板可以不带变量（只含状态默认值与策略）。</p>
         )}

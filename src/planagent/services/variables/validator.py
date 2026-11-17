@@ -3,7 +3,8 @@
 No LLM, no randomness, no I/O. Rules are ported from
 agilhaykal/strategic-simulation (``backend/engine.py``):
 
-- 1-30 variables per set;
+- 1-100 variables per set (raised from the reference's 30 by Ho's
+  2026-11-17 decision; see ``MAX_VARIABLES``);
 - every variable has a unit and an ``evidence_ref`` (an explicit
   ``estimate: ...`` reference counts as provenance);
 - ``fixed`` requires ``value``; ``normal`` requires ``mean`` and ``std`` with

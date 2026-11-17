@@ -5,8 +5,10 @@ imports nothing from the rest of the application, so ``domain/api.py`` can
 import ``VariableSet`` without creating a cycle.
 
 Semantics are ported from agilhaykal/strategic-simulation
-(``SimplifySimulation``, ``backend/engine.py``): a variable table holds 1-30
-variables, each with a unit, a distribution (fixed / normal / triangular /
+(``SimplifySimulation``, ``backend/engine.py``): a variable table holds 1-100
+variables — the reference pins the cap at 30; it was raised to 100 by Ho's
+2026-11-17 decision (the cap was a Sprint 2 design pin, not a semantic
+limit) — each with a unit, a distribution (fixed / normal / triangular /
 beta_pert / bernoulli), and an ``evidence_ref`` provenance reference (an
 explicit ``estimate: ...`` reference counts as provenance). Bounds rules live
 in :mod:`validator`; this module only enforces shape, string hygiene, and
@@ -37,7 +39,10 @@ class DistributionType(str, Enum):
     BERNOULLI = "bernoulli"
 
 
-MAX_VARIABLES = 30
+#: Maximum variables per set/template. Raised from the reference's 30 to
+#: 100 by Ho's 2026-11-17 decision (the Sprint 2 pin); the automotive
+#: template's promotion of two literal rates to variables depends on it.
+MAX_VARIABLES = 100
 MAX_INTERNAL_KEY_LENGTH = 64
 MAX_INTERNAL_VALUE_LENGTH = 2000
 #: Maximum formulas per set/template, ported from the SimplifySimulation
@@ -191,7 +196,7 @@ class VariableSet(BaseModel):
     ``internal`` mirrors the prototype's ``internal`` table (free-form
     key/value context such as decision-maker style, team, cash runway): keys
     and values follow the same length limits as the run decision-context
-    normalizer. The validator enforces the 1-30 variable count, so this model
+    normalizer. The validator enforces the 1-100 variable count, so this model
     deliberately carries no length constraint on ``variables`` — an empty or
     oversized set must surface as a structured validation issue, not a 422.
 

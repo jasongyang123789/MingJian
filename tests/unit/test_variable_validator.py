@@ -1,7 +1,8 @@
 """Unit tests for the Sprint 2 variable-table validator.
 
 Pure-function tests: no database, no I/O. Rules are ported from
-agilhaykal/strategic-simulation (backend/engine.py): 1-30 variables, unit +
+agilhaykal/strategic-simulation (backend/engine.py): 1-100 variables (cap
+raised from the reference's 30 by Ho's 2026-11-17 decision), unit +
 evidence_ref provenance on every variable, and per-distribution parameter
 rules.
 """
@@ -208,16 +209,19 @@ def test_empty_and_oversized_sets() -> None:
     assert empty.is_valid is False
     assert kinds(empty) == ["empty_set"]
 
-    thirty = validate_variable_set(
-        VariableSet(variables=[make_variable(f"v{i}") for i in range(30)])
+    hundred = validate_variable_set(
+        VariableSet(variables=[make_variable(f"v{i}") for i in range(100)])
     )
-    assert thirty.is_valid
+    assert hundred.is_valid
 
     oversized = validate_variable_set(
-        VariableSet(variables=[make_variable(f"v{i}") for i in range(31)])
+        VariableSet(variables=[make_variable(f"v{i}") for i in range(101)])
     )
     assert oversized.is_valid is False
     assert kinds(oversized) == ["too_many_variables"]
+    assert oversized.issues[0].message == (
+        "A variable set holds at most 100 variables; got 101."
+    )
 
 
 def test_duplicate_variable_ids_rejected() -> None:
@@ -355,7 +359,16 @@ def test_validate_template_state_fields_and_policies() -> None:
     )
     assert kinds(bad_variable) == ["missing_unit", "missing_evidence_ref"]
 
+    hundred = validate_template(
+        make_template(variables=[make_variable(f"v{i}") for i in range(100)])
+    )
+    assert hundred.is_valid
+
     oversized = validate_template(
-        make_template(variables=[make_variable(f"v{i}") for i in range(31)])
+        make_template(variables=[make_variable(f"v{i}") for i in range(101)])
     )
     assert "too_many_variables" in kinds(oversized)
+    assert any(
+        issue.message == "A template holds at most 100 variables; got 101."
+        for issue in oversized.issues
+    )
