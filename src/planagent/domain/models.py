@@ -1776,10 +1776,15 @@ class DirectionMappingRecord(Base):
     Narrative generation resolves its directions from these rows
     when the request omits ``directions``; inline definitions always
     win. ``origin`` records whether the row was written by a
-    derivation run (``derived``, with the rule record pinned) or by
-    a user (``authored``). ``user_edited`` is set by any successful
-    update and protects the row from derivation upserts (the
-    no-clobber rule: derive never overwrites a user-edited mapping).
+    derivation run (``derived``, with the rule record pinned), by a
+    user (``authored``), or by an LLM proposal run (``llm_proposal``,
+    with the proposal record pinned). ``user_edited`` is set by any
+    successful update and protects the row from derivation upserts
+    (the no-clobber rule: derive never overwrites a user-edited
+    mapping). ``status`` is the review state (option C): ``active``
+    rows are usable for generation; ``proposed`` rows await an
+    explicit human accept/reject; ``rejected`` rows are retained for
+    audit and never used. Generation resolves only ``active`` rows.
     Names are unique per anchor run, enforced in code and by a DB
     unique constraint. ``position`` fixes generation order
     (derivation writes in rule order; authored rows take max + 1).
@@ -1809,6 +1814,8 @@ class DirectionMappingRecord(Base):
     rule_id: Mapped[str | None] = mapped_column(String(32))
     rules_version: Mapped[str | None] = mapped_column(String(32))
     rule_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    proposal_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -8,6 +8,9 @@ path; the optional polish hook lives in :mod:`polish` and is strictly
 separated from the artifact. Sprint 14 adds deterministic direction
 derivation (:mod:`derivation`: versioned rules over the anchor run's
 scenario family, no new runs) and persisted direction mappings.
+Option C adds LLM-proposed directions (:mod:`proposals`): grounded
+proposals stored as ``proposed`` mappings, usable only after an
+explicit human accept.
 """
 
 from __future__ import annotations
@@ -34,24 +37,40 @@ from planagent.services.narratives.models import (
     NarrativePolishRead,
     ProvenanceKind,
 )
+from planagent.services.narratives.proposals import (
+    PROPOSAL_TEMPLATE_ID,
+    PROPOSAL_TEMPLATE_VERSION,
+    DirectionProposal,
+    DirectionProposals,
+    ProposalContext,
+    build_proposal_user_content,
+    propose_directions,
+)
 from planagent.services.narratives.render import render_narrative_markdown
 
 __all__ = [
     "DERIVATION_RULES_VERSION",
     "NARRATIVE_PROTOCOL_VERSION",
+    "PROPOSAL_TEMPLATE_ID",
+    "PROPOSAL_TEMPLATE_VERSION",
     "DecisionNarrativeListRead",
     "DecisionNarrativeRead",
     "DerivationCandidate",
     "DerivationResult",
     "DirectionDefinition",
     "DirectionInputs",
+    "DirectionProposal",
+    "DirectionProposals",
     "LoopContextInput",
     "NarrativeError",
     "NarrativeGenerateRequest",
     "NarrativeInputs",
     "NarrativePolishRead",
+    "ProposalContext",
     "ProvenanceKind",
+    "build_proposal_user_content",
     "compose_narrative",
     "derive_directions",
+    "propose_directions",
     "render_narrative_markdown",
 ]
