@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Python deps
 COPY pyproject.toml .
 COPY src/ src/
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --index-url https://mirrors.cloud.tencent.com/pypi/simple -e .
 
 # Create exports directory
 RUN mkdir -p /app/exports
