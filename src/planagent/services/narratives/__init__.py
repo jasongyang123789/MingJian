@@ -34,6 +34,7 @@ from planagent.services.narratives.models import (
     NarrativePolishRead,
     ProvenanceKind,
 )
+from planagent.services.narratives.recheck import PolishRecheck, check_polish
 from planagent.services.narratives.render import render_narrative_markdown
 
 __all__ = [
@@ -50,7 +51,9 @@ __all__ = [
     "NarrativeGenerateRequest",
     "NarrativeInputs",
     "NarrativePolishRead",
+    "PolishRecheck",
     "ProvenanceKind",
+    "check_polish",
     "compose_narrative",
     "derive_directions",
     "render_narrative_markdown",

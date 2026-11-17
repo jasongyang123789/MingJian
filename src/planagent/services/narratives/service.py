@@ -71,6 +71,7 @@ from planagent.services.narratives.polish import (
     POLISH_TEMPLATE_VERSION,
     polish_markdown,
 )
+from planagent.services.narratives.recheck import check_polish
 from planagent.services.openai_client import OpenAIService
 from planagent.services.robustness.models import (
     BootstrapResult,
@@ -976,9 +977,13 @@ class NarrativeService:
 
         Raises :class:`NarrativeError` with code
         ``narrative_polish_unavailable`` (route maps to 503) when no
-        LLM is configured, and ``narrative_polish_contract_failed``
-        (route maps to 502) when the output fails its contract. Both
-        write nothing.
+        LLM is configured, ``narrative_polish_contract_failed``
+        (route maps to 502) when the output fails its contract, and
+        ``narrative_polish_recheck_failed`` (route maps to 502)
+        when the polished text fails the numbers/provenance
+        re-check against the deterministic markdown. All three
+        write nothing: the re-check runs after the polish pass
+        returns and before any row is written.
         """
         record = await self._narrative_for_run(session, run_id, narrative_id)
         body = self._to_read(record, polish=None).body
@@ -988,6 +993,9 @@ class NarrativeService:
             raise NarrativeError("narrative_polish_unavailable", str(exc)) from exc
         except SkillContractError as exc:
             raise NarrativeError("narrative_polish_contract_failed", str(exc)) from exc
+        recheck = check_polish(body.markdown, output.polished_markdown)
+        if not recheck.passed:
+            raise NarrativeError("narrative_polish_recheck_failed", recheck.describe())
         row = DecisionNarrativePolishRecord(
             narrative_id=record.id,
             model=model,

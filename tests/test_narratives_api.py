@@ -11,6 +11,7 @@ Sprint 1-12 tests. No live LLM call is ever made.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -20,6 +21,7 @@ from planagent.db import reset_database_cache
 from planagent.main import create_app
 from planagent.services.narratives.polish import POLISH_TEMPLATE_ID
 from planagent.services.narratives.service import NarrativeService
+from planagent.services.skills.orchestration import SkillLLMResponse
 from tests.skill_fixtures import ScriptedSkillPort
 
 BOUND_SET = {
@@ -306,17 +308,60 @@ def test_list_and_get_narratives(monkeypatch, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _client_with_port(port: ScriptedSkillPort) -> TestClient:
+def _client_with_port(port: ScriptedSkillPort | _TransformingSkillPort) -> TestClient:
     app = create_app()
     app.state.narrative_service = NarrativeService(get_settings(), llm_port=port)
     return TestClient(app)
 
 
+class _TransformingSkillPort:
+    """Fake LLM port that derives the polished output from its input.
+
+    A realistic polish rewords the deterministic markdown it was
+    given; a fixed script cannot do that without hardcoding the
+    generated markdown. The transform receives the input markdown
+    and returns the polished text, so tests can pin exactly which
+    rewording passes the re-check and which fails it.
+    """
+
+    def __init__(self, transform) -> None:
+        self._transform = transform
+        self.calls: list[dict[str, str]] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    async def generate_json(
+        self,
+        *,
+        template_id: str,
+        system_prompt: str,
+        user_content: str,
+        max_tokens: int,
+    ) -> SkillLLMResponse:
+        self.calls.append(
+            {
+                "template_id": template_id,
+                "system_prompt": system_prompt,
+                "user_content": user_content,
+                "max_tokens": str(max_tokens),
+            }
+        )
+        return SkillLLMResponse(
+            model="fixture",
+            payload={"polished_markdown": self._transform(user_content)},
+        )
+
+
 def test_polish_success_stores_alongside_artifact(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
-    port = ScriptedSkillPort(
-        {POLISH_TEMPLATE_ID: [{"polished_markdown": "# Polished launch brief"}]}
-    )
+
+    def _reword(markdown: str) -> str:
+        return markdown.replace("决策方向简报", "决策简报").replace(
+            "亏损概率", "亏损概率（已润色）"
+        )
+
+    port = _TransformingSkillPort(_reword)
     with _client_with_port(port) as client:
         run = _create_run(client)
         _create_ensemble(client, run["id"])
@@ -326,7 +371,7 @@ def test_polish_success_stores_alongside_artifact(monkeypatch, tmp_path: Path) -
         response = client.post(f"/runs/{run['id']}/narratives/{narrative_id}/polish")
         assert response.status_code == 201, response.text
         polish = response.json()
-        assert polish["polished_markdown"] == "# Polished launch brief"
+        assert polish["polished_markdown"] == _reword(created.json()["body"]["markdown"])
         assert polish["template_id"] == "narrative.polish"
         assert polish["template_version"] == "1"
         assert polish["model"] == "fixture"
@@ -334,7 +379,57 @@ def test_polish_success_stores_alongside_artifact(monkeypatch, tmp_path: Path) -
         assert fetched.json()["polish"]["id"] == polish["id"]
         assert fetched.json()["content_hash"] == created.json()["content_hash"]
         assert fetched.json()["body"] == created.json()["body"]
-        port.assert_exhausted()
+        assert len(port.calls) == 1
+        assert port.calls[0]["template_id"] == POLISH_TEMPLATE_ID
+
+
+def test_polish_recheck_altered_number_returns_502_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+
+    def _alter(markdown: str) -> str:
+        altered, count = re.subn(r"(P50 )[^ /]+", r"\g<1>99999", markdown, count=1)
+        assert count == 1
+        return altered
+
+    port = _TransformingSkillPort(_alter)
+    with _client_with_port(port) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        created = _generate(client, run["id"])
+        assert created.status_code == 201
+        response = client.post(f"/runs/{run['id']}/narratives/{created.json()['id']}/polish")
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert detail["code"] == "narrative_polish_recheck_failed"
+        assert "99999" in detail["message"]
+        fetched = client.get(f"/runs/{run['id']}/narratives/{created.json()['id']}")
+        assert fetched.json()["polish"] is None
+
+
+def test_polish_recheck_dropped_provenance_returns_502_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+
+    def _drop_mark(markdown: str) -> str:
+        assert "[computed]" in markdown
+        return markdown.replace("[computed]", "", 1)
+
+    port = _TransformingSkillPort(_drop_mark)
+    with _client_with_port(port) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        created = _generate(client, run["id"])
+        assert created.status_code == 201
+        response = client.post(f"/runs/{run['id']}/narratives/{created.json()['id']}/polish")
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert detail["code"] == "narrative_polish_recheck_failed"
+        assert "[computed]" in detail["message"]
+        fetched = client.get(f"/runs/{run['id']}/narratives/{created.json()['id']}")
+        assert fetched.json()["polish"] is None
 
 
 def test_polish_unavailable_returns_503_and_writes_nothing(monkeypatch, tmp_path: Path) -> None:

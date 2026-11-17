@@ -38,6 +38,10 @@ router = APIRouter()
 _POLISH_STATUS_CODES = {
     "narrative_polish_unavailable": 503,
     "narrative_polish_contract_failed": 502,
+    # The LLM produced content that fails verification against the
+    # artifact: same class as a contract failure (bad upstream
+    # output), so 502 like narrative_polish_contract_failed.
+    "narrative_polish_recheck_failed": 502,
 }
 
 
