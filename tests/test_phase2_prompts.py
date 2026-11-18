@@ -282,8 +282,11 @@ def test_r5_no_fact_skips_without_generalizing() -> None:
 def test_r6_overlap_is_a_prompt_not_a_refusal() -> None:
     structure = _structure(
         [
-            _row("P02", 0.6, code="RHP:SA8650", supplier="s1", share=0.5),
-            _row("P02", 0.6, code="NGX:J6M", supplier="s2", share=0.5),
+            # Two SOLUTIONS, each fully supplied (solution slots,
+            # S-layer real splits): the overlap is in fitment (0.6 +
+            # 0.6 independent penetrations), not in supplier shares.
+            _row("P02", 0.6, code="RHP:SA8650", supplier="s1", share=1.0),
+            _row("P02", 0.6, code="NGX:J6M", supplier="s2", share=1.0),
         ]
     )
     # The structure itself is VALID (Ho Q7: independent penetrations).

@@ -53,7 +53,7 @@ from .aggregation import (
 )
 from .models import SplitStructure
 from .schedules import structure_with_effective_shares
-from .validator import SUM_TOLERANCE, validate_or_raise
+from .validator import oem_share_issues, validate_or_raise
 
 
 class SalesLayerRow(BaseModel):
@@ -150,13 +150,18 @@ def compute_sales_layer(
     supply_shares: dict[tuple[str, str], float] | None = None,
     default_supply_share: float | None = None,
     strict_prices: bool = True,
+    shares_source: str = "caller-supplied",
 ) -> SalesLayerComputation:
     """Compute monthly capacity + own sales over a production trajectory.
 
     ``production_by_tick`` maps 1-based ticks to total OEM production
     volume (the engine's ``production_volume`` state, 10k vehicles /
     month). ``oem_production_shares`` maps every OEM in the structure
-    to its share of that total and must sum to 1.
+    to its share of that total and must sum to 1. ``shares_source`` is
+    the provenance label recorded in the assumptions list: the default
+    ``"caller-supplied"`` preserves the Phase 2 wording; the route
+    passes a stored-input label when the shares came from the run's
+    stored fragment.
     """
 
     validate_or_raise(structure)
@@ -270,7 +275,7 @@ def compute_sales_layer(
             row.own_sales for row in rows if row.own_sales is not None
         )
     assumptions = [
-        "Volume spine: OEM PRODUCTION volume including Audi (Ho 2026-11-16); the engine simulates the total, per-OEM shares are caller-supplied and sum to 1.",
+        f"Volume spine: OEM PRODUCTION volume including Audi (Ho 2026-11-16); the engine simulates the total, per-OEM shares are {shares_source} and sum to 1.",
         "Per-nameplate generation schedules apply the effective generation mix at each tick; unscheduled nameplates keep static shares.",
         f"Own-sales basis: {basis}."
         + (
@@ -305,29 +310,13 @@ def compute_sales_layer(
 
 
 def _validate_shares(structure: SplitStructure, shares: dict[str, float]) -> None:
+    # Shared rules with the run-creation gate (validator.oem_share_issues);
+    # the first issue surfaces as ValueError, preserving the Phase 2
+    # messages the route's error-code mapping keys on.
     oem_ids = {oem.oem_id for oem in structure.oems}
-    unknown = sorted(set(shares) - oem_ids)
-    if unknown:
-        raise ValueError(f"OEM production shares name unknown OEMs: {unknown}.")
-    missing = sorted(oem_ids - set(shares))
-    if missing:
-        raise ValueError(
-            f"No production share supplied for OEMs {missing}; the S-layer refuses to assume one."
-        )
-    total = 0.0
-    for oem_id, share in shares.items():
-        if (
-            isinstance(share, bool)
-            or not isinstance(share, (int, float))
-            or not math.isfinite(float(share))
-            or not 0.0 <= float(share) <= 1.0
-        ):
-            raise ValueError(f"Production share for OEM {oem_id!r} must be a number in [0, 1].")
-        total += float(share)
-    if abs(total - 1.0) > SUM_TOLERANCE:
-        raise ValueError(
-            f"OEM production shares sum to {total}, not 1 (tolerance {SUM_TOLERANCE})."
-        )
+    issues = oem_share_issues(oem_ids, shares)
+    if issues:
+        raise ValueError(issues[0][1])
 
 
 def _validate_trajectory(production_by_tick: dict[int, float]) -> None:

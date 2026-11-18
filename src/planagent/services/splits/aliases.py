@@ -198,16 +198,23 @@ def dc_platform(solution_code: str | None) -> str | None:
 
 
 _COUNT_MULTIPLIER = re.compile(r"\*(\d+)")
+_SEGMENT_SPLIT = re.compile(r"[\s；;+＋、,，]+")
 _CHINESE_NUMERALS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8}
 
 
 def parse_camera_count(solution_code: str | None) -> int | None:
     """Parse the camera-group size out of a P05 solution label.
 
-    ``*N`` multipliers, binocular/trinocular markers, and the explicit
-    11-camera group parse to counts; labels without a countable size
-    (Toyota/Honda groups, bare ``摄像头``) return ``None``. When a
-    label lists several groups (``前视*2 + 环视*4``), the counts sum.
+    The label is split into segments (whitespace / ``；`` / ``+`` /
+    ``、`` separators); each segment contributes its marker factor
+    (``三目`` 3, ``双目`` 2, ``单目``/none 1) times its ``*N``
+    multiplier (1 when a marker stands alone). Segment counts sum, so
+    ``"环视摄像头*4 前视双目摄像头*1 后视摄像头*1"`` parses to 7 and
+    ``"前视三目摄像头*1"`` to 3 — the real workbook labels carry the
+    marker AND the multiplier together, and the pre-fix parser only
+    honored the marker when no multiplier existed anywhere, undercounting
+    every binocular/trinocular group. Labels without a countable size
+    (Toyota/Honda groups, bare ``摄像头``) return ``None``.
     """
 
     if not solution_code:
@@ -216,14 +223,18 @@ def parse_camera_count(solution_code: str | None) -> int | None:
     if "11" in label and "颗" in label:
         return 11
     total = 0
-    for match in _COUNT_MULTIPLIER.finditer(label):
-        total += int(match.group(1))
-    if total:
-        return total
-    if "双目" in label:
-        return 2
-    if "三目" in label:
-        return 3
-    if "单目" in label:
-        return 1
-    return None
+    for segment in _SEGMENT_SPLIT.split(label):
+        if not segment:
+            continue
+        if "三目" in segment:
+            factor = 3
+        elif "双目" in segment:
+            factor = 2
+        else:
+            factor = 1
+        multipliers = _COUNT_MULTIPLIER.findall(segment)
+        if multipliers:
+            total += factor * sum(int(match) for match in multipliers)
+        elif "三目" in segment or "双目" in segment or "单目" in segment:
+            total += factor
+    return total if total else None

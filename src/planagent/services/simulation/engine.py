@@ -38,6 +38,7 @@ from planagent.services.mece import MeceValidationResult, validate_or_raise
 from planagent.services.splits.models import SplitValidationIssue, SplitValidationResult
 from planagent.services.splits.validator import (
     SplitValidationError,
+    validate_oem_shares,
     validate_or_raise as validate_split_or_raise,
 )
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
@@ -95,12 +96,18 @@ def _split_configuration_fragment(
     """
     if split_result is None or payload.split_structure is None:
         return {}
-    return {
-        "split_structure": {
-            "structure": payload.split_structure.model_dump(mode="json"),
-            "validation": split_result.model_dump(mode="json"),
-        }
+    fragment: dict[str, Any] = {
+        "structure": payload.split_structure.model_dump(mode="json"),
+        "validation": split_result.model_dump(mode="json"),
     }
+    if payload.oem_production_shares is not None:
+        # Stored OEM mix (S-layer real splits): the shares are run
+        # inputs, so they live in the fragment beside the structure and
+        # enter the Sprint 3 input hash with it.
+        fragment["oem_production_shares"] = payload.oem_production_shares.model_dump(
+            mode="json"
+        )
+    return {"split_structure": fragment}
 
 
 def _firewall_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
@@ -248,6 +255,34 @@ class SimulationEngineMixin:
                     )
                 )
             split_result = validate_split_or_raise(payload.split_structure)
+        # Stored OEM-shares gate (S-layer real splits): shares without a
+        # structure are meaningless, and shares that do not cover exactly
+        # the structure's OEMs (or do not sum to 1) refuse run creation
+        # entirely — no run row is written, mirroring the split gate.
+        if payload.oem_production_shares is not None:
+            if payload.split_structure is None:
+                raise SplitValidationError(
+                    SplitValidationResult(
+                        is_valid=False,
+                        issues=[
+                            SplitValidationIssue(
+                                kind="oem_shares_require_split_structure",
+                                message=(
+                                    "OEM production shares require an attached "
+                                    "split structure; the shares cover the "
+                                    "structure's OEMs."
+                                ),
+                            )
+                        ],
+                    )
+                )
+            share_issues = validate_oem_shares(
+                payload.split_structure, payload.oem_production_shares
+            )
+            if share_issues:
+                raise SplitValidationError(
+                    SplitValidationResult(is_valid=False, issues=share_issues)
+                )
         execution_mode = payload.execution_mode or (
             ExecutionMode.INLINE
             if self.settings.inline_simulation_default

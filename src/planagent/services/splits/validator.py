@@ -10,9 +10,12 @@ on 2026-11-16:
 - nameplate shares sum to 1 per OEM;
 - generation shares sum to 1 per nameplate (per period);
 - trim shares sum to 1 per generation;
-- supplier shares sum to 1 per nameplate x generation x trim x product slot;
+- supplier shares sum to 1 per nameplate x generation x trim x
+  SOLUTION slot (product + solution code — see below);
 - one-host products (P01 cockpit host, P04 comm terminal — a car takes
-  exactly one) have a share-weighted fitment sum <= 1 per slot.
+  exactly one) have a share-weighted fitment sum <= 1 per
+  nameplate x generation x trim x PRODUCT (across all solutions of
+  the product in the trim).
 - (Phase 2) a per-nameplate transition schedule must reference existing
   generations with the right lifecycle phases (outgoing ``phase_out``,
   successor ``ramp``) and the nameplate must carry exactly those two
@@ -25,12 +28,31 @@ is deliberately NO product-level sum gate in this validator — only
 range checks on individual rates. Same-function overlap is a prompt
 (services/splits/expectations.py), never a refusal.
 
-The one-host check is defense in depth: given the supplier-share sum
-gate and the rate range gate, the weighted sum cannot exceed 1. It is
-kept because the synthesis §C1 gate text requires it explicitly, and
-because it guards the invariant if either of the other gates is ever
-relaxed. Sub-product variant exclusivity (e.g. 4G vs 5G T-BOX within
-P04) is NOT modeled in Phase 1 — product ids are lines, not variants.
+Solution slots (S-layer real splits, 2026-11-18): the supplier-share
+sum gate groups rows by (product, solution code), not by product
+alone. Phase 1 defined the slot per product, which assumed one
+solution per product per trim. The real workbook splits refute that:
+Hongqi H5 carries TWO P03 solutions (instrument + central screen)
+from the SAME supplier at full fitment each, and E-H7 carries two P03
+solutions from DIFFERENT suppliers — neither is representable under
+a per-product slot (the duplicate gate refuses the first, the sum
+gate halves the second). Under solution slots, each solution carries
+its own supplier split (two suppliers splitting ONE solution still
+sum to 1 — the FAW-VW pattern), while different solutions coexist
+independently per Q7. Uncoded rows group into one slot per product,
+so Phase 1 structures without solution codes validate exactly as
+before. The one-host backstop deliberately stays PRODUCT-level: two
+full-penetration P01 solutions in one trim would still mean two
+hosts per car, so the weighted sum runs across all solutions of the
+product in the trim.
+
+The one-host check is load-bearing under solution slots: two
+full-penetration solutions of P01/P04 in one trim would each pass
+their own slot gate while summing to two hosts per car, so only the
+product-level weighted sum catches it. It is also kept because the
+synthesis §C1 gate text requires it explicitly. Sub-product variant
+exclusivity (e.g. 4G vs 5G T-BOX within P04) is NOT modeled in
+Phase 1 — product ids are lines, not variants.
 
 Tolerance is 1e-9 (synthesis §C1). Every issue carries the tree path so
 the caller can locate the offending split without guessing.
@@ -38,9 +60,12 @@ the caller can locate the offending split without guessing.
 
 from __future__ import annotations
 
+import math
+
 from .models import (
     GenerationTransitionSchedule,
     NameplateSplit,
+    OemProductionShares,
     SplitCheckRecord,
     SplitStructure,
     SplitValidationIssue,
@@ -283,22 +308,27 @@ def validate_split_structure(structure: SplitStructure) -> SplitValidationResult
                             )
                         )
                         continue
-                    # Slot gate: group rows by product; each product slot
-                    # is one supplier split.
-                    slots: dict[str, list] = {}
-                    seen_supplier_rows: set[tuple[str, str]] = set()
+                    # Slot gate: group rows by (product, solution code);
+                    # each SOLUTION slot is one supplier split. Different
+                    # solutions of one product line coexist independently
+                    # (Q7); uncoded rows group into one slot per product.
+                    # The one-host backstop below stays product-level.
+                    slots: dict[tuple[str, str | None], list] = {}
+                    by_product: dict[str, list] = {}
+                    seen_supplier_rows: set[tuple[str, str, str | None]] = set()
                     for row in trim.fitments:
                         row_count += 1
                         row_path = f"{trim_path}.{row.product_id}@{row.supplier_id}"
-                        key = (row.product_id, row.supplier_id)
+                        key = (row.product_id, row.supplier_id, row.solution_code)
                         if key in seen_supplier_rows:
                             issues.append(
                                 _issue(
                                     "duplicate_supplier_slot",
                                     row_path,
                                     f"Supplier {row.supplier_id!r} appears twice for "
-                                    f"product {row.product_id!r} in trim {trim.trim_id!r}; "
-                                    "one row per supplier per slot.",
+                                    f"product {row.product_id!r} solution "
+                                    f"{row.solution_code!r} in trim {trim.trim_id!r}; "
+                                    "one row per supplier per solution slot.",
                                 )
                             )
                         seen_supplier_rows.add(key)
@@ -334,20 +364,25 @@ def validate_split_structure(structure: SplitStructure) -> SplitValidationResult
                                     f"Price {row.price} is negative.",
                                 )
                             )
-                        slots.setdefault(row.product_id, []).append(row)
-                    for product_id, rows in slots.items():
+                        slots.setdefault((row.product_id, row.solution_code), []).append(row)
+                        by_product.setdefault(row.product_id, []).append(row)
+                    for (product_id, solution_code), rows in slots.items():
                         slot_count += 1
                         slot_path = f"{trim_path}.{product_id}"
+                        if solution_code is not None:
+                            slot_path += f"[{solution_code}]"
                         share_total = sum(row.supplier_share for row in rows)
                         if not _sums_to_one(share_total):
                             issues.append(
                                 _issue(
                                     "supplier_shares_sum",
                                     slot_path,
-                                    f"Supplier shares for product {product_id!r} sum to "
-                                    f"{share_total}, not 1 (tolerance {SUM_TOLERANCE}).",
+                                    f"Supplier shares for product {product_id!r} solution "
+                                    f"{solution_code!r} sum to {share_total}, not 1 "
+                                    f"(tolerance {SUM_TOLERANCE}).",
                                 )
                             )
+                    for product_id, rows in by_product.items():
                         if product_id in ONE_HOST_PRODUCTS:
                             weighted = sum(
                                 row.supplier_share * row.fitment
@@ -358,7 +393,7 @@ def validate_split_structure(structure: SplitStructure) -> SplitValidationResult
                                 issues.append(
                                     _issue(
                                         "one_host_fitment_exceeded",
-                                        slot_path,
+                                        f"{trim_path}.{product_id}",
                                         f"One-host product {product_id!r} has a "
                                         f"share-weighted fitment sum of {weighted}, "
                                         "above 1: one car takes one host unit.",
@@ -471,3 +506,84 @@ def validate_or_raise(structure: SplitStructure) -> SplitValidationResult:
     if not result.is_valid:
         raise SplitValidationError(result)
     return result
+
+
+def oem_share_issues(
+    oem_ids: set[str], shares: dict[str, float]
+) -> list[tuple[str, str]]:
+    """``(kind, message)`` issues for an OEM-mix map against an OEM set.
+
+    Shared by the run-creation gate (structured issues via
+    :func:`validate_oem_shares`) and the S-layer computation (first
+    issue raised as ``ValueError`` by ``sales_layer._validate_shares``)
+    so the two paths can never disagree on the rules. Check order
+    matches the Phase 2 behavior: unknown OEMs, then missing OEMs,
+    then per-share ranges (dict order), then the sum — the sum check
+    is skipped when a range issue exists, since the total cannot be
+    trusted then.
+    """
+
+    issues: list[tuple[str, str]] = []
+    unknown = sorted(set(shares) - oem_ids)
+    if unknown:
+        issues.append(
+            (
+                "oem_shares_unknown_oem",
+                f"OEM production shares name unknown OEMs: {unknown}.",
+            )
+        )
+    missing = sorted(oem_ids - set(shares))
+    if missing:
+        issues.append(
+            (
+                "oem_shares_missing_oem",
+                (
+                    f"No production share supplied for OEMs {missing}; "
+                    "the S-layer refuses to assume one."
+                ),
+            )
+        )
+    total = 0.0
+    range_ok = True
+    for oem_id, share in shares.items():
+        if (
+            isinstance(share, bool)
+            or not isinstance(share, (int, float))
+            or not math.isfinite(float(share))
+            or not 0.0 <= float(share) <= 1.0
+        ):
+            issues.append(
+                (
+                    "oem_shares_out_of_range",
+                    f"Production share for OEM {oem_id!r} must be a number in [0, 1].",
+                )
+            )
+            range_ok = False
+        else:
+            total += float(share)
+    if range_ok and abs(total - 1.0) > SUM_TOLERANCE:
+        issues.append(
+            (
+                "oem_shares_sum",
+                f"OEM production shares sum to {total}, not 1 (tolerance {SUM_TOLERANCE}).",
+            )
+        )
+    return issues
+
+
+def validate_oem_shares(
+    structure: SplitStructure, shares: OemProductionShares
+) -> list[SplitValidationIssue]:
+    """Structured OEM-share issues for the run-creation gate.
+
+    The stored mix must cover exactly the structure's OEMs, with every
+    value in [0, 1] and the total at 1 (tolerance 1e-9). Returns []
+    when the mix is acceptable; the caller refuses run creation on any
+    issue, mirroring the split-structure gate.
+    """
+
+    oem_ids = {oem.oem_id for oem in structure.oems}
+    return [
+        _issue(kind, "", message)
+        for kind, message in oem_share_issues(oem_ids, shares.shares)
+    ]
