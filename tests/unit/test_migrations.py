@@ -113,3 +113,127 @@ def test_recommendation_integrity_migration_repairs_existing_duplicates(tmp_path
         ).fetchall()
 
     assert rows == [("version-earlier", 1), ("version-later", 2)]
+
+
+def _run_alembic(
+    repo_root: Path, env: dict[str, str], *args: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_seed_columns_become_bigint_and_keep_rows(tmp_path: Path) -> None:
+    """Fix batch 3, migration 0043: seed columns widen Integer -> BigInteger.
+
+    SQLite renders BigInteger as BIGINT, so the type change is directly
+    observable here even though SQLite integers were already 64-bit.
+    Seeded 63-bit rows must survive upgrade, downgrade, and re-upgrade
+    with their values intact.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    database_path = tmp_path / "seed-bigint.db"
+    env = os.environ.copy()
+    env["PLANAGENT_DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}"
+
+    before = _run_alembic(repo_root, env, "upgrade", "0042_direction_override_record")
+    assert before.returncode == 0, before.stdout + before.stderr
+
+    big_run_seed = 2**62 + 7
+    big_fit_seed = 2**62 + 12345
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute(
+            "INSERT INTO simulation_runs "
+            "(id, domain_id, actor_template, execution_mode, status, tick_count, "
+            "seed, configuration, summary, processing_attempts, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "run-seed",
+                "corporate",
+                "default",
+                "INLINE",
+                "COMPLETED",
+                2,
+                big_run_seed,
+                "{}",
+                "{}",
+                0,
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO calibration_fits "
+            "(id, kind, domain_id, ridge_strength, seed, bootstrap_draws, level, "
+            "source_run_ids, n_observations, changes, inputs_hash, application, "
+            "created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "fit-seed",
+                "rule_weights",
+                "corporate",
+                1.0,
+                big_fit_seed,
+                10,
+                0.95,
+                "[]",
+                0,
+                "{}",
+                "sha256:fixbatch3",
+                "{}",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.commit()
+
+    def column_types() -> tuple[dict[str, str], dict[str, str]]:
+        with closing(sqlite3.connect(database_path)) as connection:
+            runs = {
+                row[1]: row[2]
+                for row in connection.execute("PRAGMA table_info(simulation_runs)")
+            }
+            fits = {
+                row[1]: row[2]
+                for row in connection.execute("PRAGMA table_info(calibration_fits)")
+            }
+        return runs, fits
+
+    def stored_seeds() -> tuple[int, int]:
+        with closing(sqlite3.connect(database_path)) as connection:
+            run_seed = connection.execute(
+                "SELECT seed FROM simulation_runs WHERE id = ?", ("run-seed",)
+            ).fetchone()[0]
+            fit_seed = connection.execute(
+                "SELECT seed FROM calibration_fits WHERE id = ?", ("fit-seed",)
+            ).fetchone()[0]
+        return run_seed, fit_seed
+
+    runs, fits = column_types()
+    assert runs["seed"] == "INTEGER"
+    assert fits["seed"] == "INTEGER"
+
+    upgraded = _run_alembic(repo_root, env, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+    runs, fits = column_types()
+    assert runs["seed"] == "BIGINT"
+    assert fits["seed"] == "BIGINT"
+    assert stored_seeds() == (big_run_seed, big_fit_seed)
+
+    downgraded = _run_alembic(repo_root, env, "downgrade", "0042_direction_override_record")
+    assert downgraded.returncode == 0, downgraded.stdout + downgraded.stderr
+    runs, fits = column_types()
+    assert runs["seed"] == "INTEGER"
+    assert fits["seed"] == "INTEGER"
+    assert stored_seeds() == (big_run_seed, big_fit_seed)
+
+    reupgraded = _run_alembic(repo_root, env, "upgrade", "head")
+    assert reupgraded.returncode == 0, reupgraded.stdout + reupgraded.stderr
+    runs, fits = column_types()
+    assert runs["seed"] == "BIGINT"
+    assert fits["seed"] == "BIGINT"
+    assert stored_seeds() == (big_run_seed, big_fit_seed)
