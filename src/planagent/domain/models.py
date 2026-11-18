@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -489,7 +490,12 @@ class SimulationRun(Base):
         String(24), default=SimulationRunStatus.PENDING.value, nullable=False
     )
     tick_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    # BigInteger, not Integer: derived sub-seeds (derive_sub_seed) are
+    # 63-bit and land here for Monte Carlo trials and robustness probes;
+    # Postgres Integer is 32-bit and rejects them ("integer out of
+    # range"). SQLite integers are 64-bit, so its tests never caught it
+    # (fix batch 3, migration 0043).
+    seed: Mapped[int] = mapped_column(BigInteger, nullable=False)
     configuration: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     lease_owner: Mapped[str | None] = mapped_column(String(120), index=True)
@@ -1496,7 +1502,11 @@ class CalibrationFitRecord(Base):
     calibrated_template_id: Mapped[str | None] = mapped_column(String(36), index=True)
     metric: Mapped[str | None] = mapped_column(String(120))
     ridge_strength: Mapped[float] = mapped_column(Float, nullable=False)
-    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    # BigInteger, same reason as SimulationRun.seed: the fit request's
+    # seed is an unbounded int, so a 63-bit value can reach this column
+    # through the public API; Postgres Integer is 32-bit (fix batch 3,
+    # migration 0043).
+    seed: Mapped[int] = mapped_column(BigInteger, nullable=False)
     bootstrap_draws: Mapped[int] = mapped_column(Integer, nullable=False)
     level: Mapped[float] = mapped_column(Float, nullable=False)
     source_run_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
