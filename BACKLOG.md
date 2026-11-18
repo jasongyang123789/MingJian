@@ -866,6 +866,21 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   evidence in-repo; Docker stack verification remains open
   (see Standing open items).
 
+## Full-suite proof run — single-process green at 5ba761d (done)
+
+- 2026-11-17 18:39–18:48 CST, attempt 1 under the serialized
+  full-run lock (write-denial gate open, /dev/shm empty):
+  backend `pytest -q` on the merged tip `5ba761d` passed
+  **1940 tests in 561s, 0 failed**, with 0 disk I/O errors, 0
+  EPERM, 0 assertion failures (130 test files; frontend vitest
+  not covered). Log:
+  `~/workspace/verification/environment-fix-2026-11-17/proof-full-run-attempt1.log`.
+  This closes the per-track full-suite gate gaps recorded above
+  as of this tip; `23aafb7` differs from `5ba761d` only by the
+  Dockerfile pip-mirror line, so the proof covers the code at
+  `23aafb7` unchanged. The write-denial gate still exists, so
+  later runs can still hit a closed window.
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
