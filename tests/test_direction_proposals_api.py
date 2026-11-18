@@ -19,8 +19,10 @@ from fastapi.testclient import TestClient
 
 from planagent.config import get_settings, reset_settings_cache
 from planagent.db import get_database, reset_database_cache
-from planagent.domain.models import DirectionMappingRecord
+from planagent.domain.models import DirectionMappingRecord, SimulationRun
 from planagent.main import create_app
+from planagent.services.mece.models import DecompositionTree
+from planagent.services.mece.validator import validate_decomposition
 from planagent.services.narratives.proposals import PROPOSAL_TEMPLATE_ID
 from planagent.services.narratives.service import NarrativeService
 from tests.skill_fixtures import ScriptedSkillPort
@@ -48,6 +50,14 @@ PASSING_TREE = {
             {"name": "Cost", "scope": ["cost"]},
         ],
     },
+}
+
+# A tree that exists but does not decompose: the root has no children.
+# The MECE validator fails it (empty_tree), so run creation refuses it;
+# the empty-tree anchor below is built by rewriting a stored fragment.
+EMPTY_TREE = {
+    "topic": "Should we launch?",
+    "root": {"name": "Should we launch?", "scope": ["demand", "cost"], "children": []},
 }
 
 
@@ -149,6 +159,31 @@ async def _repoint_mapping(mapping_id: str, source_run_id: str) -> None:
         assert row is not None
         row.source_run_id = source_run_id
         await session.commit()
+
+
+async def _rewrite_mece_fragment(run_id: str, decomposition: dict) -> dict:
+    """Replace a run's stored MECE fragment, returning the validation dump.
+
+    An empty tree cannot be stored via run creation (the MECE gate
+    refuses it), so the empty-tree anchor is built by rewriting the
+    fragment of a run created with a valid tree. The validation is
+    the real validator output for the rewritten tree, not a
+    hand-built record.
+    """
+    database = get_database()
+    async with database.session() as session:
+        row = await session.get(SimulationRun, run_id)
+        assert row is not None
+        tree = DecompositionTree.model_validate(decomposition)
+        validation = validate_decomposition(tree).model_dump(mode="json")
+        configuration = dict(row.configuration or {})
+        fragment = dict(configuration["mece"])
+        fragment["decomposition"] = decomposition
+        fragment["validation"] = validation
+        configuration["mece"] = fragment
+        row.configuration = configuration
+        await session.commit()
+        return validation
 
 
 def _setup_family(client: TestClient) -> tuple[dict, dict]:
@@ -384,6 +419,39 @@ def test_propose_refuses_without_tree_before_calling_llm(monkeypatch, tmp_path: 
         response = _propose(client, run["id"], {})
         assert response.status_code == 400, response.text
         assert response.json()["detail"]["code"] == "direction_proposal_requires_tree"
+        assert port.calls == []
+        assert _mappings(client, run["id"]) == []
+
+
+def test_propose_refuses_empty_tree_before_calling_llm(monkeypatch, tmp_path: Path) -> None:
+    """A stored tree with no branches refuses like a missing tree.
+
+    The scripted proposal traces ONLY to the root name. Branch
+    collection includes the root, so without the empty-tree refusal
+    this vacuous trace would pass grounding and the proposal would
+    be stored. The refusal happens before the port is touched.
+    """
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        run = _create_run(client, decomposition=PASSING_TREE)
+        _create_ensemble(client, run["id"])
+        validation = asyncio.run(_rewrite_mece_fragment(run["id"], EMPTY_TREE))
+        assert validation["is_mece"] is False
+        assert [issue["kind"] for issue in validation["issues"]] == ["empty_tree"]
+        port = ScriptedSkillPort(
+            {
+                PROPOSAL_TEMPLATE_ID: [
+                    {"proposals": [_proposal(run["id"], branches=["Should we launch?"])]}
+                ]
+            }
+        )
+        _bind_port(app, port)
+        response = _propose(client, run["id"], {})
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "direction_proposal_requires_tree"
+        assert "no branches" in detail["message"]
         assert port.calls == []
         assert _mappings(client, run["id"]) == []
 
