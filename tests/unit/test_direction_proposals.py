@@ -16,6 +16,7 @@ from planagent.services.narratives.proposals import (
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SYSTEM_PROMPT,
     PROPOSAL_TEMPLATE_ID,
+    DirectionGate,
     DirectionProposal,
     DirectionProposals,
     ProposalContext,
@@ -29,6 +30,17 @@ from planagent.services.skills.orchestration import SkillLLMUnavailable
 from tests.skill_fixtures import ScriptedSkillPort
 
 
+def _gate(**overrides: object) -> dict:
+    payload: dict = {
+        "variable_id": "cash",
+        "comparison": ">=",
+        "threshold": 90.0,
+        "basis": "Anchor baseline P50 of cash is 100.0; the gate sits below it.",
+    }
+    payload.update(overrides)
+    return payload
+
+
 def _proposal(**overrides: object) -> dict:
     payload: dict = {
         "name": "Phased rollout",
@@ -37,6 +49,7 @@ def _proposal(**overrides: object) -> dict:
         "mece_branches": ["Demand"],
         "key_variables": ["cash"],
         "rationale": "The strategy arm beats baseline on P50 with a bounded loss.",
+        "gates": [_gate()],
     }
     payload.update(overrides)
     return payload
@@ -81,12 +94,15 @@ def test_proposal_contract_parses_valid_payload_with_defaults() -> None:
     assert len(parsed.proposals) == 1
     assert parsed.proposals[0].name == "Phased rollout"
     assert parsed.proposals[0].arm == "strategy"
+    assert parsed.proposals[0].gates[0].variable_id == "cash"
+    assert parsed.proposals[0].gates[0].threshold == 90.0
     minimal = DirectionProposal.model_validate(
         {
             "name": "Wait",
             "source_run_id": "run-1",
             "mece_branches": ["Demand"],
             "rationale": "Wait for evidence.",
+            "gates": [_gate()],
         }
     )
     assert minimal.arm == "baseline"
@@ -149,6 +165,65 @@ def test_proposal_contract_refuses_blank_branch_entries() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Gates (template v2)
+# ---------------------------------------------------------------------------
+
+
+def test_gate_contract_parses_and_normalizes() -> None:
+    gate = DirectionGate.model_validate(
+        _gate(variable_id="  cash ", threshold=90, basis="  Anchor P50 100.0. ")
+    )
+    assert gate.variable_id == "cash"
+    assert gate.threshold == 90.0
+    assert gate.basis == "Anchor P50 100.0."
+    assert gate.comparison == ">="
+
+
+def test_gate_contract_accepts_all_comparisons() -> None:
+    for comparison in (">=", "<=", ">", "<", "=="):
+        gate = DirectionGate.model_validate(_gate(comparison=comparison))
+        assert gate.comparison == comparison
+
+
+def test_gate_contract_refuses_non_finite_thresholds() -> None:
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            DirectionGate.model_validate(_gate(threshold=bad))
+
+
+def test_gate_contract_refuses_string_and_bool_thresholds() -> None:
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(threshold="90"))
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(threshold=True))
+
+
+def test_gate_contract_refuses_bad_comparison_blank_basis_and_extra_keys() -> None:
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(comparison="~="))
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(basis="   "))
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(invented_field="nope"))
+    with pytest.raises(ValidationError):
+        DirectionGate.model_validate(_gate(variable_id="  "))
+
+
+def test_proposal_contract_requires_at_least_one_gate() -> None:
+    with pytest.raises(ValidationError):
+        DirectionProposal.model_validate(_proposal(gates=[]))
+    payload = _proposal()
+    del payload["gates"]
+    with pytest.raises(ValidationError):
+        DirectionProposal.model_validate(payload)
+
+
+def test_proposal_contract_refuses_more_than_four_gates() -> None:
+    with pytest.raises(ValidationError):
+        DirectionProposal.model_validate(_proposal(gates=[_gate() for _ in range(5)]))
+
+
+# ---------------------------------------------------------------------------
 # Prompt builder
 # ---------------------------------------------------------------------------
 
@@ -182,6 +257,22 @@ def test_prompt_builder_reports_no_variables_honestly() -> None:
     assert "(no variables bound to the anchor run)" in build_proposal_user_content(context)
 
 
+def test_prompt_builder_names_the_ensemble_metric_when_known() -> None:
+    context = _context()
+    context.family_runs[0].metric = "cash"
+    content = build_proposal_user_content(context)
+    assert "baseline P50 of cash 100.0" in content
+    assert "strategy P50 of cash 120.0" in content
+    # A run without a metric keeps the v1 rendering.
+    assert "baseline P50 90.0" in content
+
+
+def test_prompt_builder_mentions_gates_in_the_closing_instruction() -> None:
+    content = build_proposal_user_content(_context())
+    assert "1 to 4 gates" in content
+    assert "derive from the stored summary numbers" in content
+
+
 def test_system_prompt_states_the_grounding_rules() -> None:
     assert "Never invent a run id" in PROPOSAL_SYSTEM_PROMPT
     assert "Never invent a branch name" in PROPOSAL_SYSTEM_PROMPT
@@ -189,6 +280,9 @@ def test_system_prompt_states_the_grounding_rules() -> None:
     assert "at least one MECE branch" in PROPOSAL_SYSTEM_PROMPT
     assert "Return valid JSON only" in PROPOSAL_SYSTEM_PROMPT
     assert "Do not compute new numbers" in PROPOSAL_SYSTEM_PROMPT
+    assert '"gates" is a list of 1 to 4 decision gates' in PROPOSAL_SYSTEM_PROMPT
+    assert "Derive every threshold from a number shown in the context" in PROPOSAL_SYSTEM_PROMPT
+    assert "Never invent a threshold or a basis number" in PROPOSAL_SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,16 @@ import type {
   NarrativeGenerateRequest,
 } from '../api/engineTypes'
 import { CockpitNav } from '../components/cockpit/CockpitNav'
+import {
+  originLabel,
+  overrideSummaryText,
+  parseOverrideRecord,
+  parseProposalRecord,
+  shortHash,
+  statusLabel,
+} from '../components/cockpit/directionMappingDisplay'
 import { NarrativeView } from '../components/cockpit/DirectionViews'
+import { OverrideDirectionForm } from '../components/cockpit/OverrideDirectionForm'
 import { RunPicker } from '../components/cockpit/RunPicker'
 import type { CockpitRun } from '../components/cockpit/RunPicker'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
@@ -89,8 +98,17 @@ export default function Directions() {
   const [editArm, setEditArm] = useState<'baseline' | 'strategy'>('baseline')
   const [savingMapping, setSavingMapping] = useState(false)
   const [mappingError, setMappingError] = useState<string | null>(null)
+  const [reforkingId, setReforkingId] = useState<string | null>(null)
+  const [reforkValues, setReforkValues] = useState<Record<string, string>>({})
+  const [reforkForkStep, setReforkForkStep] = useState('')
+  const [savingRefork, setSavingRefork] = useState(false)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [reviewing, setReviewing] = useState<{ id: string; action: 'accept' | 'reject' } | null>(
+    null,
+  )
+  const [confirmingRejectId, setConfirmingRejectId] = useState<string | null>(null)
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   const {
     data: history,
@@ -124,6 +142,10 @@ export default function Directions() {
   const branchNames = mece ? collectBranchNames(mece.decomposition) : []
   const narratives = history?.narratives ?? []
   const mappings = mappingsData?.mappings ?? []
+  // The backend is the source of truth for review state: only `active`
+  // rows resolve into generation; `proposed` rows await review here.
+  const proposedMappings = mappings.filter((mapping) => mapping.status === 'proposed')
+  const activeMappings = mappings.filter((mapping) => mapping.status === 'active')
   const selected: DecisionNarrativeRead | null =
     narratives.find((item) => item.id === selectedNarrativeId) ?? narratives[0] ?? null
 
@@ -138,7 +160,13 @@ export default function Directions() {
     setDeriveError(null)
     setEditingId(null)
     setMappingError(null)
+    setReforkingId(null)
+    setReforkValues({})
+    setReforkForkStep('')
     setConfirmingDeleteId(null)
+    setReviewing(null)
+    setConfirmingRejectId(null)
+    setReviewError(null)
   }
 
   function updateDraft(index: number, patch: Partial<DirectionDraft>) {
@@ -275,6 +303,97 @@ export default function Directions() {
     }
   }
 
+  function startReforking(mapping: DirectionMappingRead) {
+    const record = parseOverrideRecord(mapping.override_record)
+    const values: Record<string, string> = {}
+    for (const { variableId, value } of record?.overrides ?? []) {
+      values[variableId] = String(value)
+    }
+    setReforkValues(values)
+    setReforkForkStep(record?.forkStep !== null && record?.forkStep !== undefined ? String(record.forkStep) : '')
+    setReforkingId(mapping.id)
+    setMappingError(null)
+    setConfirmingDeleteId(null)
+  }
+
+  async function handleSaveRefork(mapping: DirectionMappingRead) {
+    if (!selectedRunId) return
+    const record = parseOverrideRecord(mapping.override_record)
+    const overrides: Record<string, number> = {}
+    for (const { variableId } of record?.overrides ?? []) {
+      const raw = (reforkValues[variableId] ?? '').trim()
+      if (raw === '') {
+        setMappingError(`变量 ${variableId} 需要填写固定值。`)
+        return
+      }
+      const value = Number(raw)
+      if (!Number.isFinite(value)) {
+        setMappingError(`变量 ${variableId} 的固定值必须是有限数字。`)
+        return
+      }
+      overrides[variableId] = value
+    }
+    if (Object.keys(overrides).length === 0) {
+      setMappingError('该映射没有可编辑的固定值。')
+      return
+    }
+    const fork = reforkForkStep.trim()
+    if (fork !== '') {
+      const step = Number(fork)
+      if (!Number.isInteger(step) || step < 1) {
+        setMappingError('分叉步必须是 ≥ 1 的整数，留空则用默认中点。')
+        return
+      }
+    }
+    setSavingRefork(true)
+    setMappingError(null)
+    try {
+      await directionsApi.reforkMapping(selectedRunId, mapping.id, {
+        overrides,
+        ...(fork !== '' ? { fork_step: Number(fork) } : {}),
+      })
+      setReforkingId(null)
+      reloadMappings()
+    } catch (e: unknown) {
+      const info = parseApiError(e)
+      if (info.status === 404) {
+        // Already gone: reload the list back to the truth.
+        setReforkingId(null)
+        reloadMappings()
+      } else {
+        setMappingError(info.code ? `${info.code}：${info.message}` : info.message)
+      }
+    } finally {
+      setSavingRefork(false)
+    }
+  }
+
+  async function handleReview(mapping: DirectionMappingRead, action: 'accept' | 'reject') {
+    if (!selectedRunId) return
+    setReviewing({ id: mapping.id, action })
+    setReviewError(null)
+    try {
+      if (action === 'accept') {
+        await directionsApi.acceptMapping(selectedRunId, mapping.id)
+      } else {
+        await directionsApi.rejectMapping(selectedRunId, mapping.id)
+      }
+      setConfirmingRejectId(null)
+      reloadMappings()
+    } catch (e: unknown) {
+      const info = parseApiError(e)
+      if (info.status === 404) {
+        // Already gone: reload the list back to the truth.
+        setConfirmingRejectId(null)
+        reloadMappings()
+      } else {
+        setReviewError(info.code ? `${info.code}：${info.message}` : info.message)
+      }
+    } finally {
+      setReviewing(null)
+    }
+  }
+
   async function handlePolish() {
     if (!selectedRunId || !selected) return
     setPolishing(true)
@@ -313,7 +432,8 @@ export default function Directions() {
         <h2 className="text-xl font-semibold text-slate-100">决策方向简报</h2>
         <p className="text-sm text-slate-400">
           从已存储的数值结果与商议输出确定性地组合决策方向：每个方向带结果分布、关键驱动、调头信号、事前验尸与
-          48 小时第一步，并标注出处。方向定义由你显式给出，或由确定性规则从场景家族中推导并存为映射——简报不凭空产生方向。
+          48 小时第一步，并标注出处。方向定义由你显式给出，或由确定性规则推导、LLM
+          提案（须经你评审接受）、变量覆盖（新建分支 Run）存为映射——简报只用「可用」状态的映射，不凭空产生方向。
         </p>
         <CockpitNav />
       </div>
@@ -365,6 +485,142 @@ export default function Directions() {
             </CardBody>
           </Card>
 
+          <OverrideDirectionForm
+            key={selectedRunId}
+            runId={selectedRunId}
+            branchNames={branchNames}
+            tickCount={runList.find((run) => run.id === selectedRunId)?.tick_count ?? null}
+            onMappingsChanged={reloadMappings}
+          />
+
+          <Card>
+            <CardHeader title="待评审提案" />
+            <CardBody className="space-y-4">
+              <p className="text-sm text-slate-400">
+                LLM 提案先存为「待评审」映射：只有你显式接受后才能用于生成简报；拒绝后保留为审计记录，不再进入简报。评审只改状态，不改提案内容；接受时会由后端重新校验提案的引用，过期引用会被拒绝并留在这里。
+              </p>
+              {reviewError && <ErrorBanner message={reviewError} />}
+              {mappingsLoading ? (
+                <LoadingSpinner />
+              ) : proposedMappings.length === 0 ? (
+                <p className="text-sm text-slate-400">暂无待评审提案。</p>
+              ) : (
+                <ul className="space-y-3">
+                  {proposedMappings.map((mapping) => {
+                    const proposal = parseProposalRecord(mapping.proposal_record)
+                    const provenance = [
+                      proposal?.model ? `模型 ${proposal.model}` : null,
+                      proposal?.templateId
+                        ? `模板 ${proposal.templateId}${proposal.templateVersion ? ` v${proposal.templateVersion}` : ''}`
+                        : null,
+                      proposal?.proposalHash ? `提案哈希 ${shortHash(proposal.proposalHash)}` : null,
+                    ].filter((part): part is string => part !== null)
+                    const isReviewing = reviewing?.id === mapping.id
+                    return (
+                      <li
+                        key={mapping.id}
+                        className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3"
+                      >
+                        <div>
+                          <span className="text-sm font-medium text-slate-200">{mapping.name}</span>{' '}
+                          <span className="text-xs text-slate-500">
+                            {mapping.source_run_id} / {mapping.arm}
+                          </span>{' '}
+                          <span className="text-xs text-slate-500">
+                            {[originLabel(mapping.origin), statusLabel(mapping.status)]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        </div>
+                        {mapping.mece_branches.length > 0 && (
+                          <p className="text-xs text-slate-400">
+                            回溯分支：{mapping.mece_branches.join('、')}
+                          </p>
+                        )}
+                        {proposal && proposal.keyVariables.length > 0 && (
+                          <p className="text-xs text-slate-400">
+                            关键变量：{proposal.keyVariables.join('、')}
+                          </p>
+                        )}
+                        {proposal?.rationale && (
+                          <p className="text-sm text-slate-300">理由：{proposal.rationale}</p>
+                        )}
+                        {proposal && proposal.gates.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-xs text-slate-400">决策门槛：</p>
+                            <ul className="list-inside list-disc space-y-1">
+                              {proposal.gates.map((gate, index) => (
+                                <li key={index} className="text-xs text-slate-300">
+                                  {gate.variableId} {gate.comparison} {gate.threshold}{' '}
+                                  <span className="text-slate-400">（依据：{gate.basis}）</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {proposal && proposal.gates.length === 0 && (
+                          <p className="text-xs text-slate-400">决策门槛：无</p>
+                        )}
+                        {provenance.length > 0 && (
+                          <p className="text-xs text-slate-500">{provenance.join(' · ')}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {confirmingRejectId === mapping.id ? (
+                            <>
+                              <span className="text-xs text-amber-300">
+                                确认拒绝「{mapping.name}」？拒绝后该提案只保留为审计记录。
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`确认拒绝提案「${mapping.name}」`}
+                                onClick={() => void handleReview(mapping, 'reject')}
+                                disabled={reviewing !== null}
+                                className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+                              >
+                                {isReviewing && reviewing?.action === 'reject'
+                                  ? '拒绝中…'
+                                  : '确认拒绝'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingRejectId(null)}
+                                disabled={reviewing !== null}
+                                className="text-xs text-slate-400 hover:text-slate-300 disabled:opacity-50"
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                aria-label={`接受提案「${mapping.name}」`}
+                                onClick={() => void handleReview(mapping, 'accept')}
+                                disabled={reviewing !== null}
+                                className="rounded-full bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
+                              >
+                                {isReviewing && reviewing?.action === 'accept' ? '接受中…' : '接受'}
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`拒绝提案「${mapping.name}」`}
+                                onClick={() => setConfirmingRejectId(mapping.id)}
+                                disabled={reviewing !== null}
+                                className="rounded-full border border-slate-600 px-3.5 py-1.5 text-sm text-slate-300 transition hover:border-red-400/50 hover:text-red-300 disabled:opacity-50"
+                              >
+                                拒绝
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
           <Card>
             <CardHeader title="已存方向映射" />
             <CardBody className="space-y-4">
@@ -381,7 +637,13 @@ export default function Directions() {
                 />
               ) : (
                 <ul className="space-y-3">
-                  {mappings.map((mapping) => (
+                  {mappings.map((mapping) => {
+                    const overrideRecord =
+                      mapping.origin === 'override'
+                        ? parseOverrideRecord(mapping.override_record)
+                        : null
+                    const overrideSummary = overrideSummaryText(overrideRecord)
+                    return (
                     <li
                       key={mapping.id}
                       className="space-y-3 rounded-lg border border-slate-700/50 p-3"
@@ -462,6 +724,84 @@ export default function Directions() {
                             </button>
                           </div>
                         </div>
+                      ) : reforkingId === mapping.id ? (
+                        <div className="space-y-3">
+                          <p className="text-xs text-slate-500">
+                            固定值已写进该映射的分支 Run：保存会新建一个分支
+                            Run 并把该映射指过去（同名、同位置），旧分支 Run 保留不动。
+                          </p>
+                          {overrideRecord && overrideRecord.overrides.length > 0 ? (
+                            <>
+                              {overrideRecord.overrides.map(({ variableId }) => (
+                                <div key={variableId}>
+                                  <label
+                                    htmlFor={`refork-value-${mapping.id}-${variableId}`}
+                                    className="mb-1 block text-xs text-slate-500"
+                                  >
+                                    {variableId} 的固定值
+                                  </label>
+                                  <input
+                                    id={`refork-value-${mapping.id}-${variableId}`}
+                                    value={reforkValues[variableId] ?? ''}
+                                    onChange={(event) =>
+                                      setReforkValues((current) => ({
+                                        ...current,
+                                        [variableId]: event.target.value,
+                                      }))
+                                    }
+                                    inputMode="decimal"
+                                    className={inputClassName()}
+                                  />
+                                </div>
+                              ))}
+                              <div>
+                                <label
+                                  htmlFor={`refork-fork-${mapping.id}`}
+                                  className="mb-1 block text-xs text-slate-500"
+                                >
+                                  新分叉步（留空用默认中点）
+                                </label>
+                                <input
+                                  id={`refork-fork-${mapping.id}`}
+                                  value={reforkForkStep}
+                                  onChange={(event) => setReforkForkStep(event.target.value)}
+                                  inputMode="numeric"
+                                  placeholder="留空"
+                                  className={inputClassName()}
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveRefork(mapping)}
+                                  disabled={savingRefork}
+                                  className="rounded-full bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
+                                >
+                                  {savingRefork ? '重新分叉中…' : '保存并重新分叉'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReforkingId(null)}
+                                  disabled={savingRefork}
+                                  className="text-sm text-slate-400 hover:text-slate-300 disabled:opacity-50"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm text-slate-400">该映射没有可编辑的固定值。</p>
+                              <button
+                                type="button"
+                                onClick={() => setReforkingId(null)}
+                                className="text-sm text-slate-400 hover:text-slate-300"
+                              >
+                                取消
+                              </button>
+                            </>
+                          )}
+                        </div>
                       ) : (
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -470,9 +810,14 @@ export default function Directions() {
                               {mapping.source_run_id} / {mapping.arm}
                             </span>{' '}
                             <span className="text-xs text-slate-500">
-                              {mapping.origin === 'derived' ? '推导' : '手动'}
+                              {[originLabel(mapping.origin), statusLabel(mapping.status)]
+                                .filter((part) => part.length > 0)
+                                .join(' · ')}
                               {mapping.user_edited ? ' · 已编辑' : ''}
                             </span>
+                            {overrideSummary && (
+                              <p className="text-xs text-slate-500">变量覆盖：{overrideSummary}</p>
+                            )}
                           </div>
                           <span className="flex flex-wrap gap-2">
                             <button
@@ -482,6 +827,15 @@ export default function Directions() {
                             >
                               编辑
                             </button>
+                            {mapping.origin === 'override' && mapping.status === 'active' && (
+                              <button
+                                type="button"
+                                onClick={() => startReforking(mapping)}
+                                className="text-xs text-slate-400 hover:text-slate-200"
+                              >
+                                编辑固定值
+                              </button>
+                            )}
                             {confirmingDeleteId === mapping.id ? (
                               <span className="flex flex-wrap items-center gap-2">
                                 <span className="text-xs text-amber-300">
@@ -517,7 +871,8 @@ export default function Directions() {
                         </div>
                       )}
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               )}
               <p className="text-xs text-slate-500">
@@ -552,18 +907,21 @@ export default function Directions() {
               </label>
 
               {useStoredMappings ? (
-                mappings.length === 0 ? (
+                activeMappings.length === 0 ? (
                   <p className="text-sm text-slate-400">
-                    这个 Run 还没有已存方向映射——先推导方向，或取消勾选显式定义方向。
+                    {mappings.length === 0
+                      ? '这个 Run 还没有已存方向映射——先推导方向，或取消勾选显式定义方向。'
+                      : '这个 Run 的已存映射都不在可用状态——先在上方评审接受提案，或取消勾选显式定义方向。'}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
                     <p className="text-sm text-slate-300">
-                      将使用的映射：{mappings.slice(0, 4).map((mapping) => mapping.name).join('、')}
+                      将使用的映射：
+                      {activeMappings.slice(0, 4).map((mapping) => mapping.name).join('、')}
                     </p>
-                    {mappings.length > 4 && (
+                    {activeMappings.length > 4 && (
                       <p className="text-xs text-slate-500">
-                        共有 {mappings.length} 个映射，超出 4 个的部分本次不会使用。
+                        共有 {activeMappings.length} 个可用映射，超出 4 个的部分本次不会使用。
                       </p>
                     )}
                   </div>
@@ -670,14 +1028,14 @@ export default function Directions() {
               <button
                 type="button"
                 onClick={() => void handleGenerate()}
-                disabled={generating || (useStoredMappings && (mappingsLoading || mappings.length === 0))}
+                disabled={generating || (useStoredMappings && (mappingsLoading || activeMappings.length === 0))}
                 className="rounded-full bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
               >
                 {generating ? '生成中…' : '生成简报'}
               </button>
               <p className="text-xs text-slate-500">
                 生成是确定性的：相同输入产生字节相同的简报；重新生成会产生新版本，永不覆盖。来源
-                Run 必须已完成且存有 ensemble，否则生成会被拒绝并指明先运行的接口。
+                Run 必须已完成且存有 ensemble，否则生成会被拒绝并指明先运行的接口。只有「可用」状态的映射会用于生成；待评审与已拒绝的映射不会进入简报。
               </p>
             </CardBody>
           </Card>

@@ -36,6 +36,8 @@ from planagent.services.narratives.models import (
     DirectionMappingRead,
     DirectionMappingUpdate,
     DirectionOverrideRead,
+    DirectionOverrideReforkRead,
+    DirectionOverrideReforkRequest,
     DirectionOverrideRequest,
     DirectionProposeRead,
     DirectionProposeRequest,
@@ -60,6 +62,7 @@ _DIRECTION_STATUS_CODES = {
     "direction_propose_contract_failed": 502,
     "direction_propose_truncated": 502,
     "direction_override_unavailable": 503,
+    "direction_mapping_deleted_concurrently": 409,
 }
 
 
@@ -289,6 +292,27 @@ async def override_directions_endpoint(
     service = get_narrative_service(http_request)
     try:
         return await service.override(session, run_id, payload)
+    except DirectionError as exc:
+        raise _direction_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+@router.post(
+    "/runs/{run_id}/directions/mappings/{mapping_id}/refork",
+    response_model=DirectionOverrideReforkRead,
+    status_code=201,
+)
+async def refork_direction_mapping(
+    run_id: str,
+    mapping_id: str,
+    payload: DirectionOverrideReforkRequest,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DirectionOverrideReforkRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.refork_override_mapping(session, run_id, mapping_id, payload)
     except DirectionError as exc:
         raise _direction_error(exc) from exc
     except LookupError as exc:

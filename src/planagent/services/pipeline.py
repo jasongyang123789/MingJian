@@ -9,7 +9,8 @@ import re
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import and_, func, insert, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -460,11 +461,14 @@ class PhaseOnePipelineService:
         dedupe_key = build_dedupe_key(item)
         tenant_id = normalize_tenant_id(run.request_payload.get("tenant_id"))
 
-        # PostgreSQL: 使用 INSERT ON CONFLICT DO NOTHING，避免先 SELECT 再 INSERT 的开销
+        # PostgreSQL: 使用 INSERT ON CONFLICT DO NOTHING，避免先 SELECT 再 INSERT 的开销。
+        # 注意：on_conflict_do_nothing 只存在于 Postgres 方言的 insert 上，
+        # 通用 sqlalchemy.insert 没有这个方法（fix batch 3：此前这里误用通用
+        # insert，SQLite 测试从不执行该分支，bug 只在真实 Postgres 上暴露）。
         dialect_name = session.bind.dialect.name if session.bind else "sqlite"
         if dialect_name != "sqlite":
             stmt = (
-                insert(RawSourceItem)
+                postgres_insert(RawSourceItem)
                 .values(
                     id=generate_id(),
                     ingest_run_id=run.id,

@@ -400,6 +400,29 @@ def _require_override_value(value: object) -> float:
     return result
 
 
+def _normalize_override_values(value: object) -> object:
+    """Normalize an overrides dict: strip keys, coerce values.
+
+    Keys are stripped; an empty key, a key collision after
+    stripping, or a non-finite value refuses the request (422).
+    Non-dict input passes through untouched so Pydantic's own
+    type check reports it. Shared by the override spec and the
+    refork request: both name fixed values for bound variables
+    under the same discipline.
+    """
+    if not isinstance(value, dict):
+        return value
+    normalized: dict[str, float] = {}
+    for raw_key, raw_value in value.items():
+        key = raw_key.strip() if isinstance(raw_key, str) else raw_key
+        if not isinstance(key, str) or not key:
+            raise ValueError("override keys must be non-empty strings")
+        if key in normalized:
+            raise ValueError(f"override key {key!r} is duplicated after stripping")
+        normalized[key] = _require_override_value(raw_value)
+    return normalized
+
+
 class DirectionOverrideSpec(BaseModel):
     """One direction-as-override in an override request.
 
@@ -431,17 +454,7 @@ class DirectionOverrideSpec(BaseModel):
     @field_validator("overrides", mode="before")
     @classmethod
     def _normalize_overrides(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        normalized: dict[str, float] = {}
-        for raw_key, raw_value in value.items():
-            key = raw_key.strip() if isinstance(raw_key, str) else raw_key
-            if not isinstance(key, str) or not key:
-                raise ValueError("override keys must be non-empty strings")
-            if key in normalized:
-                raise ValueError(f"override key {key!r} is duplicated after stripping")
-            normalized[key] = _require_override_value(raw_value)
-        return normalized
+        return _normalize_override_values(value)
 
     @field_validator("mece_branches")
     @classmethod
@@ -481,9 +494,14 @@ class DirectionOverrideOutcome(BaseModel):
     reason before generating from it. ``skipped``: a mapping of
     the same name already exists — no branch run was created and
     the existing row is left untouched (the no-clobber rule).
-    ``failed``: the branch run could not be created after all
-    upfront validation passed; the reason carries the failure,
-    and the other directions in the request are unaffected.
+    When a concurrent request creates the name first, the loser
+    is likewise ``skipped`` and the branch it already created is
+    discarded. ``failed``: the branch run could not be created
+    after all upfront validation passed; the reason carries the
+    failure, and the other directions in the request are
+    unaffected. A failure after the branch committed discards
+    the committed branch; if the discard itself fails, the
+    reason names the branch id for explicit cleanup.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -510,6 +528,55 @@ class DirectionOverrideRead(BaseModel):
     directions_considered: int
     outcomes: list[DirectionOverrideOutcome] = Field(default_factory=list)
     mappings: list[DirectionMappingRead] = Field(default_factory=list)
+
+
+class DirectionOverrideReforkRequest(BaseModel):
+    """Re-fork one stored override mapping with new fixed values.
+
+    The mapping's fixed values are baked into its branch run, so
+    "editing" them means creating a NEW branch run with the new
+    values and repointing the same mapping at it; the old branch
+    run is left untouched (append-only history). ``overrides``
+    follows the same discipline as the override spec (stripped
+    keys, finite numbers, at least one entry) and the same
+    grounding: every id must already be bound on the anchor run,
+    with no range check. ``fork_step`` names the anchor tick the
+    new child run forks from; omitted, the scenario-branch
+    midpoint default applies (the same default as override
+    creation — the previous fork step is NOT inherited, so the
+    caller states the fork point it wants).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    overrides: dict[str, float] = Field(min_length=1, max_length=MAX_VARIABLES)
+    fork_step: int | None = Field(default=None, ge=1)
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _normalize_overrides(cls, value: object) -> object:
+        return _normalize_override_values(value)
+
+
+class DirectionOverrideReforkRead(BaseModel):
+    """A reforked override mapping: the repointed row plus the new branch.
+
+    ``mapping`` is the SAME mapping (same id, name, and position)
+    repointed at the new child run, with the new override spec
+    pinned in its ``override_record``. The child run has no
+    ensemble yet: run the monte-carlo endpoint named in the
+    reason before generating from it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mapping: DirectionMappingRead
+    branch_id: str
+    child_run_id: str
+    fork_step: int
+    child_status: str | None = None
+    override_hash: str
+    reason: str
 
 
 # ---------------------------------------------------------------------------

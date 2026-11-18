@@ -1,5 +1,11 @@
 FROM python:3.12-slim-bookworm
 
+# Unbuffered stdout: worker processes print JSON status lines, and CPython
+# block-buffers stdout when it is a pipe (the docker log driver), so
+# `docker logs` stayed empty until ~8KB accumulated (Docker retry 6 root
+# cause; fix batch 3). One Dockerfile serves the api and all workers.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # System deps for weasyprint (PDF generation)

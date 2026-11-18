@@ -15,7 +15,11 @@ from planagent.events.bus import build_event_bus
 from planagent.services.analysis import AutomatedAnalysisService
 from planagent.services.assistant import StrategicAssistantService
 from planagent.services.debate import DebateService, DebateWorkflow
-from planagent.services.narratives.overrides import BranchRequest, BranchResult
+from planagent.services.narratives.overrides import (
+    BranchCreationFailed,
+    BranchRequest,
+    BranchResult,
+)
 from planagent.services.narratives.service import NarrativeService
 from planagent.services.openai_client import OpenAIService
 from planagent.services.pipeline import PhaseOnePipelineService
@@ -50,6 +54,15 @@ def _remember_app_state(request: Request) -> None:
     _last_app_state = request.app.state
 
 
+def _safe_branch_attr(branch: object, name: str) -> str | None:
+    """Read one identity attribute off a possibly-detached branch row."""
+    try:
+        value = getattr(branch, name)
+    except Exception:  # noqa: BLE001 — any access failure means "unknown"
+        return None
+    return value if isinstance(value, str) else None
+
+
 class SimulationBranchRunner:
     """Branch runner backed by the simulation service's scenario branching.
 
@@ -80,7 +93,26 @@ class SimulationBranchRunner:
                 assumptions=request.assumptions,
             ),
         )
-        return BranchResult(branch_id=branch.id, run_id=branch.run_id, fork_step=branch.fork_step)
+        try:
+            return BranchResult(
+                branch_id=branch.id, run_id=branch.run_id, fork_step=branch.fork_step
+            )
+        except Exception as exc:
+            # create_scenario_run committed before returning: a
+            # failure here (e.g. an expired attribute) must not
+            # strand the branch as an unreported orphan. Report
+            # the committed identities so the caller can discard
+            # it. Attribute access itself can raise again on a
+            # detached object, so capture defensively: a missing
+            # identity is reported as None, never a new failure.
+            raise BranchCreationFailed(
+                f"branch created but its result could not be reported: {exc}",
+                branch_id=_safe_branch_attr(branch, "id"),
+                run_id=_safe_branch_attr(branch, "run_id"),
+            ) from exc
+
+    async def discard_branch(self, session: AsyncSession, branch_id: str) -> bool:
+        return await self._simulation_service.delete_scenario_branch(session, branch_id)
 
 
 def _cache_business_services(state: object) -> None:

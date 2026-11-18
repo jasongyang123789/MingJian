@@ -59,7 +59,12 @@ The branch-creation capability arrives through a port
 the narratives service never imports the simulation service.
 The production adapter lives in the route wiring
 (:mod:`planagent.api.routes._deps`), which already owns both
-services. Tests use scripted runners.
+services. Tests use scripted runners. Hardening (option B
+follow-up): a runner that fails after committing reports the
+committed branch via :class:`BranchCreationFailed`, and the port
+carries :meth:`BranchRunner.discard_branch` so the service can
+remove such a branch — and the branch of a direction that loses
+a concurrent same-name race — instead of leaving orphans.
 """
 
 from __future__ import annotations
@@ -101,6 +106,32 @@ class BranchResult:
     fork_step: int
 
 
+class BranchCreationFailed(Exception):
+    """Branch creation failed after the branch may have committed.
+
+    Raised by a runner when the branch row was committed but the
+    creation could not be reported normally (e.g. the adapter failed
+    while building the result from the committed branch). The
+    identities, when known, let the caller discard the committed
+    branch instead of leaving it orphaned; ``None`` means the
+    runner could not determine them, and there is nothing safe to
+    discard. Plain exceptions from a runner still mean what they
+    always meant: nothing was committed, and the caller's rollback
+    covers the failure.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        branch_id: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.branch_id = branch_id
+        self.run_id = run_id
+
+
 class BranchRunner(Protocol):
     """Creates one scenario-branch run. Implemented by the wiring layer."""
 
@@ -117,6 +148,21 @@ class BranchRunner(Protocol):
     async def create_branch(
         self, session: AsyncSession, parent_run_id: str, request: BranchRequest
     ) -> BranchResult: ...
+
+    async def discard_branch(self, session: AsyncSession, branch_id: str) -> bool:
+        """Delete one committed branch and its child run.
+
+        The inverse of :meth:`create_branch`, for branches that
+        committed but must not survive: a post-commit creation
+        failure (see :class:`BranchCreationFailed`) or a direction
+        that lost a concurrent same-name race. Deletes ONLY the
+        named branch, its child run, and the rows branch execution
+        created for that child; never touches other runs. Returns
+        ``True`` when a branch was deleted, ``False`` when no such
+        branch exists (already discarded: idempotent). The
+        deletion commits, so it survives the caller's rollback.
+        """
+        ...
 
 
 def build_override_set(anchor_bindings: VariableSet, overrides: dict[str, float]) -> VariableSet:
@@ -198,6 +244,7 @@ def assumption_line(name: str, overrides: dict[str, float]) -> str:
 
 
 __all__ = [
+    "BranchCreationFailed",
     "BranchRequest",
     "BranchResult",
     "BranchRunner",

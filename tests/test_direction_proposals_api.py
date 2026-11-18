@@ -19,8 +19,10 @@ from fastapi.testclient import TestClient
 
 from planagent.config import get_settings, reset_settings_cache
 from planagent.db import get_database, reset_database_cache
-from planagent.domain.models import DirectionMappingRecord
+from planagent.domain.models import DirectionMappingRecord, SimulationRun
 from planagent.main import create_app
+from planagent.services.mece.models import DecompositionTree
+from planagent.services.mece.validator import validate_decomposition
 from planagent.services.narratives.proposals import PROPOSAL_TEMPLATE_ID
 from planagent.services.narratives.service import NarrativeService
 from tests.skill_fixtures import ScriptedSkillPort
@@ -48,6 +50,14 @@ PASSING_TREE = {
             {"name": "Cost", "scope": ["cost"]},
         ],
     },
+}
+
+# A tree that exists but does not decompose: the root has no children.
+# The MECE validator fails it (empty_tree), so run creation refuses it;
+# the empty-tree anchor below is built by rewriting a stored fragment.
+EMPTY_TREE = {
+    "topic": "Should we launch?",
+    "root": {"name": "Should we launch?", "scope": ["demand", "cost"], "children": []},
 }
 
 
@@ -112,6 +122,7 @@ def _proposal(
     branches: list[str] | None = None,
     variables: list[str] | None = None,
     rationale: str = "The strategy arm beats baseline on P50 with a bounded loss.",
+    gates: list[dict] | None = None,
 ) -> dict:
     return {
         "name": name,
@@ -120,6 +131,16 @@ def _proposal(
         "mece_branches": branches if branches is not None else ["Demand"],
         "key_variables": variables if variables is not None else ["cash"],
         "rationale": rationale,
+        "gates": gates
+        if gates is not None
+        else [
+            {
+                "variable_id": "cash",
+                "comparison": ">=",
+                "threshold": 90.0,
+                "basis": "Anchor baseline P50 of cash is above 90 in the stored ensemble.",
+            }
+        ],
     }
 
 
@@ -149,6 +170,31 @@ async def _repoint_mapping(mapping_id: str, source_run_id: str) -> None:
         assert row is not None
         row.source_run_id = source_run_id
         await session.commit()
+
+
+async def _rewrite_mece_fragment(run_id: str, decomposition: dict) -> dict:
+    """Replace a run's stored MECE fragment, returning the validation dump.
+
+    An empty tree cannot be stored via run creation (the MECE gate
+    refuses it), so the empty-tree anchor is built by rewriting the
+    fragment of a run created with a valid tree. The validation is
+    the real validator output for the rewritten tree, not a
+    hand-built record.
+    """
+    database = get_database()
+    async with database.session() as session:
+        row = await session.get(SimulationRun, run_id)
+        assert row is not None
+        tree = DecompositionTree.model_validate(decomposition)
+        validation = validate_decomposition(tree).model_dump(mode="json")
+        configuration = dict(row.configuration or {})
+        fragment = dict(configuration["mece"])
+        fragment["decomposition"] = decomposition
+        fragment["validation"] = validation
+        configuration["mece"] = fragment
+        row.configuration = configuration
+        await session.commit()
+        return validation
 
 
 def _setup_family(client: TestClient) -> tuple[dict, dict]:
@@ -186,7 +232,7 @@ def test_propose_stores_proposals_awaiting_review(monkeypatch, tmp_path: Path) -
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["template_id"] == "narrative.direction_proposals"
-        assert body["template_version"] == "1"
+        assert body["template_version"] == "2"
         assert body["model"] == "fixture"
         assert body["proposal_hash"].startswith("sha256:")
         assert body["family_runs_considered"] == 2
@@ -205,9 +251,17 @@ def test_propose_stores_proposals_awaiting_review(monkeypatch, tmp_path: Path) -
         record = rows[0]["proposal_record"]
         assert record["rationale"].startswith("The strategy arm beats baseline")
         assert record["key_variables"] == ["cash"]
+        assert record["gates"] == [
+            {
+                "variable_id": "cash",
+                "comparison": ">=",
+                "threshold": 90.0,
+                "basis": "Anchor baseline P50 of cash is above 90 in the stored ensemble.",
+            }
+        ]
         assert record["model"] == "fixture"
         assert record["template_id"] == "narrative.direction_proposals"
-        assert record["template_version"] == "1"
+        assert record["template_version"] == "2"
         assert record["proposal_hash"] == body["proposal_hash"]
         # The prompt listed the whole grounding surface and nothing else.
         user_content = port.calls[0]["user_content"]
@@ -215,6 +269,8 @@ def test_propose_stores_proposals_awaiting_review(monkeypatch, tmp_path: Path) -
         assert child["run_id"] in user_content
         assert "Demand" in user_content
         assert "cash" in user_content
+        # The ensemble metric is named, so a gate basis can cite it.
+        assert "P50 of cash" in user_content
         port.assert_exhausted()
 
 
@@ -373,6 +429,150 @@ def test_propose_refuses_unknown_variable_and_writes_nothing(monkeypatch, tmp_pa
         assert _mappings(client, parent["id"]) == []
 
 
+def test_propose_refuses_unknown_gate_variable_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        parent, _child = _setup_family(client)
+        bad_gate = {
+            "variable_id": "nope",
+            "comparison": ">=",
+            "threshold": 90.0,
+            "basis": "Anchor baseline P50 of cash is above 90.",
+        }
+        port = ScriptedSkillPort(
+            {
+                PROPOSAL_TEMPLATE_ID: [
+                    {
+                        "proposals": [
+                            _proposal(parent["id"], name="Good direction"),
+                            _proposal(parent["id"], name="Bad gate", gates=[bad_gate]),
+                        ]
+                    }
+                ]
+            }
+        )
+        _bind_port(app, port)
+        response = _propose(client, parent["id"], {})
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "direction_proposal_unknown_gate_variable"
+        assert "nope" in detail["message"]
+        assert "cash" in detail["message"]
+        # Batch atomicity: the valid proposal is refused with the bad one.
+        assert _mappings(client, parent["id"]) == []
+
+
+def test_propose_refuses_non_finite_gate_threshold_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        parent, _child = _setup_family(client)
+        bad_gate = {
+            "variable_id": "cash",
+            "comparison": ">=",
+            "threshold": float("inf"),
+            "basis": "Anchor baseline P50 of cash is above 90.",
+        }
+        port = ScriptedSkillPort(
+            {PROPOSAL_TEMPLATE_ID: [{"proposals": [_proposal(parent["id"], gates=[bad_gate])]}]}
+        )
+        _bind_port(app, port)
+        response = _propose(client, parent["id"], {})
+        # A non-finite threshold is malformed output: contract failure.
+        assert response.status_code == 502, response.text
+        assert response.json()["detail"]["code"] == "direction_propose_contract_failed"
+        assert _mappings(client, parent["id"]) == []
+
+
+def test_propose_refuses_malformed_gate_and_empty_gates_and_writes_nothing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        parent, _child = _setup_family(client)
+        bad_comparison = {
+            "variable_id": "cash",
+            "comparison": "~=",
+            "threshold": 90.0,
+            "basis": "Anchor baseline P50 of cash is above 90.",
+        }
+        port = ScriptedSkillPort(
+            {
+                PROPOSAL_TEMPLATE_ID: [
+                    {"proposals": [_proposal(parent["id"], gates=[bad_comparison])]},
+                    {"proposals": [_proposal(parent["id"], gates=[])]},
+                ]
+            }
+        )
+        _bind_port(app, port)
+        first = _propose(client, parent["id"], {})
+        assert first.status_code == 502, first.text
+        assert first.json()["detail"]["code"] == "direction_propose_contract_failed"
+        second = _propose(client, parent["id"], {})
+        assert second.status_code == 502, second.text
+        assert second.json()["detail"]["code"] == "direction_propose_contract_failed"
+        assert _mappings(client, parent["id"]) == []
+        port.assert_exhausted()
+
+
+async def _insert_v1_proposal_record(run_id: str, source_run_id: str) -> str:
+    """Store a template-v1 proposal row directly: no gates key.
+
+    v1 records predate the gates field; the read path must serve
+    them unchanged. Built by direct insert because propose() now
+    always writes gates.
+    """
+    database = get_database()
+    async with database.session() as session:
+        row = DirectionMappingRecord(
+            anchor_run_id=run_id,
+            name="Legacy proposal",
+            source_run_id=source_run_id,
+            arm="strategy",
+            mece_branches=["Demand"],
+            deliberation_id=None,
+            origin="llm_proposal",
+            rule_id=None,
+            rules_version=None,
+            rule_record=None,
+            status="proposed",
+            proposal_record={
+                "rationale": "A v1 proposal, stored before gates existed.",
+                "key_variables": ["cash"],
+                "model": "fixture",
+                "template_id": "narrative.direction_proposals",
+                "template_version": "1",
+                "proposal_hash": "sha256:legacy",
+            },
+            user_edited=False,
+            position=0,
+        )
+        session.add(row)
+        await session.commit()
+        return row.id
+
+
+def test_v1_proposal_record_without_gates_reads_fine(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        parent, _child = _setup_family(client)
+        mapping_id = asyncio.run(_insert_v1_proposal_record(parent["id"], parent["id"]))
+        rows = _mappings(client, parent["id"])
+        assert len(rows) == 1
+        assert rows[0]["id"] == mapping_id
+        record = rows[0]["proposal_record"]
+        assert record["template_version"] == "1"
+        assert "gates" not in record
+        assert record["rationale"].startswith("A v1 proposal")
+
+
 def test_propose_refuses_without_tree_before_calling_llm(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     app = create_app()
@@ -384,6 +584,39 @@ def test_propose_refuses_without_tree_before_calling_llm(monkeypatch, tmp_path: 
         response = _propose(client, run["id"], {})
         assert response.status_code == 400, response.text
         assert response.json()["detail"]["code"] == "direction_proposal_requires_tree"
+        assert port.calls == []
+        assert _mappings(client, run["id"]) == []
+
+
+def test_propose_refuses_empty_tree_before_calling_llm(monkeypatch, tmp_path: Path) -> None:
+    """A stored tree with no branches refuses like a missing tree.
+
+    The scripted proposal traces ONLY to the root name. Branch
+    collection includes the root, so without the empty-tree refusal
+    this vacuous trace would pass grounding and the proposal would
+    be stored. The refusal happens before the port is touched.
+    """
+    setup_app(monkeypatch, tmp_path)
+    app = create_app()
+    with TestClient(app) as client:
+        run = _create_run(client, decomposition=PASSING_TREE)
+        _create_ensemble(client, run["id"])
+        validation = asyncio.run(_rewrite_mece_fragment(run["id"], EMPTY_TREE))
+        assert validation["is_mece"] is False
+        assert [issue["kind"] for issue in validation["issues"]] == ["empty_tree"]
+        port = ScriptedSkillPort(
+            {
+                PROPOSAL_TEMPLATE_ID: [
+                    {"proposals": [_proposal(run["id"], branches=["Should we launch?"])]}
+                ]
+            }
+        )
+        _bind_port(app, port)
+        response = _propose(client, run["id"], {})
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "direction_proposal_requires_tree"
+        assert "no branches" in detail["message"]
         assert port.calls == []
         assert _mappings(client, run["id"]) == []
 

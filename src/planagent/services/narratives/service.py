@@ -18,6 +18,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.config import Settings
@@ -64,6 +65,8 @@ from planagent.services.narratives.models import (
     DirectionMappingUpdate,
     DirectionOverrideOutcome,
     DirectionOverrideRead,
+    DirectionOverrideReforkRead,
+    DirectionOverrideReforkRequest,
     DirectionOverrideRequest,
     DirectionOverrideSpec,
     DirectionProposeRead,
@@ -75,6 +78,7 @@ from planagent.services.narratives.models import (
     ProposalOutcome,
 )
 from planagent.services.narratives.overrides import (
+    BranchCreationFailed,
     BranchRequest,
     BranchResult,
     BranchRunner,
@@ -152,6 +156,27 @@ class _NoBranchRunner:
             "direction_override_unavailable",
             "No branch runner is configured for variable-override directions.",
         )
+
+    async def discard_branch(self, _session: AsyncSession, _branch_id: str) -> bool:
+        # Nothing was ever created through this runner.
+        return False
+
+
+def _is_mapping_unique_violation(exc: IntegrityError) -> bool:
+    """Whether an integrity error is the direction-mapping name clash.
+
+    Only this clash is a concurrent same-name race, convertible to
+    a ``skipped`` outcome; every other integrity error is a real
+    defect and must surface. SQLite reports the failing columns
+    (``UNIQUE constraint failed: direction_mappings.anchor_run_id,
+    direction_mappings.name``); Postgres reports the constraint
+    name (``uq_direction_mappings_anchor_name``). Match on the
+    driver error when present, else the wrapped message.
+    """
+    detail = str(getattr(exc, "orig", None) or exc).lower()
+    return "uq_direction_mappings_anchor_name" in detail or (
+        "direction_mappings" in detail and "unique" in detail
+    )
 
 
 def _corrupt(fragment: str, exc: ValidationError) -> NarrativeError:
@@ -748,14 +773,15 @@ class NarrativeService:
         no MECE tree, no ensemble in the family) happen BEFORE the
         port is touched. The LLM's output is then grounding-validated
         as a whole: any proposal naming a non-existent MECE branch,
-        scenario-family run, or variable refuses the entire request
-        before any row is written (refuse, not flag — a hallucinated
-        reference impeaches the whole proposal set, and proposing is
-        cheap, explicit, and retryable). Proposals that pass
-        validation are stored as ``proposed`` mappings; a proposal
-        whose name is already taken is reported ``skipped`` and the
-        existing row is left untouched — proposals never overwrite
-        anything, including user-edited mappings.
+        scenario-family run, or variable — or a gate on an unbound
+        variable — refuses the entire request before any row is
+        written (refuse, not flag — a hallucinated reference
+        impeaches the whole proposal set, and proposing is cheap,
+        explicit, and retryable). Proposals that pass validation are
+        stored as ``proposed`` mappings; a proposal whose name is
+        already taken is reported ``skipped`` and the existing row
+        is left untouched — proposals never overwrite anything,
+        including user-edited mappings.
         """
         anchor = await session.get(SimulationRun, run_id)
         if anchor is None:
@@ -774,6 +800,20 @@ class NarrativeService:
                 "direction_proposal_requires_tree",
                 "Direction proposals must trace to MECE branches, but the "
                 f"anchor run {run_id!r} has no stored MECE tree.",
+            )
+        if not tree.root.children:
+            # An empty tree (a root that does not decompose) cannot
+            # ground any proposal: _collect_branches includes the
+            # root, so without this check a proposal tracing only to
+            # the root name would pass grounding and be stored. The
+            # creation gate refuses empty trees, so this is reachable
+            # only via a directly rewritten or legacy fragment — but
+            # the refusal is the same named code, before any LLM call.
+            raise DirectionError(
+                "direction_proposal_requires_tree",
+                "Direction proposals must trace to MECE branches, but the "
+                f"anchor run {run_id!r} has a stored MECE tree with no "
+                "branches (the root scope is not decomposed).",
             )
         family = await self._family_runs(session, anchor)
         candidates = await self._assemble_candidates(session, family)
@@ -830,6 +870,7 @@ class NarrativeService:
                 proposal_record={
                     "rationale": proposal.rationale,
                     "key_variables": list(proposal.key_variables),
+                    "gates": [gate.model_dump(mode="json") for gate in proposal.gates],
                     "model": model,
                     "template_id": PROPOSAL_TEMPLATE_ID,
                     "template_version": PROPOSAL_TEMPLATE_VERSION,
@@ -945,6 +986,14 @@ class NarrativeService:
                         f"{variable_id!r}. Valid variables: "
                         f"{', '.join(sorted(variable_ids)) or '(none)'}",
                     )
+            for gate in proposal.gates:
+                if gate.variable_id not in variable_ids:
+                    raise DirectionError(
+                        "direction_proposal_unknown_gate_variable",
+                        f"Proposal {proposal.name!r} has a gate on unknown "
+                        f"variable {gate.variable_id!r}. Valid variables: "
+                        f"{', '.join(sorted(variable_ids)) or '(none)'}",
+                    )
 
     async def override(
         self, session: AsyncSession, run_id: str, request: DirectionOverrideRequest
@@ -966,7 +1015,13 @@ class NarrativeService:
         existing row is left untouched. The remaining directions
         each create one scenario branch via the configured branch
         runner; a branch failure is reported per direction and
-        leaves the others unaffected. Stored directions are
+        leaves the others unaffected. A runner that fails AFTER
+        committing reports the committed branch, which is
+        discarded so no orphan row survives. A concurrent request
+        that commits the same name first wins: the loser is
+        ``skipped`` (its branch discarded), never a 500 — the
+        mapping unique constraint arbitrates, with no locking.
+        Stored directions are
         ``active`` mappings with origin ``override`` and the
         override spec pinned in ``override_record``. The child
         runs have no ensemble yet — narrative generation refuses
@@ -1059,8 +1114,40 @@ class NarrativeService:
                         assumptions=[assumption_line(spec.name, spec.overrides)],
                     ),
                 )
+            except BranchCreationFailed as exc:
+                # The runner committed a branch it could not
+                # report: roll back our session state, then
+                # discard the committed branch so no orphan row
+                # survives. A discard failure is reported in the
+                # reason, with the branch id, for explicit human
+                # cleanup; it never masks the original failure.
+                await session.rollback()
+                discarded = False
+                if exc.branch_id is not None:
+                    discarded = await self._discard_branch_best_effort(
+                        session, exc.branch_id
+                    )
+                if exc.branch_id is None:
+                    problem = (
+                        f"Branch creation failed after commit: {exc}. "
+                        "No branch identity was reported, so nothing "
+                        "could be discarded."
+                    )
+                elif discarded:
+                    problem = (
+                        f"Branch creation failed after commit: {exc}. "
+                        f"The committed branch {exc.branch_id} was discarded."
+                    )
+                else:
+                    problem = (
+                        f"Branch creation failed after commit: {exc}. "
+                        f"The committed branch {exc.branch_id} could not be "
+                        "discarded; it needs explicit cleanup."
+                    )
+                staged.append((spec, None, None, problem, fork_step))
+                continue
             except Exception as exc:  # noqa: BLE001 — per-direction isolation
-                # The runner's work is uncommitted at this point;
+                # A plain runner failure means nothing committed;
                 # roll back so a failed branch leaves no orphan rows.
                 await session.rollback()
                 staged.append((spec, None, None, f"Branch creation failed: {exc}", fork_step))
@@ -1070,61 +1157,243 @@ class NarrativeService:
                 (spec, result, child.status if child is not None else None, None, fork_step)
             )
 
-        rows_now = await self._mapping_rows(session, anchor_id)
-        existing_now = {row.name: row for row in rows_now}
-        next_position = max((row.position for row in rows_now), default=-1) + 1
-        staged_records: list[
-            tuple[
-                DirectionOverrideSpec,
-                DirectionMappingRecord | None,
-                BranchResult | None,
-                str | None,
-                str | None,
-                int,
-            ]
-        ] = []
-        for spec, staged_result, child_status, problem, fork_step in staged:
-            if problem == "collision":
-                staged_records.append((spec, None, None, child_status, problem, fork_step))
-                continue
-            if problem is not None:
-                staged_records.append((spec, None, None, child_status, problem, fork_step))
-                continue
-            branch_result = staged_result
-            assert branch_result is not None  # staged shape guarantees it
-            record = DirectionMappingRecord(
-                anchor_run_id=anchor_id,
-                name=spec.name,
-                source_run_id=branch_result.run_id,
-                arm=spec.arm,
-                mece_branches=list(spec.mece_branches),
-                deliberation_id=None,
-                origin="override",
-                rule_id=None,
-                rules_version=None,
-                rule_record=None,
-                status="active",
-                proposal_record=None,
-                override_record={
-                    "overrides": dict(spec.overrides),
-                    "branch_id": branch_result.branch_id,
-                    "fork_step": fork_step,
-                    "override_hash": override_hash,
-                },
-                user_edited=False,
-                position=next_position,
-            )
-            session.add(record)
-            next_position += 1
-            staged_records.append((spec, record, branch_result, child_status, None, fork_step))
-        await session.flush()
+        outcomes = await self._store_override_records(
+            session, anchor_id, staged, override_hash
+        )
+        rows = await self._mapping_rows(session, anchor_id)
+        return DirectionOverrideRead(
+            anchor_run_id=anchor_id,
+            override_hash=override_hash,
+            directions_considered=len(request.directions),
+            outcomes=outcomes,
+            mappings=[self._mapping_to_read(row) for row in rows],
+        )
 
-        outcomes: list[DirectionOverrideOutcome] = []
-        for spec, staged_record, outcome_result, child_status, problem, fork_step in staged_records:
-            if problem == "collision":
-                row = existing_now[spec.name]
-                outcomes.append(
-                    DirectionOverrideOutcome(
+    async def refork_override_mapping(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        mapping_id: str,
+        request: DirectionOverrideReforkRequest,
+    ) -> DirectionOverrideReforkRead:
+        """Re-fork one stored override mapping with new fixed values.
+
+        A stored override mapping's fixed values are baked into its
+        branch run, so silently rewriting the pinned
+        ``override_record`` would lie about what the branch
+        contains. "Editing" the values therefore creates a NEW
+        scenario-branch run with the new values and repoints the
+        SAME mapping (same id, name, and position) at it; the old
+        branch run and its rows are left untouched (append-only
+        history — the old run stays visible in scenario-compare).
+
+        Only ``origin == "override"`` + ``status == "active"``
+        mappings can be reforked. Grounding is identical to
+        :meth:`override` (stored bindings only, no range check,
+        snapshot must exist at the fork step) and refuses the
+        whole request before any branch is created. A runner
+        failure after commit reuses the hardening mechanism: the
+        new branch is discarded and the failure names the branch
+        id. If the mapping was deleted concurrently between the
+        read and the repoint, the new branch is discarded and a
+        named conflict surfaces instead of a 500. No other
+        mapping is touched.
+        """
+        row = await self._mapping_for_run(session, run_id, mapping_id)
+        if row.origin != "override":
+            raise DirectionError(
+                "direction_mapping_not_override",
+                f"Mapping {row.name!r} has origin {row.origin!r}; only "
+                "variable-override mappings can be re-forked.",
+            )
+        if row.status != "active":
+            raise DirectionError(
+                "direction_mapping_not_active",
+                f"Mapping {row.name!r} has status {row.status!r}; only "
+                "active mappings can be re-forked.",
+            )
+        anchor = await self._completed_anchor(session, run_id)
+        self._check_override_domain(anchor)
+        bindings = self._read_anchor_bindings(anchor)
+        if bindings is None or not bindings.variables:
+            raise DirectionError(
+                "direction_override_requires_bindings",
+                "Variable-override directions require variables bound on "
+                "the anchor run; none were found in its configuration.",
+            )
+        try:
+            tree, _validation = self._read_mece(anchor)
+        except NarrativeError as exc:
+            raise DirectionError("direction_corrupt_fragment", str(exc)) from exc
+        root_scope = list(tree.root.scope) if tree is not None else None
+        # Capture primitives now: branch creation commits and
+        # expires the anchor and mapping rows.
+        anchor_id = anchor.id
+        anchor_tick_count = anchor.tick_count
+        mapping_name = row.name
+
+        override_set = build_override_set(bindings, request.overrides)
+        merged = validate_merged_overrides(bindings, override_set, root_scope)
+        fork_step = (
+            request.fork_step if request.fork_step is not None else max(1, anchor_tick_count // 2)
+        )
+        if not await self._snapshot_exists(session, anchor_id, fork_step):
+            raise DirectionError(
+                "direction_override_no_snapshot",
+                f"No state snapshot found at fork step {fork_step} for run {anchor_id!r}.",
+            )
+        override_hash = sha256_hash(request.model_dump(mode="json"))
+
+        if not self._branch_runner.is_available():
+            # Grounding passed, but branch creation is not wired:
+            # refuse the whole request (503 via the route) with
+            # zero branches created, rather than failing after
+            # the mapping was read.
+            raise DirectionError(
+                "direction_override_unavailable",
+                "No branch runner is configured for variable-override directions.",
+            )
+
+        try:
+            result = await self._branch_runner.create_branch(
+                session,
+                anchor_id,
+                BranchRequest(
+                    fork_step=fork_step,
+                    variable_set=merged,
+                    assumptions=[assumption_line(mapping_name, request.overrides)],
+                ),
+            )
+        except BranchCreationFailed as exc:
+            # The runner committed a branch it could not report:
+            # roll back, discard the committed branch (the
+            # hardening mechanism), and report the failure with
+            # the branch id — never a bare 500.
+            await session.rollback()
+            discarded = False
+            if exc.branch_id is not None:
+                discarded = await self._discard_branch_best_effort(session, exc.branch_id)
+            if exc.branch_id is None:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    "No branch identity was reported, so nothing could be discarded."
+                )
+            elif discarded:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    f"The committed branch {exc.branch_id} was discarded."
+                )
+            else:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    f"The committed branch {exc.branch_id} could not be "
+                    "discarded; it needs explicit cleanup."
+                )
+            raise DirectionError("direction_override_refork_failed", problem) from exc
+        except Exception as exc:
+            # A plain runner failure means nothing committed;
+            # roll back so no orphan rows survive it, then report
+            # the failure as a named refusal, not a 500.
+            await session.rollback()
+            raise DirectionError(
+                "direction_override_refork_failed", f"Branch creation failed: {exc}"
+            ) from exc
+
+        child = await session.get(SimulationRun, result.run_id)
+        # Re-fetch: branch creation committed, and the mapping
+        # may have been deleted concurrently. A vanished row
+        # surfaces as a named conflict, and the branch created
+        # for it is discarded — it must not survive orphaned.
+        current = await session.get(DirectionMappingRecord, mapping_id)
+        if current is None or current.anchor_run_id != anchor_id:
+            await self._discard_branch_best_effort(session, result.branch_id)
+            raise DirectionError(
+                "direction_mapping_deleted_concurrently",
+                f"Mapping {mapping_name!r} was deleted while its re-fork "
+                "was running; the new branch was discarded and nothing "
+                "was repointed.",
+            )
+        current.source_run_id = result.run_id
+        current.override_record = {
+            "overrides": dict(request.overrides),
+            "branch_id": result.branch_id,
+            "fork_step": fork_step,
+            "override_hash": override_hash,
+        }
+        # A re-fork is an explicit human edit of the row, like
+        # the name/source edit: mark it so.
+        current.user_edited = True
+        await session.commit()
+        await session.refresh(current)
+        return DirectionOverrideReforkRead(
+            mapping=self._mapping_to_read(current),
+            branch_id=result.branch_id,
+            child_run_id=result.run_id,
+            fork_step=fork_step,
+            child_status=child.status if child is not None else None,
+            override_hash=override_hash,
+            reason=(
+                f"Child run {result.run_id} created (branch "
+                f"{result.branch_id}, fork step {fork_step}, "
+                f"status {child.status if child is not None else None}). "
+                "No ensemble yet: run "
+                f"POST /runs/{result.run_id}/monte-carlo before "
+                "generating from this direction. The previous branch "
+                "run was left untouched."
+            ),
+        )
+
+    async def _discard_branch_best_effort(
+        self, session: AsyncSession, branch_id: str
+    ) -> bool:
+        """Discard one committed branch; a discard failure never raises."""
+        try:
+            return await self._branch_runner.discard_branch(session, branch_id)
+        except Exception:  # noqa: BLE001 — the caller reports the outcome, not this
+            return False
+
+    async def _store_override_records(
+        self,
+        session: AsyncSession,
+        anchor_id: str,
+        staged: list[
+            tuple[DirectionOverrideSpec, BranchResult | None, str | None, str | None, int]
+        ],
+        override_hash: str,
+    ) -> list[DirectionOverrideOutcome]:
+        """Store mappings for staged directions, tolerating a same-name race.
+
+        Check-then-insert, with a bounded retry: each pass re-reads
+        the anchor's mappings, converts any direction whose name
+        appeared meanwhile to ``skipped`` (discarding the branch
+        created for it — same no-clobber semantics as the upfront
+        name check), and stores the survivors. If the flush/commit
+        itself hits the mapping unique constraint, only that
+        clash retries; any other integrity error surfaces. Names
+        are unique within one request (the request model rejects
+        duplicates), so a clash can only come from a concurrent
+        commit, which the next pass's re-read sees — each retry
+        settles at least one direction, so ``len(staged) + 1``
+        attempts always suffice. No locking: the unique
+        constraint is the arbiter, and the loser's outcome is
+        ``skipped``, never a 500. Outcomes are emitted in
+        request order.
+        """
+        pending = list(staged)
+        by_name: dict[str, DirectionOverrideOutcome] = {}
+        final_survivors: list[
+            tuple[DirectionOverrideSpec, BranchResult, str | None, int]
+        ] = []
+        final_records: dict[str, DirectionMappingRecord] = {}
+        for _attempt in range(len(staged) + 1):
+            rows_now = await self._mapping_rows(session, anchor_id)
+            existing_now = {row.name: row for row in rows_now}
+            next_position = max((row.position for row in rows_now), default=-1) + 1
+            survivors: list[tuple[DirectionOverrideSpec, BranchResult, str | None, int]] = []
+            for spec, staged_result, child_status, problem, fork_step in pending:
+                if problem == "collision":
+                    row = existing_now[spec.name]
+                    by_name[spec.name] = DirectionOverrideOutcome(
                         name=spec.name,
                         status="skipped",
                         reason=(
@@ -1135,10 +1404,8 @@ class NarrativeService:
                         arm=spec.arm,
                         mece_branches=list(spec.mece_branches),
                     )
-                )
-            elif problem is not None:
-                outcomes.append(
-                    DirectionOverrideOutcome(
+                elif problem is not None:
+                    by_name[spec.name] = DirectionOverrideOutcome(
                         name=spec.name,
                         status="failed",
                         reason=problem,
@@ -1146,40 +1413,122 @@ class NarrativeService:
                         arm=spec.arm,
                         mece_branches=list(spec.mece_branches),
                     )
-                )
-            else:
-                assert (
-                    staged_record is not None and outcome_result is not None
-                )  # staged shape guarantees it
-                outcomes.append(
-                    DirectionOverrideOutcome(
+                elif spec.name in existing_now:
+                    # A concurrent request committed this name
+                    # after our name check: skip, leave the first
+                    # row untouched, discard our branch. The
+                    # discard commits, but nothing is pending yet
+                    # on this pass, so it cannot commit a record.
+                    assert staged_result is not None  # staged shape guarantees it
+                    row = existing_now[spec.name]
+                    discarded = await self._discard_branch_best_effort(
+                        session, staged_result.branch_id
+                    )
+                    if discarded:
+                        reason = (
+                            f"A mapping named {spec.name!r} was created "
+                            f"concurrently (origin {row.origin}, status "
+                            f"{row.status}); left untouched. The branch run "
+                            f"created for this direction (branch "
+                            f"{staged_result.branch_id}) was discarded."
+                        )
+                    else:
+                        reason = (
+                            f"A mapping named {spec.name!r} was created "
+                            f"concurrently (origin {row.origin}, status "
+                            f"{row.status}); left untouched. The branch run "
+                            f"created for this direction (branch "
+                            f"{staged_result.branch_id}) could not be "
+                            "discarded; it needs explicit cleanup."
+                        )
+                    by_name[spec.name] = DirectionOverrideOutcome(
                         name=spec.name,
-                        status="stored",
-                        reason=(
-                            f"Child run {outcome_result.run_id} created (branch "
-                            f"{outcome_result.branch_id}, fork step {fork_step}, "
-                            f"status {child_status}). No ensemble yet: run "
-                            f"POST /runs/{outcome_result.run_id}/monte-carlo before "
-                            "generating from this direction."
-                        ),
-                        mapping_id=staged_record.id,
-                        branch_id=outcome_result.branch_id,
-                        child_run_id=outcome_result.run_id,
+                        status="skipped",
+                        reason=reason,
                         fork_step=fork_step,
-                        child_status=child_status,
                         arm=spec.arm,
                         mece_branches=list(spec.mece_branches),
                     )
+                else:
+                    assert staged_result is not None  # staged shape guarantees it
+                    survivors.append((spec, staged_result, child_status, fork_step))
+            pending = []
+            records_by_name: dict[str, DirectionMappingRecord] = {}
+            for spec, branch_result, _child_status, fork_step in survivors:
+                record = DirectionMappingRecord(
+                    anchor_run_id=anchor_id,
+                    name=spec.name,
+                    source_run_id=branch_result.run_id,
+                    arm=spec.arm,
+                    mece_branches=list(spec.mece_branches),
+                    deliberation_id=None,
+                    origin="override",
+                    rule_id=None,
+                    rules_version=None,
+                    rule_record=None,
+                    status="active",
+                    proposal_record=None,
+                    override_record={
+                        "overrides": dict(spec.overrides),
+                        "branch_id": branch_result.branch_id,
+                        "fork_step": fork_step,
+                        "override_hash": override_hash,
+                    },
+                    user_edited=False,
+                    position=next_position,
                 )
-        await session.commit()
-        rows = await self._mapping_rows(session, anchor_id)
-        return DirectionOverrideRead(
-            anchor_run_id=anchor_id,
-            override_hash=override_hash,
-            directions_considered=len(request.directions),
-            outcomes=outcomes,
-            mappings=[self._mapping_to_read(row) for row in rows],
-        )
+                session.add(record)
+                records_by_name[spec.name] = record
+                next_position += 1
+            try:
+                await session.flush()
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                if not _is_mapping_unique_violation(exc):
+                    raise
+                pending = [
+                    (spec, result, child_status, None, fork_step)
+                    for spec, result, child_status, fork_step in survivors
+                ]
+                continue
+            final_survivors = survivors
+            final_records = records_by_name
+            break
+        else:  # pragma: no cover — each retry settles a direction; unreachable
+            raise DirectionError(
+                "direction_override_store_exhausted",
+                "Could not store override directions: repeated concurrent "
+                "same-name collisions exhausted the retry bound.",
+            )
+        stored_rows = {row.name: row for row in await self._mapping_rows(session, anchor_id)}
+        for spec, branch_result, child_status, fork_step in final_survivors:
+            stored_row = stored_rows.get(spec.name)
+            # A concurrent delete between our commit and this
+            # re-read must not turn a stored direction into a
+            # 500: fall back to the committed record's id.
+            mapping_id = (
+                stored_row.id if stored_row is not None else final_records[spec.name].id
+            )
+            by_name[spec.name] = DirectionOverrideOutcome(
+                name=spec.name,
+                status="stored",
+                reason=(
+                    f"Child run {branch_result.run_id} created (branch "
+                    f"{branch_result.branch_id}, fork step {fork_step}, "
+                    f"status {child_status}). No ensemble yet: run "
+                    f"POST /runs/{branch_result.run_id}/monte-carlo before "
+                    "generating from this direction."
+                ),
+                mapping_id=mapping_id,
+                branch_id=branch_result.branch_id,
+                child_run_id=branch_result.run_id,
+                fork_step=fork_step,
+                child_status=child_status,
+                arm=spec.arm,
+                mece_branches=list(spec.mece_branches),
+            )
+        return [by_name[spec.name] for spec, *_rest in staged]
 
     @staticmethod
     def _check_override_domain(anchor: SimulationRun) -> None:
@@ -1282,6 +1631,15 @@ class NarrativeService:
         for candidate in candidates:
             by_run.setdefault(candidate.run_id, {})[candidate.arm] = candidate
         parents = {run.id: run.parent_run_id for run in family}
+        # The metric name each ensemble measures, read from the
+        # already-validated ensemble fragments (_assemble_candidates
+        # validated them above): the prompt names the metric so gate
+        # bases can cite the stored number they derive from.
+        metrics: dict[str, str | None] = {}
+        for run in family:
+            fragment = (run.summary or {}).get(MONTE_CARLO_SUMMARY_KEY)
+            metric = fragment.get("metric") if isinstance(fragment, dict) else None
+            metrics[run.id] = metric if isinstance(metric, str) else None
         rows: list[ProposalFamilyRun] = []
         for run_id in sorted(by_run):
             arms = by_run[run_id]
@@ -1296,6 +1654,7 @@ class NarrativeService:
                     baseline_p_loss=baseline.p_loss,
                     strategy_p50=strategy.p50,
                     strategy_p_loss=strategy.p_loss,
+                    metric=metrics.get(run_id),
                 )
             )
         return rows
