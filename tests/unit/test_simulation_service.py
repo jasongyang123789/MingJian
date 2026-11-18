@@ -403,6 +403,9 @@ class TestSimulationExecution:
             # Stand-in field added in Phase 1 (split gate); absent =
             # no split structure attached.
             split_structure=None,
+            # Stand-in field added in S-layer real splits (stored OEM
+            # shares gate); absent = no stored shares attached.
+            oem_production_shares=None,
         )
         with pytest.raises(ValueError, match="not implemented"):
             await engine_service.create_simulation_run(mock_session, payload)
