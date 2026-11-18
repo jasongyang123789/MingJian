@@ -419,6 +419,14 @@ export const directionsApi = {
     api.deleteNoContent(
       `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}`,
     ),
+  acceptMapping: (runId: string, mappingId: string) =>
+    api.post<DirectionMappingRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}/accept`,
+    ),
+  rejectMapping: (runId: string, mappingId: string) =>
+    api.post<DirectionMappingRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}/reject`,
+    ),
 }
 
 // ==================== Phase 2 — 汽车包 ====================
