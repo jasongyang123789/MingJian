@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from planagent.config import Settings
+from planagent.config import Settings, reset_settings_cache
+from planagent.db import reset_database_cache
 from planagent.domain.enums import ClaimStatus, EventTopic
 from planagent.domain.models import Claim
 from planagent.events.bus import InMemoryEventBus
@@ -265,7 +266,25 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[AsyncClient]:
+async def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> AsyncIterator[AsyncClient]:
+    # Own scratch DB: this fixture builds the real app, whose lifespan
+    # calls get_database() at startup. Without its own URL the app
+    # falls back to the default Postgres URL (no server on this VM),
+    # and the test only ever passed via a leaked lru_cached settings
+    # URL from an earlier test (see TMPFS-DIET.md section 7). Same
+    # pattern as the other API tests: sqlite URL under tmp_path plus
+    # cache resets, before the app is imported and before the client
+    # context runs the lifespan. The in-memory bus is part of the
+    # same fix: the default redis backend has no server here either,
+    # and the leaked settings carried that too.
+    monkeypatch.setenv(
+        "PLANAGENT_DATABASE_URL",
+        f"sqlite+aiosqlite:///{(tmp_path / 'planagent-new-features.db').resolve().as_posix()}",
+    )
+    monkeypatch.setenv("PLANAGENT_EVENT_BUS_BACKEND", "memory")
+    reset_settings_cache()
+    reset_database_cache()
+
     from planagent.main import app
 
     transport = ASGITransport(app=app)
