@@ -16,6 +16,8 @@ import type {
   DirectionMappingRead,
   DirectionMappingUpdate,
   DirectionOverrideRead,
+  DirectionOverrideReforkRead,
+  DirectionOverrideReforkRequest,
   DirectionOverrideRequest,
   ExpectedShortfallRequest,
   ExpectedShortfallResult,
@@ -406,6 +408,15 @@ export const directionsApi = {
   createOverrides: (runId: string, payload: DirectionOverrideRequest) =>
     api.post<DirectionOverrideRead>(
       `/runs/${encodeURIComponent(runId)}/directions/override`,
+      payload,
+    ),
+  reforkMapping: (
+    runId: string,
+    mappingId: string,
+    payload: DirectionOverrideReforkRequest,
+  ) =>
+    api.post<DirectionOverrideReforkRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/mappings/${encodeURIComponent(mappingId)}/refork`,
       payload,
     ),
   listMappings: (runId: string) =>

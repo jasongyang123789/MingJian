@@ -1475,6 +1475,26 @@ export interface DirectionOverrideRead {
   mappings: DirectionMappingRead[]
 }
 
+// Mirrors services/narratives/models.py:
+// DirectionOverrideReforkRequest/DirectionOverrideReforkRead.
+// Re-forking repoints the SAME mapping at a new branch run; the old
+// branch run is left untouched. `fork_step` is optional: omitted, the
+// backend applies the scenario-branch midpoint default.
+export interface DirectionOverrideReforkRequest {
+  overrides: Record<string, number>
+  fork_step?: number
+}
+
+export interface DirectionOverrideReforkRead {
+  mapping: DirectionMappingRead
+  branch_id: string
+  child_run_id: string
+  fork_step: number
+  child_status: string | null
+  override_hash: string
+  reason: string
+}
+
 // ==================== Phase 2 — 汽车包 ====================
 
 export interface AutomotiveTrajectoryPoint {

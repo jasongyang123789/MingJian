@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -65,6 +65,7 @@ describe('Directions', () => {
   let reviewResponse: { status: number; body: unknown } | null
   let variablesResponse: { status: number; body: unknown } | null
   let overrideResponse: { status: number; body: unknown } | null
+  let reforkResponse: { status: number; body: unknown } | null
   const posted: { url: string; body: unknown }[] = []
 
   beforeEach(() => {
@@ -77,6 +78,7 @@ describe('Directions', () => {
     reviewResponse = null
     variablesResponse = null
     overrideResponse = null
+    reforkResponse = null
     posted.length = 0
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -182,6 +184,51 @@ describe('Directions', () => {
           (mapping) => mapping.id === id,
         )
         return updated ? jsonResponse(updated) : jsonResponse({ detail: 'not found' }, 404)
+      }
+      if (
+        method === 'POST' &&
+        /^\/api\/runs\/run-anchor\/directions\/mappings\/[^/]+\/refork$/.test(url)
+      ) {
+        const body = init?.body ? JSON.parse(String(init.body)) : null
+        posted.push({ url, body })
+        if (reforkResponse) return jsonResponse(reforkResponse.body, reforkResponse.status)
+        const parts = url.split('/')
+        const id = parts[parts.length - 2]
+        const existing = (mappings as Record<string, unknown>[]).find(
+          (mapping) => mapping.id === id,
+        )
+        if (!existing) return jsonResponse({ detail: 'not found' }, 404)
+        const record = {
+          overrides: (body as Record<string, unknown>).overrides,
+          branch_id: 'branch-refork',
+          fork_step: (body as Record<string, unknown>).fork_step ?? 1,
+          override_hash: 'sha256:refork-test',
+        }
+        mappings = (mappings as Record<string, unknown>[]).map((mapping) =>
+          mapping.id === id
+            ? {
+                ...mapping,
+                source_run_id: 'run-child-refork',
+                override_record: record,
+                user_edited: true,
+              }
+            : mapping,
+        )
+        const updated = (mappings as Record<string, unknown>[]).find(
+          (mapping) => mapping.id === id,
+        )
+        return jsonResponse(
+          {
+            mapping: updated,
+            branch_id: 'branch-refork',
+            child_run_id: 'run-child-refork',
+            fork_step: (body as Record<string, unknown>).fork_step ?? 1,
+            child_status: 'COMPLETED',
+            override_hash: 'sha256:refork-test',
+            reason: 'Child run run-child-refork created. No ensemble yet.',
+          },
+          201,
+        )
       }
       if (url === '/api/runs/run-anchor/narratives' && method === 'GET') {
         return jsonResponse({ run_id: 'run-anchor', narratives })
@@ -497,6 +544,55 @@ describe('Directions', () => {
     expect(screen.getByText(/证据：finance-2026/)).toBeTruthy()
   })
 
+  it('filters the variable picker by typed text and restores all options when cleared', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    const filter = screen.getByLabelText('筛选变量')
+    fireEvent.change(filter, { target: { value: 'bur' } })
+    expect(screen.queryByRole('option', { name: 'cash · USD · normal(μ=10, σ=2)' })).toBeNull()
+    expect(screen.getByRole('option', { name: 'burn · USD/mo · fixed = 20' })).toBeTruthy()
+    fireEvent.change(filter, { target: { value: '' } })
+    expect(screen.getByRole('option', { name: 'cash · USD · normal(μ=10, σ=2)' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'burn · USD/mo · fixed = 20' })).toBeTruthy()
+  })
+
+  it('matches the picker filter against descriptions case-insensitively, and picking a filtered variable shows its definition', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('筛选变量'), { target: { value: 'MONTHLY' } })
+    expect(screen.queryByRole('option', { name: 'cash · USD · normal(μ=10, σ=2)' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'burn' } })
+    expect(screen.getByText(/Monthly burn/)).toBeTruthy()
+    expect(screen.getByText(/证据：finance-2026/)).toBeTruthy()
+  })
+
+  it('keeps the picker usable with 100 bound variables', async () => {
+    const many = Array.from({ length: 100 }, (_, i) => ({
+      id: `var-${i}`,
+      unit: 'u',
+      distribution: { type: 'fixed', value: i, mean: null, std: null, min: null, mode: null, max: null, p: null },
+      evidence_ref: 'bulk',
+      description: `Variable number ${i}`,
+      scope_tags: [],
+    }))
+    variablesResponse = {
+      status: 200,
+      body: { ...VARIABLES, bindings: { ...VARIABLES.bindings, variables: many } },
+    }
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    const select = screen.getByLabelText('变量')
+    expect(within(select as HTMLElement).getAllByRole('option')).toHaveLength(101)
+    fireEvent.change(screen.getByLabelText('筛选变量'), { target: { value: 'var-97' } })
+    expect(within(select as HTMLElement).getAllByRole('option')).toHaveLength(2)
+    expect(screen.getByRole('option', { name: 'var-97 · u · fixed = 97' })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('筛选变量'), { target: { value: '' } })
+    expect(within(select as HTMLElement).getAllByRole('option')).toHaveLength(101)
+  })
+
   it('creates an override direction, omits fork_step, and shows the stored outcome', async () => {
     renderPage()
     await pickAnchorRun()
@@ -735,5 +831,80 @@ describe('Directions', () => {
     await pickAnchorRun()
     expect(await screen.findByText(/没有绑定变量/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: '新建变量覆盖方向' })).toBeNull()
+  })
+
+  it('reforks an override mapping with edited fixed values and reloads the stored list', async () => {
+    mappings = [directionMappingOverride]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByRole('button', { name: '编辑固定值' }))
+    const valueInput = screen.getByLabelText('cash 的固定值') as HTMLInputElement
+    expect(valueInput.value).toBe('80')
+    const forkInput = screen.getByLabelText('新分叉步（留空用默认中点）') as HTMLInputElement
+    expect(forkInput.value).toBe('2')
+    fireEvent.change(valueInput, { target: { value: '90' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新分叉' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].url).toBe('/api/runs/run-anchor/directions/mappings/mapping-5/refork')
+    expect(posted[0].body).toEqual({ overrides: { cash: 90 }, fork_step: 2 })
+    expect(await screen.findByText(/变量覆盖：cash=90 · 分叉步 2/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '保存并重新分叉' })).toBeNull()
+  })
+
+  it('omits fork_step from the refork payload when the fork-step input is cleared', async () => {
+    mappings = [directionMappingOverride]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByRole('button', { name: '编辑固定值' }))
+    fireEvent.change(screen.getByLabelText('新分叉步（留空用默认中点）'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新分叉' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body).toEqual({ overrides: { cash: 80 } })
+  })
+
+  it('surfaces a refork refusal with its code and keeps the form open', async () => {
+    mappings = [directionMappingOverride]
+    reforkResponse = {
+      status: 400,
+      body: {
+        detail: {
+          code: 'direction_override_unknown_variable',
+          message: "Override names unknown variable 'nope'. Valid variables: burn, cash",
+        },
+      },
+    }
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByRole('button', { name: '编辑固定值' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新分叉' }))
+    expect(await screen.findByText(/direction_override_unknown_variable/)).toBeTruthy()
+    expect(screen.getByText(/Valid variables: burn, cash/)).toBeTruthy()
+    expect(screen.getByLabelText('cash 的固定值')).toBeTruthy()
+  })
+
+  it('shows the edit-fixed-values action only on active override rows', async () => {
+    mappings = [
+      directionMappingDerived,
+      directionMappingAuthored,
+      directionMappingProposed,
+      directionMappingRejected,
+      directionMappingOverride,
+      { ...directionMappingOverride, id: 'mapping-6', name: 'Old cash', status: 'rejected' },
+    ]
+    renderPage()
+    await pickAnchorRun()
+    await screen.findByText('Highest P50')
+    expect(screen.getAllByRole('button', { name: '编辑固定值' })).toHaveLength(1)
+  })
+
+  it('refuses a non-finite refork value without posting', async () => {
+    mappings = [directionMappingOverride]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByRole('button', { name: '编辑固定值' }))
+    fireEvent.change(screen.getByLabelText('cash 的固定值'), { target: { value: 'abc' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新分叉' }))
+    expect(await screen.findByText(/必须是有限数字/)).toBeTruthy()
+    expect(posted).toHaveLength(0)
   })
 })
