@@ -685,6 +685,187 @@ Nothing is pushed; a GitHub-side fork needs Ho's account.
   backend 1819 → 1840, 0 failed. Live-LLM verification of the
   fix awaits the re-run on this branch.
 
+## Track A — variable cap 30 → 100 + two literal rates promoted (done)
+
+- Delivered on `strategy-engine/var-cap-100` (see VAR-CAP-100.md),
+  from `ccc3490`, per Ho's 2026-11-17 ruling 5. `MAX_VARIABLES`
+  30 → 100 (both enforcement gates already read the constant, so
+  the refusal kind and messages render the new cap with no logic
+  change; the agilhaykal 30-pin attribution is preserved honestly
+  in the docstring, the raise recorded as Ho's decision); the
+  cockpit label "最多 30 个" → "最多 100 个" (no frontend
+  enforcement exists; the backend validator is the single
+  enforcement point). The Phase 2 automotive template grows
+  30 → 32 variables: `income_growth_rate_annual` (fixed 0.05,
+  `NBS via synthesis B4`) and `nev_penetration_monthly_drift`
+  (fixed 0.002, `assumption:pending-calibration`); the income
+  and penetration tick drivers now reference the variables, and
+  the driver outputs (`income_index` 1.0042, `nev_penetration`
+  0.481) are asserted identical to the old literal behavior.
+  1 new test; branch collects 1841. Subsets green (57 cap +
+  template tests, 13 automotive API, smoke PASS); frontend
+  268/1 with the same pre-existing Charts flake as the pristine
+  baseline, tsc/eslint/build green. Full-suite gate NOT green
+  on the branch: best attempt 268 failed / 1573 passed, all
+  classified environmental (262 disk I/O + 5 EPERM, 0
+  AssertionError, 0 failures in any track-touched file).
+  Limits: the penetration drift stays a placeholder magnitude
+  (calibration v3 ahead); no Docker verification. Merged as
+  `9c00759` (the merge message records the gate gap).
+- NOT promoted (out of scope, per the report): the other pack
+  literals (price-driver speed, pull-forward decay,
+  inventory/chip responses, generation-transition step);
+  `MAX_FORMULAS` (40) untouched.
+
+## Track D — retry on truncation + empty response (done)
+
+- Delivered on `strategy-engine/retry-truncation-empty` (see
+  RETRY-TRUNCATION-EMPTY.md), from `ccc3490`, per Ho's ruling 9
+  (retry on truncation approved; the 2026-11-17 live smoke
+  showed the empty response needs the same treatment). Extends
+  the Sprint 18 timeout-only retry policy to two more transient
+  kinds: the port now affirmatively flags observed-empty
+  responses (`empty_response` on `SkillLLMResponse`; a bare
+  `payload=None` with no signal stays a plain contract
+  failure); the taxonomy gains the eighth kind
+  `empty_response` (`SkillEmptyResponseError` subclasses
+  `SkillContractError`, like `SkillTruncatedError`);
+  `InstrumentedPort` retries RETURNED unusable responses
+  (`finish_reason="length"` or the empty flag) under the
+  identical treatment (max 2 retries, fixed backoff, budget
+  check before every attempt, per-attempt audit), and on
+  exhaustion returns the last unusable response so the stage
+  runner classifies `truncated` / `empty_response` exactly as
+  before; three audit-truthfulness fixes in the same loop
+  (finished outcome names the true result; the retry event's
+  `error_kind` is no longer hardcoded `"timeout"`). Malformed
+  content stays a contract error, never retried. No migration,
+  no frontend, no template or version change. Net +29 tests
+  (30 added, 1 renamed) → 1869 collected. Gate by partition
+  (chunks 01–04: 281 + 311 + 254 + 329 passed, with 2
+  unresolved template-listing-order failures in chunk 02 in a
+  file untouched by this track) plus a 326-test ring run green
+  and smoke PASS; four full-suite attempts all environmentally
+  defeated (207/207 failure sections disk I/O / EPERM /
+  no-temp-dir, 0 assertion/logic failures). Limits: no
+  live-LLM verification (fixture-driven only); same-cap retry
+  can re-truncate at 3× call cost; the deliberation path does
+  not set the empty flag; no clean single full-suite run
+  (chunks 00/05 never ran; cross-chunk order dependence
+  unverified). Merged as `b7c53b6`.
+
+## Track E — HUD fitment semantics re-check (done)
+
+- Delivered on `strategy-engine/hud-fitment-check` (see
+  HUD-FITMENT-CHECK.md), from `ccc3490`, re-checking the model
+  P.O catalog against Ho's 2026-11-17 ruling (P-HUD coexists
+  with W/AR-HUD on the same vehicle; penetration rates
+  non-exclusive) and Q7 (rates independent, sums need not be
+  100%). Verdict: no code enforces or assumes HUD exclusivity
+  — no HUD sum gate, no single-choice logic, no HUD overlap
+  prompt; the one-host backstop covers {P01, P04} only. Two
+  TEXT fixes, zero behavioral change: the HUD_AR catalog note
+  rewritten (it asserted substitution and promised a prompt
+  that does not exist) and a coexistence note added to the
+  HUD_P entry; the prompt-engine docstring qualified ("one
+  solution per function" is the normal case behind the
+  substitution prompts, never a universal rule). 2 regression
+  tests pin the ruling (rates 0.6/0.5/0.4 summing to 1.5
+  validate; production volume 100 yields 60/50/40 units
+  independently; 0 anomaly prompts). Blast-radius subset
+  164/164; full-suite gate NOT achieved (5 attempts, all
+  environmental: 331/231/347 failures, all disk I/O / EPERM /
+  setup, 0 assertion failures). Limits: AR-vs-W substitution
+  asserted neither way (not ruled on); the C-HUD parts-library
+  question is separate; no Docker verification. Merged as
+  `74e1368`.
+
+## Track C — polish re-check (done)
+
+- Delivered on `strategy-engine/polish-recheck` (see
+  POLISH-RECHECK.md), from `ccc3490`, closing the Sprint 13 gap
+  (nothing re-validated polished text against the artifact).
+  New pure module `services/narratives/recheck.py`:
+  `check_polish` compares the polished text against the
+  deterministic markdown — numbers as a multiset with exact
+  `Decimal` equality (percent ≡ decimal; code spans, UUIDs,
+  and identifiers excluded; hyphen ranges yield the first
+  endpoint only) plus per-kind provenance-mark counts
+  (`[computed]` / `[deliberated]` / `[template]`). A 3-line
+  gate in `NarrativeService.polish` runs the check after the
+  polish pass returns and before any row is written; failure
+  raises `narrative_polish_recheck_failed`, mapped to 502,
+  with zero writes. No migration, no template/prompt change,
+  no frontend change. 26 tests (24 unit + 2 API: altered
+  number → 502 with zero writes; dropped mark → 502 with zero
+  writes); unit chunk 1229/1229 green; narratives subsets 66 +
+  39; smoke PASS. The root+stress chunk (637 tests) never went
+  green: four attempts, all environmental (0 AssertionError;
+  tmpfs overflow + the write-denial gate). Limits: live-LLM
+  polish quality and the false-refusal rate unverified; mark
+  attachment not verified (reordering passes); numbers written
+  as words read as dropped figures (fails safe); trace-id
+  content not verified; no retry-on-recheck-failure. Merged
+  as `0fce5aa`.
+
+## Track B — option C: LLM-proposed decision directions (done)
+
+- Delivered on `strategy-engine/option-c-llm-directions` (see
+  OPTION-C.md), from `ccc3490`, Ho-approved 2026-11-16 (the
+  Sprint 14 option C). A third direction source alongside
+  explicit definitions (Sprint 13) and rule derivation (Sprint
+  14): `POST /runs/{run_id}/directions/propose` (template
+  `narrative.direction_proposals` v1, `extra="forbid"`, the
+  shared 8000-token cap) renders the grounding surface
+  deterministically (MECE branches, scenario-family ensembles,
+  bound variables, optional guidance); the whole proposal set
+  is grounding-validated before any write — an unknown branch,
+  run, or variable refuses the entire request with zero rows
+  (refuse, not flag), while name collisions are per-proposal
+  `skipped` outcomes and proposals never overwrite anything.
+  Proposals store as `direction_mappings` rows
+  (`origin="llm_proposal"`, migration 0041 adds `status` +
+  `proposal_record`, pre-existing rows backfill to `active`);
+  explicit accept/reject endpoints (accept re-validates
+  references; a stale accept refuses and the row stays
+  `proposed`); generation resolves active-only; derive skips
+  non-active rows. API-first, no frontend change. 42 tests
+  (17 unit + 25 API, fixture-driven); gate by a 6-chunk
+  partitioned run (1882 passed, 0 failed; chunk logs under
+  `docs/option-c/`); five single-process full runs all
+  environmentally defeated (1,440 FAILED lines, 0 assertion
+  failures); migration 0041 up/down/re-up drilled on scratch
+  SQLite; smoke PASS. Limits: live-LLM proposal quality
+  unverified; no cockpit proposal-review UI, and
+  `Directions.tsx` mislabels proposal rows as '手动' (the
+  backend is authoritative); variable grounding covers stored
+  bindings only; the position max+1 race stands as in S14;
+  the empty-tree anchor is untested. Merged as `5ba761d`
+  (merge conflicts in the narratives `__init__.py` and
+  `service.py` — Track C recheck imports vs proposals imports
+  — resolved by keeping both, per the merge message).
+  `pytest --collect-only` at the merged tip collects 1940
+  tests (1840 + 1 + 29 + 2 + 26 + 42).
+- NOT built (deferred, per the report): cockpit proposal-review
+  UI, proposal ranking/scoring/automatic acceptance, Sprint 14
+  option B (variable-override runs), proposal
+  regeneration/diffing, a `direction_mapping_history` table.
+
+## Dockerfile build fixes for the hub verification (done)
+
+- Two one-line `Dockerfile` commits on this branch, both found
+  during Docker full-stack verification on the hub:
+  `3f2bdc5` pins the api base image to
+  `python:3.12-slim-bookworm` (`python:3.12-slim` now resolves
+  to Debian trixie, where `libgdk-pixbuf2.0-0` was renamed and
+  the apt step fails deterministically, exit 100); `23aafb7`
+  routes pip installs through the Tencent PyPI mirror (the hub
+  uplink runs ~15–20KB/s with stalls exceeding pip's 15s
+  default timeout; Ho chose a domestic mirror; the apt line is
+  untouched so the cached apt layer stays valid). No test
+  evidence in-repo; Docker stack verification remains open
+  (see Standing open items).
+
 ## Next steps (candidates, need Ho's decision)
 
 - Configure an LLM key and run one real deliberation end-to-end
