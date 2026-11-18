@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.domain.api import ScenarioRunCreate
 from planagent.domain.enums import ExecutionMode, SimulationRunStatus
 from planagent.domain.models import (
     CompanyProfile,
+    DecisionOption,
     DecisionRecordRecord,
+    ExternalShockRecord,
     ForceProfile,
+    GeneratedReport,
+    GeoAssetRecord,
+    Hypothesis,
+    PredictionCalibrationContext,
+    PredictionSeries,
+    PredictionVersion,
     ScenarioBranchRecord,
     SimulationRun,
     StateSnapshotRecord,
@@ -368,8 +376,102 @@ class SimulationScenariosMixin:
             await self._generate_report(session, run)
 
         await session.commit()
-        await session.refresh(branch)
+        try:
+            await session.refresh(branch)
+        except Exception:
+            # The commit above already persisted the branch: a refresh
+            # failure must not strand it as an unreported orphan.
+            # Best-effort cleanup, then the original failure surfaces.
+            try:
+                await self.delete_scenario_branch(session, scenario_id)
+            except Exception:  # noqa: BLE001, S110 — cleanup must not mask the refresh error
+                pass
+            raise
         return branch
+
+    async def delete_scenario_branch(self, session: AsyncSession, scenario_id: str) -> bool:
+        """Delete one scenario branch and its child run, restoring pre-branch state.
+
+        Removes ONLY the named branch: its child run and every row
+        branch execution created for that child, in foreign-key
+        order (no ``ON DELETE`` cascades exist anywhere, so the
+        order is what keeps this valid on Postgres). The parent
+        run itself is untouched apart from dropping the branch id
+        from its ``scenario_branch_ids`` summary list. Returns
+        ``True`` when a branch was deleted, ``False`` when no such
+        branch exists (already deleted: idempotent). The deletion
+        commits, so it survives the caller's rollback.
+
+        Scope is exactly what :meth:`create_scenario_run` writes
+        for a fresh branch: snapshots, decision records, external
+        shocks, the generated report, geo-asset clones (military),
+        decision options, hypotheses, prediction series/versions,
+        and the calibration context. Rows other flows may attach
+        later (evidence links, replay packages) are NOT deleted:
+        if one blocks the deletion, the failure surfaces and the
+        branch survives for explicit human cleanup. Event-archive
+        rows and bus emissions are append-only audit side effects
+        and are deliberately left in place.
+        """
+        branch = await session.get(ScenarioBranchRecord, scenario_id)
+        if branch is None:
+            return False
+        child_id = branch.run_id
+        parent_id = branch.parent_run_id
+
+        series_ids = list(
+            (
+                await session.scalars(
+                    select(PredictionSeries.id).where(
+                        PredictionSeries.source_run_id == child_id
+                    )
+                )
+            ).all()
+        )
+        if series_ids:
+            # Versions hang off their series; hypotheses point at
+            # versions, so versions go before both.
+            await session.execute(
+                delete(PredictionVersion).where(PredictionVersion.series_id.in_(series_ids))
+            )
+            await session.execute(
+                delete(PredictionSeries).where(PredictionSeries.id.in_(series_ids))
+            )
+        await session.execute(delete(Hypothesis).where(Hypothesis.run_id == child_id))
+        await session.execute(delete(DecisionOption).where(DecisionOption.run_id == child_id))
+        await session.execute(
+            delete(PredictionCalibrationContext).where(
+                PredictionCalibrationContext.run_id == child_id
+            )
+        )
+        await session.execute(delete(GeneratedReport).where(GeneratedReport.run_id == child_id))
+        await session.execute(
+            delete(StateSnapshotRecord).where(StateSnapshotRecord.run_id == child_id)
+        )
+        await session.execute(
+            delete(DecisionRecordRecord).where(DecisionRecordRecord.run_id == child_id)
+        )
+        await session.execute(
+            delete(ExternalShockRecord).where(ExternalShockRecord.run_id == child_id)
+        )
+        await session.execute(delete(GeoAssetRecord).where(GeoAssetRecord.run_id == child_id))
+        await session.execute(
+            delete(ScenarioBranchRecord).where(ScenarioBranchRecord.id == scenario_id)
+        )
+        await session.execute(delete(SimulationRun).where(SimulationRun.id == child_id))
+
+        parent = await session.get(SimulationRun, parent_id)
+        if parent is not None:
+            branch_ids = parent.summary.get("scenario_branch_ids", [])
+            if scenario_id in branch_ids:
+                parent.summary = {
+                    **parent.summary,
+                    "scenario_branch_ids": [
+                        kept for kept in branch_ids if kept != scenario_id
+                    ],
+                }
+        await session.commit()
+        return True
 
     async def get_scenario_branch(
         self,

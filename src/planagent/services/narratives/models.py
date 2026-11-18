@@ -481,9 +481,14 @@ class DirectionOverrideOutcome(BaseModel):
     reason before generating from it. ``skipped``: a mapping of
     the same name already exists — no branch run was created and
     the existing row is left untouched (the no-clobber rule).
-    ``failed``: the branch run could not be created after all
-    upfront validation passed; the reason carries the failure,
-    and the other directions in the request are unaffected.
+    When a concurrent request creates the name first, the loser
+    is likewise ``skipped`` and the branch it already created is
+    discarded. ``failed``: the branch run could not be created
+    after all upfront validation passed; the reason carries the
+    failure, and the other directions in the request are
+    unaffected. A failure after the branch committed discards
+    the committed branch; if the discard itself fails, the
+    reason names the branch id for explicit cleanup.
     """
 
     model_config = ConfigDict(extra="forbid")
