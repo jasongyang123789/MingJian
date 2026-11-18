@@ -6,6 +6,9 @@ import {
   derivationRead,
   directionMappingAuthored,
   directionMappingDerived,
+  directionMappingOverride,
+  directionMappingProposed,
+  directionMappingRejected,
   narrativeRead,
 } from '../test/engineFixtures'
 import Directions from './Directions'
@@ -44,6 +47,7 @@ describe('Directions', () => {
   let generateResponse: { status: number; body: unknown } | null
   let polishResponse: { status: number; body: unknown } | null
   let deriveResponse: { status: number; body: unknown } | null
+  let reviewResponse: { status: number; body: unknown } | null
   const posted: { url: string; body: unknown }[] = []
 
   beforeEach(() => {
@@ -53,6 +57,7 @@ describe('Directions', () => {
     generateResponse = null
     polishResponse = null
     deriveResponse = null
+    reviewResponse = null
     posted.length = 0
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -87,6 +92,25 @@ describe('Directions', () => {
           (mapping) => mapping.id !== id,
         )
         return new Response(null, { status: 204 })
+      }
+      if (
+        method === 'POST' &&
+        /^\/api\/runs\/run-anchor\/directions\/mappings\/[^/]+\/(accept|reject)$/.test(url)
+      ) {
+        posted.push({ url, body: null })
+        if (reviewResponse) return jsonResponse(reviewResponse.body, reviewResponse.status)
+        const parts = url.split('/')
+        const id = parts[parts.length - 2]
+        const action = parts[parts.length - 1]
+        mappings = (mappings as Record<string, unknown>[]).map((mapping) =>
+          mapping.id === id
+            ? { ...mapping, status: action === 'accept' ? 'active' : 'rejected' }
+            : mapping,
+        )
+        const updated = (mappings as Record<string, unknown>[]).find(
+          (mapping) => mapping.id === id,
+        )
+        return updated ? jsonResponse(updated) : jsonResponse({ detail: 'not found' }, 404)
       }
       if (url === '/api/runs/run-anchor/narratives' && method === 'GET') {
         return jsonResponse({ run_id: 'run-anchor', narratives })
@@ -273,6 +297,115 @@ describe('Directions', () => {
     await pickAnchorRun()
     fireEvent.click(screen.getByLabelText(/使用已存方向映射生成/))
     expect(screen.getByText(/还没有已存方向映射/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '生成简报' })).toHaveProperty('disabled', true)
+  })
+
+  it('shows proposed mappings in the review queue with grounding, never labeled manual', async () => {
+    mappings = [directionMappingProposed, directionMappingDerived]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('待评审提案')).toBeTruthy()
+    expect(screen.getByText(/关键变量：cash、burn/)).toBeTruthy()
+    expect(screen.getByText(/Cash is the binding constraint/)).toBeTruthy()
+    expect(screen.getByText(/模型 gpt-6.1-sol/)).toBeTruthy()
+    expect(screen.getByText(/模板 direction\.propose v1/)).toBeTruthy()
+    expect(screen.getByText(/提案哈希 sha256:propose000000/)).toBeTruthy()
+    expect(screen.getByText(/回溯分支：Demand/)).toBeTruthy()
+    // The proposal appears in the queue and in the stored list.
+    expect(screen.getAllByText('Boost cash')).toHaveLength(2)
+    expect(screen.getAllByText(/LLM 提案 · 待评审/)).toHaveLength(2)
+    expect(screen.queryByText(/手动/)).toBeNull()
+  })
+
+  it('shows an empty review queue when nothing is proposed', async () => {
+    mappings = [directionMappingDerived]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('暂无待评审提案。')).toBeTruthy()
+  })
+
+  it('accepts a proposal, posts to the accept endpoint, and moves it out of the queue', async () => {
+    mappings = [directionMappingProposed]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(await screen.findByRole('button', { name: '接受提案「Boost cash」' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toEqual({
+      url: '/api/runs/run-anchor/directions/mappings/mapping-3/accept',
+      body: null,
+    })
+    await waitFor(() => expect(screen.getAllByText('Boost cash')).toHaveLength(1))
+    expect(screen.getByText('暂无待评审提案。')).toBeTruthy()
+    expect(screen.getByText(/LLM 提案 · 可用/)).toBeTruthy()
+  })
+
+  it('rejects a proposal only after two-step confirmation, and shows it as rejected', async () => {
+    mappings = [directionMappingProposed]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(await screen.findByRole('button', { name: '拒绝提案「Boost cash」' }))
+    expect(await screen.findByText(/确认拒绝「Boost cash」/)).toBeTruthy()
+    expect(posted).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: '确认拒绝提案「Boost cash」' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].url).toBe('/api/runs/run-anchor/directions/mappings/mapping-3/reject')
+    await waitFor(() => expect(screen.getAllByText('Boost cash')).toHaveLength(1))
+    expect(screen.getByText('暂无待评审提案。')).toBeTruthy()
+    expect(screen.getByText(/LLM 提案 · 已拒绝/)).toBeTruthy()
+  })
+
+  it('surfaces a review refusal with its code and keeps the proposal queued', async () => {
+    mappings = [directionMappingProposed]
+    reviewResponse = {
+      status: 400,
+      body: {
+        detail: {
+          code: 'direction_mapping_not_proposed',
+          message: "Mapping 'Boost cash' has status 'rejected'; only proposed mappings can be accepted.",
+        },
+      },
+    }
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(await screen.findByRole('button', { name: '接受提案「Boost cash」' }))
+    expect(await screen.findByText(/direction_mapping_not_proposed/)).toBeTruthy()
+    expect(screen.getByText(/only proposed mappings can be accepted/)).toBeTruthy()
+    expect(screen.getAllByText('Boost cash')).toHaveLength(2)
+  })
+
+  it('labels every mapping origin and status in the stored list', async () => {
+    mappings = [
+      directionMappingDerived,
+      directionMappingAuthored,
+      directionMappingProposed,
+      directionMappingRejected,
+      directionMappingOverride,
+    ]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('Highest P50')).toBeTruthy()
+    expect(screen.getByText(/推导 · 可用/)).toBeTruthy()
+    expect(screen.getByText(/手动 · 可用 · 已编辑/)).toBeTruthy()
+    expect(screen.getByText(/LLM 提案 · 已拒绝/)).toBeTruthy()
+    expect(screen.getByText(/变量覆盖 · 可用/)).toBeTruthy()
+    expect(screen.getByText(/覆盖：cash=80 · 分支步骤 2/)).toBeTruthy()
+  })
+
+  it('generates from stored mappings using only active rows', async () => {
+    mappings = [directionMappingProposed, directionMappingDerived]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByLabelText(/使用已存方向映射生成/))
+    expect(screen.getByText(/将使用的映射：Highest P50/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '生成简报' })).toHaveProperty('disabled', false)
+  })
+
+  it('disables generate-from-stored while no mapping is active', async () => {
+    mappings = [directionMappingProposed]
+    renderPage()
+    await pickAnchorRun()
+    fireEvent.click(screen.getByLabelText(/使用已存方向映射生成/))
+    expect(screen.getByText(/都不在可用状态/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '生成简报' })).toHaveProperty('disabled', true)
   })
 })

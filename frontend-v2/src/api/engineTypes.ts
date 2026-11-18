@@ -1368,6 +1368,9 @@ export interface DecisionNarrativeListRead {
 
 // ==================== Sprint 14 — 方向推导 + 已存映射 ====================
 
+export type DirectionMappingOrigin = 'derived' | 'authored' | 'llm_proposal' | 'override'
+export type DirectionMappingStatus = 'active' | 'proposed' | 'rejected'
+
 export interface DirectionMappingRead {
   id: string
   anchor_run_id: string
@@ -1376,10 +1379,13 @@ export interface DirectionMappingRead {
   arm: 'baseline' | 'strategy'
   mece_branches: string[]
   deliberation_id: string | null
-  origin: 'derived' | 'authored'
+  origin: DirectionMappingOrigin
   rule_id: string | null
   rules_version: string | null
   rule_record: Record<string, unknown> | null
+  status: DirectionMappingStatus
+  proposal_record: Record<string, unknown> | null
+  override_record: Record<string, unknown> | null
   user_edited: boolean
   position: number
   created_at: string
