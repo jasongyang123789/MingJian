@@ -278,6 +278,16 @@ unbounded values; all untouched.
   so the hub re-run does not exercise the migration either. A
   migration-managed Postgres deployment would run it for the first
   time.
+- **Migration 0043's downgrade cannot run while 63-bit seed rows
+  exist (Postgres only; hub drill 2026-11-18, retry-7 report
+  §21.5).** Downgrading bigint → integer with 63-bit values stored
+  fails with `integer out of range` — Postgres narrowing-cast
+  semantics, not a migration defect. The single-transaction
+  downgrade rolls back cleanly: the version stays at 0043 and the
+  seed rows are intact. Removing the 63-bit rows lets the downgrade
+  succeed, and re-upgrading restores bigint. The SQLite drill
+  (test 9) does not show this: SQLite narrowing is a no-op. This is
+  a known limitation of the downgrade path, not a defect in 0043.
 - **Postgres `ON CONFLICT` behavior itself is untested** (conflict
   → rowcount 0 → skip): the mocked-session test proves the statement
   shape and the rowcount-0 branch, not Postgres's execution of it.

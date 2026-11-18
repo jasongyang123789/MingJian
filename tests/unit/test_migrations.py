@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import ast
 import os
 from pathlib import Path
 import sqlite3
 from contextlib import closing
 import subprocess
 import sys
+
+from sqlalchemy import MetaData, Table, create_engine
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateTable
 
 
 def test_sqlite_upgrade_head_keeps_portable_embedding_column(tmp_path: Path) -> None:
@@ -237,3 +242,76 @@ def test_seed_columns_become_bigint_and_keep_rows(tmp_path: Path) -> None:
     assert runs["seed"] == "BIGINT"
     assert fits["seed"] == "BIGINT"
     assert stored_seeds() == (big_run_seed, big_fit_seed)
+
+
+def _revision_ids(repo_root: Path) -> list[str]:
+    """All revision ids declared by the migration scripts."""
+    versions_dir = repo_root / "migrations" / "versions"
+    revision_ids: list[str] = []
+    for path in sorted(versions_dir.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "revision"
+                    for target in node.targets
+                )
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                revision_ids.append(node.value.value)
+    return revision_ids
+
+
+def test_all_revision_ids_fit_version_table_width() -> None:
+    """Every revision id must fit the wide version-table column.
+
+    The width (128) is `VERSION_TABLE_COLUMN_WIDTH` in
+    `migrations/env.py`. The lower bound pins why the fix exists:
+    alembic hardcodes String(32), and revision ids longer than that
+    killed a fresh Postgres upgrade at 0007.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    revision_ids = _revision_ids(repo_root)
+    assert revision_ids, "no revision ids found under migrations/versions"
+    longest = max(revision_ids, key=len)
+    assert len(longest) <= 128, f"revision id {longest!r} exceeds the 128-char version column"
+    assert len(longest) > 32, "expected at least one revision id to exceed alembic's String(32)"
+
+
+def test_fresh_upgrade_creates_wide_version_table(tmp_path: Path) -> None:
+    """A fresh upgrade must create alembic_version with a wide column.
+
+    Proves `migrations/env.py` pre-creates the version table before
+    alembic's own ensure step (which hardcodes String(32)): the
+    declared type is read back from the real upgraded database, and
+    the reflected table's CREATE is rendered against the PostgreSQL
+    dialect to show what Postgres receives.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    database_path = tmp_path / "version-table-width.db"
+    env = os.environ.copy()
+    env["PLANAGENT_DATABASE_URL"] = f"sqlite+aiosqlite:///{database_path.resolve().as_posix()}"
+
+    upgraded = _run_alembic(repo_root, env, "upgrade", "head")
+    assert upgraded.returncode == 0, upgraded.stdout + upgraded.stderr
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        declared = {
+            row[1]: row[2] for row in connection.execute("PRAGMA table_info(alembic_version)")
+        }
+        stored = connection.execute("SELECT version_num FROM alembic_version").fetchall()
+
+    assert declared["version_num"] == "VARCHAR(128)"
+    assert len(stored) == 1
+    assert stored[0][0] in _revision_ids(repo_root)
+
+    engine = create_engine(f"sqlite:///{database_path.resolve().as_posix()}")
+    try:
+        reflected = Table("alembic_version", MetaData(), autoload_with=engine)
+        assert reflected.c.version_num.type.length == 128
+        rendered = str(CreateTable(reflected).compile(dialect=postgresql.dialect()))
+        assert "VARCHAR(128)" in rendered
+    finally:
+        engine.dispose()
