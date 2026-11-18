@@ -20,9 +20,12 @@ function of the inputs. Same inputs compose byte-identical bodies.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from planagent.services.variables.models import MAX_VARIABLES
 
 NARRATIVE_PROTOCOL_VERSION = "sprint13-v1"
 
@@ -210,11 +213,14 @@ class DirectionMappingRead(BaseModel):
     """One stored direction mapping.
 
     ``origin`` records how the row was written: ``derived`` (Sprint
-    14 rules), ``authored`` (a user), or ``llm_proposal`` (option C:
-    an LLM proposal). ``status`` is the review state: ``active``
-    rows are usable for generation; ``proposed`` rows await an
-    explicit human accept/reject; ``rejected`` rows are retained
-    for audit and never used. All pre-option-C rows are ``active``.
+    14 rules), ``authored`` (a user), ``llm_proposal`` (option C:
+    an LLM proposal), or ``override`` (option B: a variable
+    override that created a scenario-branch run, with the
+    override spec pinned in ``override_record``). ``status`` is
+    the review state: ``active`` rows are usable for generation;
+    ``proposed`` rows await an explicit human accept/reject;
+    ``rejected`` rows are retained for audit and never used. All
+    pre-option-C rows are ``active``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -226,12 +232,13 @@ class DirectionMappingRead(BaseModel):
     arm: Literal["baseline", "strategy"]
     mece_branches: list[str] = Field(default_factory=list)
     deliberation_id: str | None = None
-    origin: Literal["derived", "authored", "llm_proposal"]
+    origin: Literal["derived", "authored", "llm_proposal", "override"]
     rule_id: str | None = None
     rules_version: str | None = None
     rule_record: dict[str, Any] | None = None
     status: Literal["active", "proposed", "rejected"]
     proposal_record: dict[str, Any] | None = None
+    override_record: dict[str, Any] | None = None
     user_edited: bool
     position: int
     created_at: str
@@ -366,6 +373,142 @@ class DirectionProposeRead(BaseModel):
     proposal_hash: str
     family_runs_considered: int
     outcomes: list[ProposalOutcome] = Field(default_factory=list)
+    mappings: list[DirectionMappingRead] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Variable-override directions (option B, Sprint 14 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def _require_override_value(value: object) -> float:
+    """Coerce an override value to a finite float.
+
+    Same discipline as the variable-table models: strings are
+    rejected (silently coercing ``"12"`` would hide authoring
+    mistakes); booleans, NaN, and infinities are rejected too.
+    Raises ``ValueError`` so Pydantic ``before`` validators
+    surface it as a ``ValidationError``.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(  # noqa: TRY004 — Pydantic requires ValueError here
+            "override values must be finite numbers"
+        )
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("override values must be finite numbers")
+    return result
+
+
+class DirectionOverrideSpec(BaseModel):
+    """One direction-as-override in an override request.
+
+    ``overrides`` maps bound variable ids to fixed values: the
+    child run samples each named variable at exactly that value.
+    Keys are stripped; an empty key, a key collision after
+    stripping, or a non-finite value refuses the request (422).
+    At least one override is required: an empty override set
+    would create a run identical to the anchor. ``fork_step``
+    names the anchor tick the child run forks from; omitted, the
+    scenario-branch midpoint default applies.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    overrides: dict[str, float] = Field(min_length=1, max_length=MAX_VARIABLES)
+    arm: Literal["baseline", "strategy"] = "baseline"
+    mece_branches: list[str] = Field(default_factory=list, max_length=20)
+    fork_step: int | None = Field(default=None, ge=1)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _normalize_overrides(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized: dict[str, float] = {}
+        for raw_key, raw_value in value.items():
+            key = raw_key.strip() if isinstance(raw_key, str) else raw_key
+            if not isinstance(key, str) or not key:
+                raise ValueError("override keys must be non-empty strings")
+            if key in normalized:
+                raise ValueError(f"override key {key!r} is duplicated after stripping")
+            normalized[key] = _require_override_value(raw_value)
+        return normalized
+
+    @field_validator("mece_branches")
+    @classmethod
+    def _normalize_branches(cls, branches: list[str]) -> list[str]:
+        normalized = [branch.strip() for branch in branches]
+        if any(not branch for branch in normalized):
+            raise ValueError("mece_branches entries must be non-empty strings")
+        seen: list[str] = []
+        for branch in normalized:
+            if branch not in seen:
+                seen.append(branch)
+        return seen
+
+
+class DirectionOverrideRequest(BaseModel):
+    """An override run: 1-4 uniquely named direction specs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    directions: list[DirectionOverrideSpec] = Field(min_length=1, max_length=MAX_DIRECTIONS)
+
+    @model_validator(mode="after")
+    def _check_unique_names(self) -> DirectionOverrideRequest:
+        names = [spec.name for spec in self.directions]
+        if len(set(names)) != len(names):
+            raise ValueError("direction names must be unique within one override request")
+        return self
+
+
+class DirectionOverrideOutcome(BaseModel):
+    """One direction's outcome in an override run.
+
+    ``stored``: the child run was created and the direction was
+    written as an ``active`` mapping (``mapping_id``,
+    ``branch_id``, and ``child_run_id`` set). The child run has
+    no ensemble yet: run the monte-carlo endpoint named in the
+    reason before generating from it. ``skipped``: a mapping of
+    the same name already exists — no branch run was created and
+    the existing row is left untouched (the no-clobber rule).
+    ``failed``: the branch run could not be created after all
+    upfront validation passed; the reason carries the failure,
+    and the other directions in the request are unaffected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    status: Literal["stored", "skipped", "failed"]
+    reason: str
+    mapping_id: str | None = None
+    branch_id: str | None = None
+    child_run_id: str | None = None
+    fork_step: int | None = None
+    child_status: str | None = None
+    arm: Literal["baseline", "strategy"]
+    mece_branches: list[str] = Field(default_factory=list)
+
+
+class DirectionOverrideRead(BaseModel):
+    """An override run: per-direction outcomes plus the mappings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    anchor_run_id: str
+    override_hash: str
+    directions_considered: int
+    outcomes: list[DirectionOverrideOutcome] = Field(default_factory=list)
     mappings: list[DirectionMappingRead] = Field(default_factory=list)
 
 
