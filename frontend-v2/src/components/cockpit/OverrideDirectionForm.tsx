@@ -25,6 +25,8 @@ function inputClassName() {
 interface OverrideRowDraft {
   variableId: string
   value: string
+  /** Picker filter text (draft-only, never sent): substring match on id/description. */
+  filter: string
 }
 
 interface OverrideSpecDraft {
@@ -36,13 +38,33 @@ interface OverrideSpecDraft {
 }
 
 function blankSpec(): OverrideSpecDraft {
-  return { name: '', arm: 'baseline', meceBranches: [], forkStep: '', rows: [{ variableId: '', value: '' }] }
+  return { name: '', arm: 'baseline', meceBranches: [], forkStep: '', rows: [{ variableId: '', value: '', filter: '' }] }
 }
 
 function variableOptionLabel(variable: VariableDefinition): string {
   return [variable.id, variable.unit, distributionSummary(variable)]
     .filter((part) => part.length > 0)
     .join(' · ')
+}
+
+/**
+ * Picker filter: case-insensitive substring match against the
+ * variable's id, description, unit, and distribution summary —
+ * the identifying text the picker shows. An empty query matches
+ * everything, so clearing the filter restores all options.
+ */
+function variableMatchesFilter(variable: VariableDefinition, query: string): boolean {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return true
+  const haystack = [
+    variable.id,
+    variable.description,
+    variable.unit,
+    distributionSummary(variable),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(needle)
 }
 
 /**
@@ -165,7 +187,7 @@ export function OverrideDirectionForm({
     const used = new Set(spec.rows.map((row) => row.variableId))
     const next = boundVariables.find((variable) => !used.has(variable.id))
     updateSpec(specIndex, {
-      rows: [...spec.rows, { variableId: next?.id ?? '', value: '' }],
+      rows: [...spec.rows, { variableId: next?.id ?? '', value: '', filter: '' }],
     })
   }
 
@@ -293,8 +315,33 @@ export function OverrideDirectionForm({
                   <span className="block text-xs text-slate-500">变量覆盖（至少一个）</span>
                   {spec.rows.map((row, rowIndex) => {
                     const variable = boundVariables.find((item) => item.id === row.variableId)
+                    // The selected variable always stays listed even
+                    // when it does not match the filter, so the
+                    // select never shows a blank invalid state.
+                    const visibleVariables = boundVariables.filter(
+                      (candidate) =>
+                        candidate.id === row.variableId ||
+                        variableMatchesFilter(candidate, row.filter),
+                    )
                     return (
                       <div key={rowIndex} className="space-y-1">
+                        <div>
+                          <label
+                            htmlFor={`override-variable-filter-${specIndex}-${rowIndex}`}
+                            className="mb-1 block text-xs text-slate-500"
+                          >
+                            筛选变量
+                          </label>
+                          <input
+                            id={`override-variable-filter-${specIndex}-${rowIndex}`}
+                            value={row.filter}
+                            onChange={(event) =>
+                              updateRow(specIndex, rowIndex, { filter: event.target.value })
+                            }
+                            placeholder="输入变量 id 或描述筛选…"
+                            className={inputClassName()}
+                          />
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
                           <div>
                             <label
@@ -314,7 +361,7 @@ export function OverrideDirectionForm({
                               <option value="" disabled>
                                 请选择变量
                               </option>
-                              {boundVariables.map((candidate) => (
+                              {visibleVariables.map((candidate) => (
                                 <option
                                   key={candidate.id}
                                   value={candidate.id}
@@ -327,6 +374,11 @@ export function OverrideDirectionForm({
                                 </option>
                               ))}
                             </select>
+                            {visibleVariables.length === 0 && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                没有匹配的变量，换个筛选词或清空筛选。
+                              </p>
+                            )}
                           </div>
                           <div>
                             <label

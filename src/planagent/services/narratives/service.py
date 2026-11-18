@@ -65,6 +65,8 @@ from planagent.services.narratives.models import (
     DirectionMappingUpdate,
     DirectionOverrideOutcome,
     DirectionOverrideRead,
+    DirectionOverrideReforkRead,
+    DirectionOverrideReforkRequest,
     DirectionOverrideRequest,
     DirectionOverrideSpec,
     DirectionProposeRead,
@@ -1141,6 +1143,180 @@ class NarrativeService:
             directions_considered=len(request.directions),
             outcomes=outcomes,
             mappings=[self._mapping_to_read(row) for row in rows],
+        )
+
+    async def refork_override_mapping(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        mapping_id: str,
+        request: DirectionOverrideReforkRequest,
+    ) -> DirectionOverrideReforkRead:
+        """Re-fork one stored override mapping with new fixed values.
+
+        A stored override mapping's fixed values are baked into its
+        branch run, so silently rewriting the pinned
+        ``override_record`` would lie about what the branch
+        contains. "Editing" the values therefore creates a NEW
+        scenario-branch run with the new values and repoints the
+        SAME mapping (same id, name, and position) at it; the old
+        branch run and its rows are left untouched (append-only
+        history — the old run stays visible in scenario-compare).
+
+        Only ``origin == "override"`` + ``status == "active"``
+        mappings can be reforked. Grounding is identical to
+        :meth:`override` (stored bindings only, no range check,
+        snapshot must exist at the fork step) and refuses the
+        whole request before any branch is created. A runner
+        failure after commit reuses the hardening mechanism: the
+        new branch is discarded and the failure names the branch
+        id. If the mapping was deleted concurrently between the
+        read and the repoint, the new branch is discarded and a
+        named conflict surfaces instead of a 500. No other
+        mapping is touched.
+        """
+        row = await self._mapping_for_run(session, run_id, mapping_id)
+        if row.origin != "override":
+            raise DirectionError(
+                "direction_mapping_not_override",
+                f"Mapping {row.name!r} has origin {row.origin!r}; only "
+                "variable-override mappings can be re-forked.",
+            )
+        if row.status != "active":
+            raise DirectionError(
+                "direction_mapping_not_active",
+                f"Mapping {row.name!r} has status {row.status!r}; only "
+                "active mappings can be re-forked.",
+            )
+        anchor = await self._completed_anchor(session, run_id)
+        self._check_override_domain(anchor)
+        bindings = self._read_anchor_bindings(anchor)
+        if bindings is None or not bindings.variables:
+            raise DirectionError(
+                "direction_override_requires_bindings",
+                "Variable-override directions require variables bound on "
+                "the anchor run; none were found in its configuration.",
+            )
+        try:
+            tree, _validation = self._read_mece(anchor)
+        except NarrativeError as exc:
+            raise DirectionError("direction_corrupt_fragment", str(exc)) from exc
+        root_scope = list(tree.root.scope) if tree is not None else None
+        # Capture primitives now: branch creation commits and
+        # expires the anchor and mapping rows.
+        anchor_id = anchor.id
+        anchor_tick_count = anchor.tick_count
+        mapping_name = row.name
+
+        override_set = build_override_set(bindings, request.overrides)
+        merged = validate_merged_overrides(bindings, override_set, root_scope)
+        fork_step = (
+            request.fork_step if request.fork_step is not None else max(1, anchor_tick_count // 2)
+        )
+        if not await self._snapshot_exists(session, anchor_id, fork_step):
+            raise DirectionError(
+                "direction_override_no_snapshot",
+                f"No state snapshot found at fork step {fork_step} for run {anchor_id!r}.",
+            )
+        override_hash = sha256_hash(request.model_dump(mode="json"))
+
+        if not self._branch_runner.is_available():
+            # Grounding passed, but branch creation is not wired:
+            # refuse the whole request (503 via the route) with
+            # zero branches created, rather than failing after
+            # the mapping was read.
+            raise DirectionError(
+                "direction_override_unavailable",
+                "No branch runner is configured for variable-override directions.",
+            )
+
+        try:
+            result = await self._branch_runner.create_branch(
+                session,
+                anchor_id,
+                BranchRequest(
+                    fork_step=fork_step,
+                    variable_set=merged,
+                    assumptions=[assumption_line(mapping_name, request.overrides)],
+                ),
+            )
+        except BranchCreationFailed as exc:
+            # The runner committed a branch it could not report:
+            # roll back, discard the committed branch (the
+            # hardening mechanism), and report the failure with
+            # the branch id — never a bare 500.
+            await session.rollback()
+            discarded = False
+            if exc.branch_id is not None:
+                discarded = await self._discard_branch_best_effort(session, exc.branch_id)
+            if exc.branch_id is None:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    "No branch identity was reported, so nothing could be discarded."
+                )
+            elif discarded:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    f"The committed branch {exc.branch_id} was discarded."
+                )
+            else:
+                problem = (
+                    f"Branch creation failed after commit: {exc}. "
+                    f"The committed branch {exc.branch_id} could not be "
+                    "discarded; it needs explicit cleanup."
+                )
+            raise DirectionError("direction_override_refork_failed", problem) from exc
+        except Exception as exc:
+            # A plain runner failure means nothing committed;
+            # roll back so no orphan rows survive it, then report
+            # the failure as a named refusal, not a 500.
+            await session.rollback()
+            raise DirectionError(
+                "direction_override_refork_failed", f"Branch creation failed: {exc}"
+            ) from exc
+
+        child = await session.get(SimulationRun, result.run_id)
+        # Re-fetch: branch creation committed, and the mapping
+        # may have been deleted concurrently. A vanished row
+        # surfaces as a named conflict, and the branch created
+        # for it is discarded — it must not survive orphaned.
+        current = await session.get(DirectionMappingRecord, mapping_id)
+        if current is None or current.anchor_run_id != anchor_id:
+            await self._discard_branch_best_effort(session, result.branch_id)
+            raise DirectionError(
+                "direction_mapping_deleted_concurrently",
+                f"Mapping {mapping_name!r} was deleted while its re-fork "
+                "was running; the new branch was discarded and nothing "
+                "was repointed.",
+            )
+        current.source_run_id = result.run_id
+        current.override_record = {
+            "overrides": dict(request.overrides),
+            "branch_id": result.branch_id,
+            "fork_step": fork_step,
+            "override_hash": override_hash,
+        }
+        # A re-fork is an explicit human edit of the row, like
+        # the name/source edit: mark it so.
+        current.user_edited = True
+        await session.commit()
+        await session.refresh(current)
+        return DirectionOverrideReforkRead(
+            mapping=self._mapping_to_read(current),
+            branch_id=result.branch_id,
+            child_run_id=result.run_id,
+            fork_step=fork_step,
+            child_status=child.status if child is not None else None,
+            override_hash=override_hash,
+            reason=(
+                f"Child run {result.run_id} created (branch "
+                f"{result.branch_id}, fork step {fork_step}, "
+                f"status {child.status if child is not None else None}). "
+                "No ensemble yet: run "
+                f"POST /runs/{result.run_id}/monte-carlo before "
+                "generating from this direction. The previous branch "
+                "run was left untouched."
+            ),
         )
 
     async def _discard_branch_best_effort(

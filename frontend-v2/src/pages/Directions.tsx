@@ -98,6 +98,10 @@ export default function Directions() {
   const [editArm, setEditArm] = useState<'baseline' | 'strategy'>('baseline')
   const [savingMapping, setSavingMapping] = useState(false)
   const [mappingError, setMappingError] = useState<string | null>(null)
+  const [reforkingId, setReforkingId] = useState<string | null>(null)
+  const [reforkValues, setReforkValues] = useState<Record<string, string>>({})
+  const [reforkForkStep, setReforkForkStep] = useState('')
+  const [savingRefork, setSavingRefork] = useState(false)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [reviewing, setReviewing] = useState<{ id: string; action: 'accept' | 'reject' } | null>(
@@ -156,6 +160,9 @@ export default function Directions() {
     setDeriveError(null)
     setEditingId(null)
     setMappingError(null)
+    setReforkingId(null)
+    setReforkValues({})
+    setReforkForkStep('')
     setConfirmingDeleteId(null)
     setReviewing(null)
     setConfirmingRejectId(null)
@@ -293,6 +300,71 @@ export default function Directions() {
       }
     } finally {
       setDeleting(false)
+    }
+  }
+
+  function startReforking(mapping: DirectionMappingRead) {
+    const record = parseOverrideRecord(mapping.override_record)
+    const values: Record<string, string> = {}
+    for (const { variableId, value } of record?.overrides ?? []) {
+      values[variableId] = String(value)
+    }
+    setReforkValues(values)
+    setReforkForkStep(record?.forkStep !== null && record?.forkStep !== undefined ? String(record.forkStep) : '')
+    setReforkingId(mapping.id)
+    setMappingError(null)
+    setConfirmingDeleteId(null)
+  }
+
+  async function handleSaveRefork(mapping: DirectionMappingRead) {
+    if (!selectedRunId) return
+    const record = parseOverrideRecord(mapping.override_record)
+    const overrides: Record<string, number> = {}
+    for (const { variableId } of record?.overrides ?? []) {
+      const raw = (reforkValues[variableId] ?? '').trim()
+      if (raw === '') {
+        setMappingError(`变量 ${variableId} 需要填写固定值。`)
+        return
+      }
+      const value = Number(raw)
+      if (!Number.isFinite(value)) {
+        setMappingError(`变量 ${variableId} 的固定值必须是有限数字。`)
+        return
+      }
+      overrides[variableId] = value
+    }
+    if (Object.keys(overrides).length === 0) {
+      setMappingError('该映射没有可编辑的固定值。')
+      return
+    }
+    const fork = reforkForkStep.trim()
+    if (fork !== '') {
+      const step = Number(fork)
+      if (!Number.isInteger(step) || step < 1) {
+        setMappingError('分叉步必须是 ≥ 1 的整数，留空则用默认中点。')
+        return
+      }
+    }
+    setSavingRefork(true)
+    setMappingError(null)
+    try {
+      await directionsApi.reforkMapping(selectedRunId, mapping.id, {
+        overrides,
+        ...(fork !== '' ? { fork_step: Number(fork) } : {}),
+      })
+      setReforkingId(null)
+      reloadMappings()
+    } catch (e: unknown) {
+      const info = parseApiError(e)
+      if (info.status === 404) {
+        // Already gone: reload the list back to the truth.
+        setReforkingId(null)
+        reloadMappings()
+      } else {
+        setMappingError(info.code ? `${info.code}：${info.message}` : info.message)
+      }
+    } finally {
+      setSavingRefork(false)
     }
   }
 
@@ -550,10 +622,11 @@ export default function Directions() {
               ) : (
                 <ul className="space-y-3">
                   {mappings.map((mapping) => {
-                    const overrideSummary =
+                    const overrideRecord =
                       mapping.origin === 'override'
-                        ? overrideSummaryText(parseOverrideRecord(mapping.override_record))
+                        ? parseOverrideRecord(mapping.override_record)
                         : null
+                    const overrideSummary = overrideSummaryText(overrideRecord)
                     return (
                     <li
                       key={mapping.id}
@@ -635,6 +708,84 @@ export default function Directions() {
                             </button>
                           </div>
                         </div>
+                      ) : reforkingId === mapping.id ? (
+                        <div className="space-y-3">
+                          <p className="text-xs text-slate-500">
+                            固定值已写进该映射的分支 Run：保存会新建一个分支
+                            Run 并把该映射指过去（同名、同位置），旧分支 Run 保留不动。
+                          </p>
+                          {overrideRecord && overrideRecord.overrides.length > 0 ? (
+                            <>
+                              {overrideRecord.overrides.map(({ variableId }) => (
+                                <div key={variableId}>
+                                  <label
+                                    htmlFor={`refork-value-${mapping.id}-${variableId}`}
+                                    className="mb-1 block text-xs text-slate-500"
+                                  >
+                                    {variableId} 的固定值
+                                  </label>
+                                  <input
+                                    id={`refork-value-${mapping.id}-${variableId}`}
+                                    value={reforkValues[variableId] ?? ''}
+                                    onChange={(event) =>
+                                      setReforkValues((current) => ({
+                                        ...current,
+                                        [variableId]: event.target.value,
+                                      }))
+                                    }
+                                    inputMode="decimal"
+                                    className={inputClassName()}
+                                  />
+                                </div>
+                              ))}
+                              <div>
+                                <label
+                                  htmlFor={`refork-fork-${mapping.id}`}
+                                  className="mb-1 block text-xs text-slate-500"
+                                >
+                                  新分叉步（留空用默认中点）
+                                </label>
+                                <input
+                                  id={`refork-fork-${mapping.id}`}
+                                  value={reforkForkStep}
+                                  onChange={(event) => setReforkForkStep(event.target.value)}
+                                  inputMode="numeric"
+                                  placeholder="留空"
+                                  className={inputClassName()}
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveRefork(mapping)}
+                                  disabled={savingRefork}
+                                  className="rounded-full bg-blue-500 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-400 disabled:opacity-50"
+                                >
+                                  {savingRefork ? '重新分叉中…' : '保存并重新分叉'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setReforkingId(null)}
+                                  disabled={savingRefork}
+                                  className="text-sm text-slate-400 hover:text-slate-300 disabled:opacity-50"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-sm text-slate-400">该映射没有可编辑的固定值。</p>
+                              <button
+                                type="button"
+                                onClick={() => setReforkingId(null)}
+                                className="text-sm text-slate-400 hover:text-slate-300"
+                              >
+                                取消
+                              </button>
+                            </>
+                          )}
+                        </div>
                       ) : (
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -660,6 +811,15 @@ export default function Directions() {
                             >
                               编辑
                             </button>
+                            {mapping.origin === 'override' && mapping.status === 'active' && (
+                              <button
+                                type="button"
+                                onClick={() => startReforking(mapping)}
+                                className="text-xs text-slate-400 hover:text-slate-200"
+                              >
+                                编辑固定值
+                              </button>
+                            )}
                             {confirmingDeleteId === mapping.id ? (
                               <span className="flex flex-wrap items-center gap-2">
                                 <span className="text-xs text-amber-300">
