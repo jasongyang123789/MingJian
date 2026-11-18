@@ -1434,6 +1434,47 @@ export interface DerivationRead {
   mappings: DirectionMappingRead[]
 }
 
+// ==================== Option B — 变量覆盖方向 ====================
+// Mirrors services/narratives/models.py: DirectionOverrideSpec/
+// DirectionOverrideRequest/DirectionOverrideOutcome/DirectionOverrideRead.
+// `fork_step` is optional: omitted, the backend applies the
+// scenario-branch midpoint default.
+
+export interface DirectionOverrideSpec {
+  name: string
+  overrides: Record<string, number>
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+  fork_step?: number
+}
+
+export interface DirectionOverrideRequest {
+  directions: DirectionOverrideSpec[]
+}
+
+export type DirectionOverrideOutcomeStatus = 'stored' | 'skipped' | 'failed'
+
+export interface DirectionOverrideOutcome {
+  name: string
+  status: DirectionOverrideOutcomeStatus
+  reason: string
+  mapping_id: string | null
+  branch_id: string | null
+  child_run_id: string | null
+  fork_step: number | null
+  child_status: string | null
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+}
+
+export interface DirectionOverrideRead {
+  anchor_run_id: string
+  override_hash: string
+  directions_considered: number
+  outcomes: DirectionOverrideOutcome[]
+  mappings: DirectionMappingRead[]
+}
+
 // ==================== Phase 2 — 汽车包 ====================
 
 export interface AutomotiveTrajectoryPoint {

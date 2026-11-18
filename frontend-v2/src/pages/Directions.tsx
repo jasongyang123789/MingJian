@@ -15,12 +15,14 @@ import type {
 import { CockpitNav } from '../components/cockpit/CockpitNav'
 import {
   originLabel,
+  overrideSummaryText,
   parseOverrideRecord,
   parseProposalRecord,
   shortHash,
   statusLabel,
 } from '../components/cockpit/directionMappingDisplay'
 import { NarrativeView } from '../components/cockpit/DirectionViews'
+import { OverrideDirectionForm } from '../components/cockpit/OverrideDirectionForm'
 import { RunPicker } from '../components/cockpit/RunPicker'
 import type { CockpitRun } from '../components/cockpit/RunPicker'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
@@ -411,6 +413,14 @@ export default function Directions() {
             </CardBody>
           </Card>
 
+          <OverrideDirectionForm
+            key={selectedRunId}
+            runId={selectedRunId}
+            branchNames={branchNames}
+            tickCount={runList.find((run) => run.id === selectedRunId)?.tick_count ?? null}
+            onMappingsChanged={reloadMappings}
+          />
+
           <Card>
             <CardHeader title="待评审提案" />
             <CardBody className="space-y-4">
@@ -540,7 +550,10 @@ export default function Directions() {
               ) : (
                 <ul className="space-y-3">
                   {mappings.map((mapping) => {
-                    const overrideSummary = parseOverrideRecord(mapping.override_record)
+                    const overrideSummary =
+                      mapping.origin === 'override'
+                        ? overrideSummaryText(parseOverrideRecord(mapping.override_record))
+                        : null
                     return (
                     <li
                       key={mapping.id}
@@ -630,23 +643,13 @@ export default function Directions() {
                               {mapping.source_run_id} / {mapping.arm}
                             </span>{' '}
                             <span className="text-xs text-slate-500">
-                              {[
-                                originLabel(mapping.origin),
-                                statusLabel(mapping.status),
-                                mapping.user_edited ? '已编辑' : '',
-                              ]
-                                .filter(Boolean)
+                              {[originLabel(mapping.origin), statusLabel(mapping.status)]
+                                .filter((part) => part.length > 0)
                                 .join(' · ')}
+                              {mapping.user_edited ? ' · 已编辑' : ''}
                             </span>
-                            {overrideSummary && overrideSummary.overrides.length > 0 && (
-                              <span className="block text-xs text-slate-500">
-                                覆盖：
-                                {overrideSummary.overrides
-                                  .map((item) => `${item.variableId}=${item.value}`)
-                                  .join('、')}
-                                {overrideSummary.forkStep !== null &&
-                                  ` · 分支步骤 ${overrideSummary.forkStep}`}
-                              </span>
+                            {overrideSummary && (
+                              <p className="text-xs text-slate-500">变量覆盖：{overrideSummary}</p>
                             )}
                           </div>
                           <span className="flex flex-wrap gap-2">

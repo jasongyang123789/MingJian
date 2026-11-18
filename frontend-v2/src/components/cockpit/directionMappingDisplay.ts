@@ -111,3 +111,15 @@ export function parseOverrideRecord(
 export function shortHash(hash: string, keep = 20): string {
   return hash.length > keep ? `${hash.slice(0, keep)}…` : hash
 }
+
+/**
+ * One-line summary of an override record for the stored list, e.g.
+ * `cash=80 · 分叉步 2`. Returns null when the record carries nothing
+ * renderable, so the row shows no summary line at all.
+ */
+export function overrideSummaryText(summary: OverrideRecordSummary | null): string | null {
+  if (!summary) return null
+  const parts = summary.overrides.map(({ variableId, value }) => `${variableId}=${value}`)
+  if (summary.forkStep !== null) parts.push(`分叉步 ${summary.forkStep}`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}

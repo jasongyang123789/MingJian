@@ -15,6 +15,8 @@ import type {
   DirectionMappingListRead,
   DirectionMappingRead,
   DirectionMappingUpdate,
+  DirectionOverrideRead,
+  DirectionOverrideRequest,
   ExpectedShortfallRequest,
   ExpectedShortfallResult,
   FirewallRead,
@@ -401,6 +403,11 @@ export const narrativesApi = {
 export const directionsApi = {
   derive: (runId: string) =>
     api.post<DerivationRead>(`/runs/${encodeURIComponent(runId)}/directions/derive`),
+  createOverrides: (runId: string, payload: DirectionOverrideRequest) =>
+    api.post<DirectionOverrideRead>(
+      `/runs/${encodeURIComponent(runId)}/directions/override`,
+      payload,
+    ),
   listMappings: (runId: string) =>
     api.get<DirectionMappingListRead>(
       `/runs/${encodeURIComponent(runId)}/directions/mappings`,
