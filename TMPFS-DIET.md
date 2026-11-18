@@ -325,3 +325,91 @@ every context.
 - Frontend tests: untouched by this track (backend pytest only).
 - Whether any future test will write large artifacts outside
   `tmp_path` (§6): no guard exists.
+
+## 11. §7 follow-up: the order-dependent test is fixed; full run is all green (2026-11-18)
+
+Branch `strategy-engine/tmpfs-diet-followup`, worktree
+`~/workspace/mingjian-diet-followup`. Combined tip: merge
+`6cd7556` (diet tip `79381d8` + sprint20 tip `bb2789f`, clean
+merge, no conflicts — the diet branch touched only
+`tests/conftest.py` + this report) plus fix commit `ec3effe`.
+This run also serves as the full-suite gate proof for everything
+merged since `4669016`. `BACKLOG.md` untouched. Not merged, not
+pushed — the parent verifies and merges.
+
+### Resolution
+
+`tests/test_new_features.py::test_decision_options_and_hypotheses_flow`
+now passes in every context. The fix is test-code only, confined
+to the file's shared async `client` fixture (21 insertions, 2
+deletions, one file): the fixture takes `monkeypatch` + `tmp_path`,
+sets its own `PLANAGENT_DATABASE_URL` (sqlite URL under its own
+`tmp_path`) and `PLANAGENT_EVENT_BUS_BACKEND=memory`, calls
+`reset_settings_cache()` + `reset_database_cache()`, and only then
+imports the app and enters the client context (whose lifespan
+calls `get_database()` at startup). No product code changed, no
+assertion weakened, no other test touched.
+
+One correction to §7's mechanism, found while fixing: the leak
+carried TWO settings, not one. The URL-only fix still failed —
+with Redis connection refused (`::1`/`127.0.0.1:6379`), because
+the default event-bus backend is redis and no server runs here.
+The leaked `lru_cached` settings object had carried the memory
+bus backend from a neighbor's `setup_app` alongside the sqlite
+URL. Adding the memory-bus line (the same line every other API
+test's `setup_app` sets) made the test green. The §8 first
+deferred bullet is resolved by this section; the other §8 items
+stand.
+
+The shared fixture also removes the same latent order-dependence
+from `test_calibration_compute`, the only other test using it:
+it still passes (403 feature-gate assertions unchanged).
+
+### Proof
+
+- Red first: at the combined tip before the fix, the test alone
+  failed with the exact §7 signature (Postgres connection
+  refused, `127.0.0.1:5432`).
+- Fixed test alone: 1 passed. File alone: 12 passed. Pair run
+  after `tests/test_narratives_api.py` (the §7 leak scenario):
+  27 passed.
+- Collect-only at the combined tip: **2069 tests**.
+- Full single-process run under the standing `AGENTS.md`
+  protocol: fresh TMPDIR `/dev/shm/pytest-tmp-diet-followup`,
+  space gate 794M free (≥750M required), preflight SQLite
+  probes 3/3, serialized via `full-run-lock.sh --wait 3600`,
+  TMPDIR removed after the run. Result: **2069 passed in
+  617.74s, 0 failed** — collect count equals passed count.
+  Peak TMPDIR usage 3,010,748 bytes (~2.87MB, 10s sampling,
+  63 samples); minimum `/dev/shm` available during the run
+  809,620KB — the tmpfs never came close to full. No
+  environmental failure occurred; no re-run was needed.
+- Ruff on the touched file: identical to base (1 pre-existing
+  I001, verified by stash comparison; the fix adds no new
+  finding). `ruff format --check`: clean. Sprint 0 smoke: not
+  required — no non-test file changed.
+
+Logs (new files; the diet track's logs untouched):
+
+- `~/workspace/verification/tmpfs-diet-2026-11-18/full-run-followup-ec3effe.log`
+  (2069 passed; zero FAILED/ERROR lines)
+- `~/workspace/verification/tmpfs-diet-2026-11-18/full-run-followup-ec3effe-peak.txt`
+  (10s TMPDIR/df samples; peak 3,010,748 bytes)
+
+### What remains unverified
+
+- Statistical stability: one completed all-green full run. No
+  repeated full runs were made to bound gate-flicker flakiness
+  (§10's caveat stands, now for the 2069 count).
+- The fix against Postgres (no Postgres on this VM; the change
+  is test-fixture-only, sqlite + memory bus).
+- Frontend tests: untouched by this track (backend pytest only).
+- Whether the chunked gate stays the default protocol (§8):
+  capacity no longer forces chunking, but the decision is still
+  the parent's. The chunked gate remains a valid fallback for
+  gate-closed windows.
+- The `mkdtemp` cleanup for `TestExportService` (§8): still
+  deferred (<100 bytes, out of scope).
+
+This closes the §10 first bullet: the all-green single-process
+claim is now proven at the combined tip.
