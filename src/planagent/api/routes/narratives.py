@@ -1,6 +1,6 @@
 """Decision-direction narrative endpoints (Sprint 13) + direction
 derivation and mappings (Sprint 14) + LLM-proposed directions
-(option C).
+(option C) + variable-override directions (option B).
 
 Generation is deterministic: no LLM call happens on the generate
 path. The polish endpoint is the only LLM touchpoint, strictly
@@ -9,8 +9,11 @@ mutates it. Derivation is deterministic too: versioned rules over
 stored ensembles, explicit trigger only, never creating runs.
 Proposing is the second LLM touchpoint: an explicit POST that
 stores grounded proposals as ``proposed`` mappings, usable for
-generation only after an explicit human accept. Error mapping
-follows the Sprint 9/11 pattern: ``NarrativeError``/
+generation only after an explicit human accept. Overriding is the
+run-creating direction source: an explicit POST that creates one
+scenario-branch run per direction with fixed variable overrides
+and stores each as an ``active`` ``override`` mapping. Error
+mapping follows the Sprint 9/11 pattern: ``NarrativeError``/
 ``DirectionError`` → 400 with a ``{"code", "message"}`` detail
 (polish/proposal availability/contract failures map to 503/502),
 ``LookupError`` → 404.
@@ -32,6 +35,8 @@ from planagent.services.narratives.models import (
     DirectionMappingListRead,
     DirectionMappingRead,
     DirectionMappingUpdate,
+    DirectionOverrideRead,
+    DirectionOverrideRequest,
     DirectionProposeRead,
     DirectionProposeRequest,
     NarrativeError,
@@ -54,6 +59,7 @@ _DIRECTION_STATUS_CODES = {
     "direction_propose_unavailable": 503,
     "direction_propose_contract_failed": 502,
     "direction_propose_truncated": 502,
+    "direction_override_unavailable": 503,
 }
 
 
@@ -258,6 +264,31 @@ async def propose_directions_endpoint(
     service = get_narrative_service(http_request)
     try:
         return await service.propose(session, run_id, payload or DirectionProposeRequest())
+    except DirectionError as exc:
+        raise _direction_error(exc) from exc
+    except LookupError as exc:
+        raise _not_found(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Variable-override directions (option B)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/runs/{run_id}/directions/override",
+    response_model=DirectionOverrideRead,
+    status_code=201,
+)
+async def override_directions_endpoint(
+    run_id: str,
+    payload: DirectionOverrideRequest,
+    http_request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> DirectionOverrideRead:
+    service = get_narrative_service(http_request)
+    try:
+        return await service.override(session, run_id, payload)
     except DirectionError as exc:
         raise _direction_error(exc) from exc
     except LookupError as exc:

@@ -28,6 +28,7 @@ from planagent.domain.models import (
     DecisionNarrativeRecord,
     DirectionMappingRecord,
     SimulationRun,
+    StateSnapshotRecord,
     StrategyLoopRecord,
 )
 from planagent.services.distributions.canonical import sha256_hash
@@ -61,6 +62,10 @@ from planagent.services.narratives.models import (
     DirectionMappingListRead,
     DirectionMappingRead,
     DirectionMappingUpdate,
+    DirectionOverrideOutcome,
+    DirectionOverrideRead,
+    DirectionOverrideRequest,
+    DirectionOverrideSpec,
     DirectionProposeRead,
     DirectionProposeRequest,
     NarrativeBody,
@@ -68,6 +73,14 @@ from planagent.services.narratives.models import (
     NarrativeGenerateRequest,
     NarrativePolishRead,
     ProposalOutcome,
+)
+from planagent.services.narratives.overrides import (
+    BranchRequest,
+    BranchResult,
+    BranchRunner,
+    assumption_line,
+    build_override_set,
+    validate_merged_overrides,
 )
 from planagent.services.narratives.polish import (
     POLISH_TEMPLATE_ID,
@@ -124,6 +137,21 @@ class _NoLLMPort:
 
     async def generate_json(self, **_kwargs: Any) -> SkillLLMResponse:
         raise SkillLLMUnavailable("No LLM service is configured for narrative polish.")
+
+
+class _NoBranchRunner:
+    """Branch runner used when none is wired: override always refuses."""
+
+    def is_available(self) -> bool:
+        return False
+
+    async def create_branch(
+        self, _session: AsyncSession, _parent_run_id: str, _request: BranchRequest
+    ) -> BranchResult:
+        raise DirectionError(
+            "direction_override_unavailable",
+            "No branch runner is configured for variable-override directions.",
+        )
 
 
 def _corrupt(fragment: str, exc: ValidationError) -> NarrativeError:
@@ -259,6 +287,7 @@ class NarrativeService:
         settings: Settings,
         openai_service: OpenAIService | None = None,
         llm_port: SkillLLMPort | None = None,
+        branch_runner: BranchRunner | None = None,
     ) -> None:
         self.settings = settings
         if llm_port is not None:
@@ -267,6 +296,9 @@ class NarrativeService:
             self._port = OpenAIServiceSkillPort(openai_service)
         else:
             self._port = _NoLLMPort()  # type: ignore[assignment]
+        self._branch_runner: BranchRunner = (
+            branch_runner if branch_runner is not None else _NoBranchRunner()
+        )
 
     # -- generation ------------------------------------------------------
 
@@ -556,6 +588,24 @@ class NarrativeService:
                             "status": "skipped",
                             "reason": (
                                 f"A {row.status} mapping named "
+                                f"{outcome.direction_name!r} exists; left untouched."
+                            ),
+                        }
+                    )
+                )
+                continue
+            if row is not None and row.origin == "override":
+                # Option B: derive never overwrites an override
+                # direction either — the row pins a human-authored
+                # override spec and the scenario-branch run it
+                # created, which only an explicit human edit/delete
+                # may resolve.
+                outcomes.append(
+                    outcome.model_copy(
+                        update={
+                            "status": "skipped",
+                            "reason": (
+                                "An override direction named "
                                 f"{outcome.direction_name!r} exists; left untouched."
                             ),
                         }
@@ -896,6 +946,307 @@ class NarrativeService:
                         f"{', '.join(sorted(variable_ids)) or '(none)'}",
                     )
 
+    async def override(
+        self, session: AsyncSession, run_id: str, request: DirectionOverrideRequest
+    ) -> DirectionOverrideRead:
+        """Create scenario-branch runs from variable overrides (option B).
+
+        Each direction names fixed values for variables bound on the
+        anchor run. The whole request is grounded and validated
+        BEFORE any branch is created: the anchor must be completed
+        and branchable, every override id must already be bound on
+        the anchor, every MECE branch must exist on the anchor's
+        tree, the merged variable set must pass the run-creation
+        validation gate, and a state snapshot must exist at each
+        direction's fork step. Any failure refuses the whole
+        request with zero runs created.
+
+        Directions whose name already has a mapping are skipped
+        (no-clobber): no branch run is created for them and the
+        existing row is left untouched. The remaining directions
+        each create one scenario branch via the configured branch
+        runner; a branch failure is reported per direction and
+        leaves the others unaffected. Stored directions are
+        ``active`` mappings with origin ``override`` and the
+        override spec pinned in ``override_record``. The child
+        runs have no ensemble yet — narrative generation refuses
+        until one exists — and each stored outcome names the
+        monte-carlo endpoint to run.
+        """
+        anchor = await session.get(SimulationRun, run_id)
+        if anchor is None:
+            raise LookupError(f"Run {run_id!r} not found")
+        if anchor.status != SimulationRunStatus.COMPLETED.value:
+            raise DirectionError(
+                "direction_requires_completed_run",
+                "Variable-override directions require a completed anchor run.",
+            )
+        self._check_override_domain(anchor)
+        bindings = self._read_anchor_bindings(anchor)
+        if bindings is None or not bindings.variables:
+            raise DirectionError(
+                "direction_override_requires_bindings",
+                "Variable-override directions require variables bound on "
+                "the anchor run; none were found in its configuration.",
+            )
+        try:
+            tree, _validation = self._read_mece(anchor)
+        except NarrativeError as exc:
+            raise DirectionError("direction_corrupt_fragment", str(exc)) from exc
+        valid_branches = (
+            [name for name, _scope in _collect_branches(tree)] if tree is not None else []
+        )
+        root_scope = list(tree.root.scope) if tree is not None else None
+        # Capture primitives now: branch creation commits and
+        # expires the anchor row.
+        anchor_id = anchor.id
+        anchor_tick_count = anchor.tick_count
+
+        override_hash = sha256_hash(request.model_dump(mode="json"))
+        prepared: list[tuple[DirectionOverrideSpec, VariableSet, int]] = []
+        for spec in request.directions:
+            for branch in spec.mece_branches:
+                if tree is None:
+                    raise DirectionError(
+                        "direction_mece_branches_without_tree",
+                        f"Direction {spec.name!r} names MECE branches but "
+                        "the anchor run has no decomposition tree.",
+                    )
+                if branch not in valid_branches:
+                    raise DirectionError(
+                        "direction_unknown_mece_branch",
+                        f"Direction {spec.name!r} names unknown MECE branch "
+                        f"{branch!r}. Valid branches: "
+                        f"{', '.join(valid_branches) or '(none)'}",
+                    )
+            override_set = build_override_set(bindings, spec.overrides)
+            merged = validate_merged_overrides(bindings, override_set, root_scope)
+            fork_step = (
+                spec.fork_step if spec.fork_step is not None else max(1, anchor_tick_count // 2)
+            )
+            if not await self._snapshot_exists(session, anchor_id, fork_step):
+                raise DirectionError(
+                    "direction_override_no_snapshot",
+                    f"No state snapshot found at fork step {fork_step} for run {anchor_id!r}.",
+                )
+            prepared.append((spec, merged, fork_step))
+
+        if not self._branch_runner.is_available():
+            # Grounding passed, but branch creation is not wired:
+            # refuse the whole request (503 via the route) with
+            # zero branches created, rather than failing each
+            # direction in turn.
+            raise DirectionError(
+                "direction_override_unavailable",
+                "No branch runner is configured for variable-override directions.",
+            )
+
+        existing = {row.name: row for row in await self._mapping_rows(session, anchor_id)}
+        staged: list[
+            tuple[DirectionOverrideSpec, BranchResult | None, str | None, str | None, int]
+        ] = []
+        for spec, merged, fork_step in prepared:
+            if spec.name in existing:
+                staged.append((spec, None, None, "collision", fork_step))
+                continue
+            try:
+                result = await self._branch_runner.create_branch(
+                    session,
+                    anchor_id,
+                    BranchRequest(
+                        fork_step=fork_step,
+                        variable_set=merged,
+                        assumptions=[assumption_line(spec.name, spec.overrides)],
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 — per-direction isolation
+                # The runner's work is uncommitted at this point;
+                # roll back so a failed branch leaves no orphan rows.
+                await session.rollback()
+                staged.append((spec, None, None, f"Branch creation failed: {exc}", fork_step))
+                continue
+            child = await session.get(SimulationRun, result.run_id)
+            staged.append(
+                (spec, result, child.status if child is not None else None, None, fork_step)
+            )
+
+        rows_now = await self._mapping_rows(session, anchor_id)
+        existing_now = {row.name: row for row in rows_now}
+        next_position = max((row.position for row in rows_now), default=-1) + 1
+        staged_records: list[
+            tuple[
+                DirectionOverrideSpec,
+                DirectionMappingRecord | None,
+                BranchResult | None,
+                str | None,
+                str | None,
+                int,
+            ]
+        ] = []
+        for spec, staged_result, child_status, problem, fork_step in staged:
+            if problem == "collision":
+                staged_records.append((spec, None, None, child_status, problem, fork_step))
+                continue
+            if problem is not None:
+                staged_records.append((spec, None, None, child_status, problem, fork_step))
+                continue
+            branch_result = staged_result
+            assert branch_result is not None  # staged shape guarantees it
+            record = DirectionMappingRecord(
+                anchor_run_id=anchor_id,
+                name=spec.name,
+                source_run_id=branch_result.run_id,
+                arm=spec.arm,
+                mece_branches=list(spec.mece_branches),
+                deliberation_id=None,
+                origin="override",
+                rule_id=None,
+                rules_version=None,
+                rule_record=None,
+                status="active",
+                proposal_record=None,
+                override_record={
+                    "overrides": dict(spec.overrides),
+                    "branch_id": branch_result.branch_id,
+                    "fork_step": fork_step,
+                    "override_hash": override_hash,
+                },
+                user_edited=False,
+                position=next_position,
+            )
+            session.add(record)
+            next_position += 1
+            staged_records.append((spec, record, branch_result, child_status, None, fork_step))
+        await session.flush()
+
+        outcomes: list[DirectionOverrideOutcome] = []
+        for spec, staged_record, outcome_result, child_status, problem, fork_step in staged_records:
+            if problem == "collision":
+                row = existing_now[spec.name]
+                outcomes.append(
+                    DirectionOverrideOutcome(
+                        name=spec.name,
+                        status="skipped",
+                        reason=(
+                            f"A mapping named {spec.name!r} already exists "
+                            f"(origin {row.origin}, status {row.status}); "
+                            "no branch run was created; left untouched."
+                        ),
+                        arm=spec.arm,
+                        mece_branches=list(spec.mece_branches),
+                    )
+                )
+            elif problem is not None:
+                outcomes.append(
+                    DirectionOverrideOutcome(
+                        name=spec.name,
+                        status="failed",
+                        reason=problem,
+                        fork_step=fork_step,
+                        arm=spec.arm,
+                        mece_branches=list(spec.mece_branches),
+                    )
+                )
+            else:
+                assert (
+                    staged_record is not None and outcome_result is not None
+                )  # staged shape guarantees it
+                outcomes.append(
+                    DirectionOverrideOutcome(
+                        name=spec.name,
+                        status="stored",
+                        reason=(
+                            f"Child run {outcome_result.run_id} created (branch "
+                            f"{outcome_result.branch_id}, fork step {fork_step}, "
+                            f"status {child_status}). No ensemble yet: run "
+                            f"POST /runs/{outcome_result.run_id}/monte-carlo before "
+                            "generating from this direction."
+                        ),
+                        mapping_id=staged_record.id,
+                        branch_id=outcome_result.branch_id,
+                        child_run_id=outcome_result.run_id,
+                        fork_step=fork_step,
+                        child_status=child_status,
+                        arm=spec.arm,
+                        mece_branches=list(spec.mece_branches),
+                    )
+                )
+        await session.commit()
+        rows = await self._mapping_rows(session, anchor_id)
+        return DirectionOverrideRead(
+            anchor_run_id=anchor_id,
+            override_hash=override_hash,
+            directions_considered=len(request.directions),
+            outcomes=outcomes,
+            mappings=[self._mapping_to_read(row) for row in rows],
+        )
+
+    @staticmethod
+    def _check_override_domain(anchor: SimulationRun) -> None:
+        """Branchability gates, mirroring scenario branching.
+
+        Military runs need a force-backed baseline; corporate runs
+        need a company; other domains are not implemented for
+        branching. The scenario-branch runner re-checks these on
+        its own path; the upfront check refuses before any work
+        is staged.
+        """
+        if anchor.domain_id == "military":
+            if anchor.force_id is None:
+                raise DirectionError(
+                    "direction_override_domain_unsupported",
+                    "Military variable-override directions require a force-backed baseline run.",
+                )
+        elif anchor.domain_id == "corporate":
+            if anchor.company_id is None:
+                raise DirectionError(
+                    "direction_override_domain_unsupported",
+                    "Corporate variable-override directions require a company-backed baseline run.",
+                )
+        else:
+            raise DirectionError(
+                "direction_override_domain_unsupported",
+                f"Variable-override directions are not implemented for domain {anchor.domain_id}.",
+            )
+
+    def _read_anchor_bindings(self, anchor: SimulationRun) -> VariableSet | None:
+        """The anchor run's bound variable set (the grounding surface).
+
+        Same fragment and discipline as ``_read_anchor_variables``:
+        ``configuration["variables"]["bindings"]``, a ``VariableSet``
+        dump. Absent or non-dict fragments mean no bindings; a
+        present-but-malformed bindings value is corrupt stored
+        data.
+        """
+        fragment = (anchor.configuration or {}).get("variables")
+        if not isinstance(fragment, dict):
+            return None
+        bindings = fragment.get("bindings")
+        if not isinstance(bindings, dict):
+            return None
+        try:
+            return VariableSet.model_validate(bindings)
+        except ValidationError as exc:
+            raise DirectionError(
+                "direction_corrupt_fragment",
+                f"Stored variables fragment fails its model: {exc}",
+            ) from exc
+
+    @staticmethod
+    async def _snapshot_exists(session: AsyncSession, run_id: str, tick: int) -> bool:
+        """Whether any state snapshot exists at ``tick`` for the run.
+
+        Same existence check the scenario-branch runner performs
+        before forking; the upfront check refuses the whole
+        request before any branch is created.
+        """
+        result = await session.execute(
+            select(StateSnapshotRecord.id)
+            .where(StateSnapshotRecord.run_id == run_id, StateSnapshotRecord.tick == tick)
+            .limit(1)
+        )
+        return result.scalars().first() is not None
+
     def _read_anchor_variables(self, anchor: SimulationRun) -> list[ProposalVariable]:
         """Variable ids bound to the anchor run (the grounding surface).
 
@@ -1233,13 +1584,16 @@ class NarrativeService:
             arm=cast(Literal["baseline", "strategy"], row.arm),
             mece_branches=list(row.mece_branches),
             deliberation_id=row.deliberation_id,
-            origin=cast(Literal["derived", "authored", "llm_proposal"], row.origin),
+            origin=cast(Literal["derived", "authored", "llm_proposal", "override"], row.origin),
             rule_id=row.rule_id,
             rules_version=row.rules_version,
             rule_record=dict(row.rule_record) if row.rule_record is not None else None,
             status=cast(Literal["active", "proposed", "rejected"], row.status),
             proposal_record=(
                 dict(row.proposal_record) if row.proposal_record is not None else None
+            ),
+            override_record=(
+                dict(row.override_record) if row.override_record is not None else None
             ),
             user_edited=row.user_edited,
             position=row.position,

@@ -9,12 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from planagent.config import get_settings
-from planagent.domain.api import AnalysisResponse, AnalysisStepRead
+from planagent.domain.api import AnalysisResponse, AnalysisStepRead, ScenarioRunCreate
 from planagent.domain.models import AnalysisCacheRecord, utc_now
 from planagent.events.bus import build_event_bus
 from planagent.services.analysis import AutomatedAnalysisService
 from planagent.services.assistant import StrategicAssistantService
 from planagent.services.debate import DebateService, DebateWorkflow
+from planagent.services.narratives.overrides import BranchRequest, BranchResult
 from planagent.services.narratives.service import NarrativeService
 from planagent.services.openai_client import OpenAIService
 from planagent.services.pipeline import PhaseOnePipelineService
@@ -47,6 +48,39 @@ _fallback_services_state = type("_FallbackServicesState", (), {})()
 def _remember_app_state(request: Request) -> None:
     global _last_app_state
     _last_app_state = request.app.state
+
+
+class SimulationBranchRunner:
+    """Branch runner backed by the simulation service's scenario branching.
+
+    Adapts the narratives port to ``SimulationService.create_scenario_run``:
+    the merged variable set becomes the branch's inline ``variable_set``
+    (the Sprint 3 inline-merge semantics: inline wins per variable id,
+    which is exactly the override), and the direction's assumption line
+    is carried onto the branch record. Branch execution runs
+    synchronously in INLINE mode, exactly as the scenario-branch
+    endpoint does.
+    """
+
+    def __init__(self, simulation_service: SimulationService) -> None:
+        self._simulation_service = simulation_service
+
+    def is_available(self) -> bool:
+        return True
+
+    async def create_branch(
+        self, session: AsyncSession, parent_run_id: str, request: BranchRequest
+    ) -> BranchResult:
+        branch = await self._simulation_service.create_scenario_run(
+            session,
+            parent_run_id,
+            ScenarioRunCreate(
+                fork_step=request.fork_step,
+                variable_set=request.variable_set,
+                assumptions=request.assumptions,
+            ),
+        )
+        return BranchResult(branch_id=branch.id, run_id=branch.run_id, fork_step=branch.fork_step)
 
 
 def _cache_business_services(state: object) -> None:
@@ -93,7 +127,13 @@ def _cache_business_services(state: object) -> None:
     if not hasattr(state, "skill_service"):
         state.skill_service = SkillDeliberationService(settings, state.openai_service)
     if not hasattr(state, "narrative_service"):
-        state.narrative_service = NarrativeService(settings, state.openai_service)
+        # The simulation service is cached above, so the branch
+        # runner for option B override directions can be wired here.
+        state.narrative_service = NarrativeService(
+            settings,
+            state.openai_service,
+            branch_runner=SimulationBranchRunner(state.simulation_service),
+        )
 
 
 def _get_state_or_fallback() -> object:
@@ -178,7 +218,9 @@ def get_narrative_service(request: Request) -> NarrativeService:
     ensure_app_services(request)
     if not hasattr(request.app.state, "narrative_service"):
         request.app.state.narrative_service = NarrativeService(
-            get_settings(), request.app.state.openai_service
+            get_settings(),
+            request.app.state.openai_service,
+            branch_runner=SimulationBranchRunner(get_simulation_service(request)),
         )
     return request.app.state.narrative_service  # type: ignore[no-any-return]  # app.state 动态属性
 

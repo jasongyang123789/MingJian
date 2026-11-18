@@ -1777,8 +1777,11 @@ class DirectionMappingRecord(Base):
     when the request omits ``directions``; inline definitions always
     win. ``origin`` records whether the row was written by a
     derivation run (``derived``, with the rule record pinned), by a
-    user (``authored``), or by an LLM proposal run (``llm_proposal``,
-    with the proposal record pinned). ``user_edited`` is set by any
+    user (``authored``), by an LLM proposal run (``llm_proposal``,
+    with the proposal record pinned), or by a variable-override run
+    (``override``, with the override record pinned: the override
+    spec, the scenario branch id, the fork step, and the override
+    hash). ``user_edited`` is set by any
     successful update and protects the row from derivation upserts
     (the no-clobber rule: derive never overwrites a user-edited
     mapping). ``status`` is the review state (option C): ``active``
@@ -1816,6 +1819,7 @@ class DirectionMappingRecord(Base):
     rule_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     proposal_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    override_record: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

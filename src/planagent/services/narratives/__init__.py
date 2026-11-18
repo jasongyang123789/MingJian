@@ -10,7 +10,10 @@ derivation (:mod:`derivation`: versioned rules over the anchor run's
 scenario family, no new runs) and persisted direction mappings.
 Option C adds LLM-proposed directions (:mod:`proposals`): grounded
 proposals stored as ``proposed`` mappings, usable only after an
-explicit human accept.
+explicit human accept. Option B adds variable-override directions
+(:mod:`overrides`): fixed-value overrides that create new scenario-
+branch runs, stored as ``active`` ``override`` mappings with the
+override spec pinned.
 """
 
 from __future__ import annotations
@@ -37,6 +40,14 @@ from planagent.services.narratives.models import (
     NarrativePolishRead,
     ProvenanceKind,
 )
+from planagent.services.narratives.overrides import (
+    BranchRequest,
+    BranchResult,
+    BranchRunner,
+    assumption_line,
+    build_override_set,
+    validate_merged_overrides,
+)
 from planagent.services.narratives.proposals import (
     PROPOSAL_TEMPLATE_ID,
     PROPOSAL_TEMPLATE_VERSION,
@@ -54,6 +65,9 @@ __all__ = [
     "NARRATIVE_PROTOCOL_VERSION",
     "PROPOSAL_TEMPLATE_ID",
     "PROPOSAL_TEMPLATE_VERSION",
+    "BranchRequest",
+    "BranchResult",
+    "BranchRunner",
     "DecisionNarrativeListRead",
     "DecisionNarrativeRead",
     "DerivationCandidate",
@@ -70,10 +84,13 @@ __all__ = [
     "PolishRecheck",
     "ProposalContext",
     "ProvenanceKind",
+    "assumption_line",
+    "build_override_set",
     "build_proposal_user_content",
     "check_polish",
     "compose_narrative",
     "derive_directions",
     "propose_directions",
     "render_narrative_markdown",
+    "validate_merged_overrides",
 ]
