@@ -440,6 +440,47 @@ describe('Directions', () => {
     expect(screen.queryByText(/手动/)).toBeNull()
   })
 
+  it('shows the decision gates of a proposal in the review queue', async () => {
+    const gated = {
+      ...directionMappingProposed,
+      proposal_record: {
+        ...directionMappingProposed.proposal_record,
+        template_version: '2',
+        gates: [
+          {
+            variable_id: 'cash',
+            comparison: '>=',
+            threshold: 90,
+            basis: 'Anchor baseline P50 of cash is 100.',
+          },
+          {
+            variable_id: 'burn',
+            comparison: '<',
+            threshold: 5,
+            basis: 'Anchor strategy P50 of cash is 95.',
+          },
+        ],
+      },
+    }
+    mappings = [gated, directionMappingDerived]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('决策门槛：')).toBeTruthy()
+    expect(screen.getByText(/cash >= 90/)).toBeTruthy()
+    expect(screen.getByText(/依据：Anchor baseline P50 of cash is 100/)).toBeTruthy()
+    expect(screen.getByText(/burn < 5/)).toBeTruthy()
+    expect(screen.getByText(/依据：Anchor strategy P50 of cash is 95/)).toBeTruthy()
+    expect(screen.queryByText('决策门槛：无')).toBeNull()
+  })
+
+  it('shows an honest no-gates line for a v1 proposal record', async () => {
+    mappings = [directionMappingProposed, directionMappingDerived]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('待评审提案')).toBeTruthy()
+    expect(screen.getByText('决策门槛：无')).toBeTruthy()
+  })
+
   it('shows an empty review queue when nothing is proposed', async () => {
     mappings = [directionMappingDerived]
     renderPage()

@@ -51,6 +51,7 @@ from planagent.services.narratives.overrides import (
 from planagent.services.narratives.proposals import (
     PROPOSAL_TEMPLATE_ID,
     PROPOSAL_TEMPLATE_VERSION,
+    DirectionGate,
     DirectionProposal,
     DirectionProposals,
     ProposalContext,
@@ -73,6 +74,7 @@ __all__ = [
     "DerivationCandidate",
     "DerivationResult",
     "DirectionDefinition",
+    "DirectionGate",
     "DirectionInputs",
     "DirectionProposal",
     "DirectionProposals",
