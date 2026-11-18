@@ -137,6 +137,7 @@ class ScriptedBranchRunner:
     def __init__(self, fail_on_calls: set[int] | None = None) -> None:
         self.fail_on_calls = fail_on_calls or set()
         self.calls: list[BranchRequest] = []
+        self.discards: list[str] = []
 
     def is_available(self) -> bool:
         return True
@@ -151,6 +152,10 @@ class ScriptedBranchRunner:
         return BranchResult(
             branch_id=f"branch-{index}", run_id=f"child-{index}", fork_step=request.fork_step
         )
+
+    async def discard_branch(self, _session: AsyncSession, branch_id: str) -> bool:
+        self.discards.append(branch_id)
+        return True
 
 
 def _bind_runner(app, runner) -> None:
@@ -495,6 +500,9 @@ def test_override_partial_branch_failure_leaves_others_stored(monkeypatch, tmp_p
         assert "scripted branch failure" in outcomes[1]["reason"]
         assert outcomes[1]["mapping_id"] is None
         assert len(runner.calls) == 2
+        # A plain (pre-commit) failure discards nothing: the
+        # rollback covers it, and no branch was committed.
+        assert runner.discards == []
         rows = _mappings(client, parent["id"])
         assert len(rows) == 1
         assert rows[0]["name"] == "First"
