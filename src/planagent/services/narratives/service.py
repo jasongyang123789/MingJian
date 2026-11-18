@@ -800,6 +800,20 @@ class NarrativeService:
                 "Direction proposals must trace to MECE branches, but the "
                 f"anchor run {run_id!r} has no stored MECE tree.",
             )
+        if not tree.root.children:
+            # An empty tree (a root that does not decompose) cannot
+            # ground any proposal: _collect_branches includes the
+            # root, so without this check a proposal tracing only to
+            # the root name would pass grounding and be stored. The
+            # creation gate refuses empty trees, so this is reachable
+            # only via a directly rewritten or legacy fragment — but
+            # the refusal is the same named code, before any LLM call.
+            raise DirectionError(
+                "direction_proposal_requires_tree",
+                "Direction proposals must trace to MECE branches, but the "
+                f"anchor run {run_id!r} has a stored MECE tree with no "
+                "branches (the root scope is not decomposed).",
+            )
         family = await self._family_runs(session, anchor)
         candidates = await self._assemble_candidates(session, family)
         if not candidates:
