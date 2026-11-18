@@ -14,6 +14,13 @@ import type {
 } from '../api/engineTypes'
 import { CockpitNav } from '../components/cockpit/CockpitNav'
 import { NarrativeView } from '../components/cockpit/DirectionViews'
+import { OverrideDirectionForm } from '../components/cockpit/OverrideDirectionForm'
+import {
+  originLabel,
+  overrideSummaryText,
+  parseOverrideRecord,
+  statusLabel,
+} from '../components/cockpit/directionMappingDisplay'
 import { RunPicker } from '../components/cockpit/RunPicker'
 import type { CockpitRun } from '../components/cockpit/RunPicker'
 import { Card, CardBody, CardHeader } from '../components/ui/Card'
@@ -365,6 +372,14 @@ export default function Directions() {
             </CardBody>
           </Card>
 
+          <OverrideDirectionForm
+            key={selectedRunId}
+            runId={selectedRunId}
+            branchNames={branchNames}
+            tickCount={runList.find((run) => run.id === selectedRunId)?.tick_count ?? null}
+            onMappingsChanged={reloadMappings}
+          />
+
           <Card>
             <CardHeader title="已存方向映射" />
             <CardBody className="space-y-4">
@@ -381,7 +396,12 @@ export default function Directions() {
                 />
               ) : (
                 <ul className="space-y-3">
-                  {mappings.map((mapping) => (
+                  {mappings.map((mapping) => {
+                    const overrideSummary =
+                      mapping.origin === 'override'
+                        ? overrideSummaryText(parseOverrideRecord(mapping.override_record))
+                        : null
+                    return (
                     <li
                       key={mapping.id}
                       className="space-y-3 rounded-lg border border-slate-700/50 p-3"
@@ -470,9 +490,14 @@ export default function Directions() {
                               {mapping.source_run_id} / {mapping.arm}
                             </span>{' '}
                             <span className="text-xs text-slate-500">
-                              {mapping.origin === 'derived' ? '推导' : '手动'}
+                              {[originLabel(mapping.origin), statusLabel(mapping.status)]
+                                .filter((part) => part.length > 0)
+                                .join(' · ')}
                               {mapping.user_edited ? ' · 已编辑' : ''}
                             </span>
+                            {overrideSummary && (
+                              <p className="text-xs text-slate-500">变量覆盖：{overrideSummary}</p>
+                            )}
                           </div>
                           <span className="flex flex-wrap gap-2">
                             <button
@@ -517,7 +542,8 @@ export default function Directions() {
                         </div>
                       )}
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
               )}
               <p className="text-xs text-slate-500">

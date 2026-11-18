@@ -1368,6 +1368,9 @@ export interface DecisionNarrativeListRead {
 
 // ==================== Sprint 14 — 方向推导 + 已存映射 ====================
 
+export type DirectionMappingOrigin = 'derived' | 'authored' | 'llm_proposal' | 'override'
+export type DirectionMappingStatus = 'active' | 'proposed' | 'rejected'
+
 export interface DirectionMappingRead {
   id: string
   anchor_run_id: string
@@ -1376,10 +1379,13 @@ export interface DirectionMappingRead {
   arm: 'baseline' | 'strategy'
   mece_branches: string[]
   deliberation_id: string | null
-  origin: 'derived' | 'authored'
+  origin: DirectionMappingOrigin
   rule_id: string | null
   rules_version: string | null
   rule_record: Record<string, unknown> | null
+  status: DirectionMappingStatus
+  proposal_record: Record<string, unknown> | null
+  override_record: Record<string, unknown> | null
   user_edited: boolean
   position: number
   created_at: string
@@ -1425,6 +1431,47 @@ export interface DerivationRead {
   family_size: number
   candidates_considered: number
   outcomes: DerivationRuleOutcome[]
+  mappings: DirectionMappingRead[]
+}
+
+// ==================== Option B — 变量覆盖方向 ====================
+// Mirrors services/narratives/models.py: DirectionOverrideSpec/
+// DirectionOverrideRequest/DirectionOverrideOutcome/DirectionOverrideRead.
+// `fork_step` is optional: omitted, the backend applies the
+// scenario-branch midpoint default.
+
+export interface DirectionOverrideSpec {
+  name: string
+  overrides: Record<string, number>
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+  fork_step?: number
+}
+
+export interface DirectionOverrideRequest {
+  directions: DirectionOverrideSpec[]
+}
+
+export type DirectionOverrideOutcomeStatus = 'stored' | 'skipped' | 'failed'
+
+export interface DirectionOverrideOutcome {
+  name: string
+  status: DirectionOverrideOutcomeStatus
+  reason: string
+  mapping_id: string | null
+  branch_id: string | null
+  child_run_id: string | null
+  fork_step: number | null
+  child_status: string | null
+  arm: 'baseline' | 'strategy'
+  mece_branches: string[]
+}
+
+export interface DirectionOverrideRead {
+  anchor_run_id: string
+  override_hash: string
+  directions_considered: number
+  outcomes: DirectionOverrideOutcome[]
   mappings: DirectionMappingRead[]
 }
 

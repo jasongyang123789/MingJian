@@ -6,6 +6,8 @@ import {
   derivationRead,
   directionMappingAuthored,
   directionMappingDerived,
+  directionMappingOverride,
+  directionMappingProposed,
   narrativeRead,
 } from '../test/engineFixtures'
 import Directions from './Directions'
@@ -38,12 +40,29 @@ const MECE = {
   validation: { is_mece: true, checks: [], issues: [], scope_tag_count: 2, branch_count: 3 },
 }
 
+const VARIABLES = {
+  run_id: 'run-anchor',
+  template: null,
+  bindings: {
+    name: 'anchor-bindings',
+    variables: [
+      { id: 'cash', unit: 'USD', distribution: { type: 'normal', value: null, mean: 10, std: 2, min: null, mode: null, max: null, p: null }, evidence_ref: 'finance-2026', description: 'Cash on hand', scope_tags: ['demand'] },
+      { id: 'burn', unit: 'USD/mo', distribution: { type: 'fixed', value: 20, mean: null, std: null, min: null, mode: null, max: null, p: null }, evidence_ref: 'finance-2026', description: 'Monthly burn', scope_tags: ['cost'] },
+    ],
+    formulas: [],
+    internal: {},
+  },
+  validation: { is_valid: true, variable_count: 2, checks: [], issues: [] },
+}
+
 describe('Directions', () => {
   let narratives: unknown[]
   let mappings: unknown[]
   let generateResponse: { status: number; body: unknown } | null
   let polishResponse: { status: number; body: unknown } | null
   let deriveResponse: { status: number; body: unknown } | null
+  let variablesResponse: { status: number; body: unknown } | null
+  let overrideResponse: { status: number; body: unknown } | null
   const posted: { url: string; body: unknown }[] = []
 
   beforeEach(() => {
@@ -53,6 +72,8 @@ describe('Directions', () => {
     generateResponse = null
     polishResponse = null
     deriveResponse = null
+    variablesResponse = null
+    overrideResponse = null
     posted.length = 0
     vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -60,6 +81,58 @@ describe('Directions', () => {
       if (url === '/api/simulation/runs') return jsonResponse(RUNS)
       if (url === '/api/runs/run-anchor/mece') return jsonResponse(MECE)
       if (url === '/api/runs/run-other/mece') return jsonResponse({ detail: 'not found' }, 404)
+      if (url === '/api/runs/run-anchor/variables' && method === 'GET') {
+        if (variablesResponse) return jsonResponse(variablesResponse.body, variablesResponse.status)
+        return jsonResponse(VARIABLES)
+      }
+      if (method === 'POST' && url === '/api/runs/run-anchor/directions/override') {
+        const body = init?.body ? JSON.parse(String(init.body)) : null
+        posted.push({ url, body })
+        if (overrideResponse) return jsonResponse(overrideResponse.body, overrideResponse.status)
+        const directions = (body?.directions ?? []) as Array<Record<string, unknown>>
+        const outcomes = directions.map((spec, i) => ({
+          name: spec.name,
+          status: 'stored',
+          reason: `Child run run-child-${i + 1} created (branch branch-${i + 1}, fork step ${(spec.fork_step as number) ?? 1}, status COMPLETED). No ensemble yet: run POST /runs/run-child-${i + 1}/monte-carlo before generating from this direction.`,
+          mapping_id: `mapping-new-${i}`,
+          branch_id: `branch-${i + 1}`,
+          child_run_id: `run-child-${i + 1}`,
+          fork_step: (spec.fork_step as number) ?? 1,
+          child_status: 'COMPLETED',
+          arm: spec.arm,
+          mece_branches: spec.mece_branches,
+        }))
+        const newMappings = directions.map((spec, i) => ({
+          id: `mapping-new-${i}`,
+          anchor_run_id: 'run-anchor',
+          name: spec.name,
+          source_run_id: `run-child-${i + 1}`,
+          arm: spec.arm,
+          mece_branches: spec.mece_branches,
+          deliberation_id: null,
+          origin: 'override',
+          rule_id: null,
+          rules_version: null,
+          rule_record: null,
+          status: 'active',
+          proposal_record: null,
+          override_record: {
+            overrides: spec.overrides,
+            branch_id: `branch-${i + 1}`,
+            fork_step: (spec.fork_step as number) ?? 1,
+            override_hash: 'sha256:override-test',
+          },
+          user_edited: false,
+          position: mappings.length + i,
+          created_at: '2026-11-18T00:00:00Z',
+          updated_at: '2026-11-18T00:00:00Z',
+        }))
+        mappings = [...mappings, ...newMappings]
+        return jsonResponse(
+          { anchor_run_id: 'run-anchor', override_hash: 'sha256:override-test', directions_considered: directions.length, outcomes, mappings },
+          201,
+        )
+      }
       if (url === '/api/runs/run-anchor/directions/mappings' && method === 'GET') {
         return jsonResponse({ run_id: 'run-anchor', mappings })
       }
@@ -129,6 +202,11 @@ describe('Directions', () => {
   async function pickAnchorRun() {
     fireEvent.change(await screen.findByLabelText('锚定 Run'), { target: { value: 'run-anchor' } })
     await screen.findByRole('button', { name: '生成简报' })
+  }
+
+  async function expandOverrideForm() {
+    fireEvent.click(await screen.findByRole('button', { name: '新建变量覆盖方向' }))
+    await screen.findByLabelText('覆盖方向名称')
   }
 
   it('asks for a run, then shows the generate form with MECE branch checkboxes', async () => {
@@ -274,5 +352,257 @@ describe('Directions', () => {
     fireEvent.click(screen.getByLabelText(/使用已存方向映射生成/))
     expect(screen.getByText(/还没有已存方向映射/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '生成简报' })).toHaveProperty('disabled', true)
+  })
+
+  it('shows the override form with bound variables and their current definitions', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    expect(screen.getByRole('option', { name: 'cash · USD · normal(μ=10, σ=2)' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'burn · USD/mo · fixed = 20' })).toBeTruthy()
+    expect(screen.getByLabelText(/分叉步/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    expect(screen.getByText(/Cash on hand/)).toBeTruthy()
+    expect(screen.getByText(/证据：finance-2026/)).toBeTruthy()
+  })
+
+  it('creates an override direction, omits fork_step, and shows the stored outcome', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Cash at 80' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: '覆盖分支 Demand' }))
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toEqual({
+      url: '/api/runs/run-anchor/directions/override',
+      body: {
+        directions: [
+          { name: 'Cash at 80', overrides: { cash: 80 }, arm: 'baseline', mece_branches: ['Demand'] },
+        ],
+      },
+    })
+    expect(
+      (posted[0].body as { directions: Record<string, unknown>[] }).directions[0],
+    ).not.toHaveProperty('fork_step')
+    expect(await screen.findByText(/已存入/)).toBeTruthy()
+    expect(screen.getByText(/子 Run run-child-1 · 分支 branch-1 · 分叉步 1 · 状态 COMPLETED/)).toBeTruthy()
+    expect(screen.getByText(/No ensemble yet: run POST \/runs\/run-child-1\/monte-carlo/)).toBeTruthy()
+    expect(await screen.findByText('变量覆盖：cash=80 · 分叉步 1')).toBeTruthy()
+  })
+
+  it('sends fork_step when provided', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Cash at 80' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.change(screen.getByLabelText(/分叉步/), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(
+      (posted[0].body as { directions: Record<string, unknown>[] }).directions[0].fork_step,
+    ).toBe(2)
+  })
+
+  it('creates two override directions in one request', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'First' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('button', { name: /添加覆盖方向/ }))
+    const names = screen.getAllByLabelText('覆盖方向名称')
+    fireEvent.change(names[1], { target: { value: 'Second' } })
+    const selects = screen.getAllByLabelText('变量')
+    fireEvent.change(selects[1], { target: { value: 'burn' } })
+    const values = screen.getAllByLabelText('固定值')
+    fireEvent.change(values[1], { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body).toEqual({
+      directions: [
+        { name: 'First', overrides: { cash: 80 }, arm: 'baseline', mece_branches: [] },
+        { name: 'Second', overrides: { burn: 5 }, arm: 'baseline', mece_branches: [] },
+      ],
+    })
+    expect(await screen.findByText(/已处理 2 个方向/)).toBeTruthy()
+  })
+
+  it('adds a variable row defaulting to the next unpicked bound variable', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 添加变量' }))
+    const selects = screen.getAllByLabelText('变量')
+    expect(selects).toHaveLength(2)
+    expect(selects[1]).toHaveProperty('value', 'burn')
+    expect(screen.queryByRole('button', { name: '＋ 添加变量' })).toBeNull()
+  })
+
+  it('refuses an empty direction name without posting', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/每个覆盖方向都需要填写名称/)).toBeTruthy()
+    expect(posted).toHaveLength(0)
+  })
+
+  it('refuses missing and non-finite fixed values without posting', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Cash at 80' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/需要填写固定值/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: 'abc' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/必须是有限数字/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: 'Infinity' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/必须是有限数字/)).toBeTruthy()
+    expect(posted).toHaveLength(0)
+  })
+
+  it('refuses duplicate direction names without posting', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Same' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('button', { name: /添加覆盖方向/ }))
+    const names = screen.getAllByLabelText('覆盖方向名称')
+    fireEvent.change(names[1], { target: { value: 'Same' } })
+    const selects = screen.getAllByLabelText('变量')
+    fireEvent.change(selects[1], { target: { value: 'burn' } })
+    const values = screen.getAllByLabelText('固定值')
+    fireEvent.change(values[1], { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/不能重复/)).toBeTruthy()
+    expect(posted).toHaveLength(0)
+  })
+
+  it('refuses a fork_step below 1 without posting', async () => {
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Cash at 80' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.change(screen.getByLabelText(/分叉步/), { target: { value: '0' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(
+      await screen.findByText('方向「Cash at 80」的分叉步必须是 ≥ 1 的整数，留空则用默认中点。'),
+    ).toBeTruthy()
+    expect(posted).toHaveLength(0)
+  })
+
+  it('shows skipped and failed outcomes from the response', async () => {
+    overrideResponse = {
+      status: 201,
+      body: {
+        anchor_run_id: 'run-anchor',
+        override_hash: 'sha256:mixed',
+        directions_considered: 2,
+        outcomes: [
+          {
+            name: 'First',
+            status: 'skipped',
+            reason: "A mapping named 'First' already exists (origin derived, status active); no branch run was created; left untouched.",
+            mapping_id: null,
+            branch_id: null,
+            child_run_id: null,
+            fork_step: 1,
+            child_status: null,
+            arm: 'baseline',
+            mece_branches: [],
+          },
+          {
+            name: 'Second',
+            status: 'failed',
+            reason: 'Branch creation failed: boom',
+            mapping_id: null,
+            branch_id: null,
+            child_run_id: null,
+            fork_step: 1,
+            child_status: null,
+            arm: 'baseline',
+            mece_branches: [],
+          },
+        ],
+        mappings: [],
+      },
+    }
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'First' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('button', { name: /添加覆盖方向/ }))
+    const names = screen.getAllByLabelText('覆盖方向名称')
+    fireEvent.change(names[1], { target: { value: 'Second' } })
+    const selects = screen.getAllByLabelText('变量')
+    fireEvent.change(selects[1], { target: { value: 'burn' } })
+    const values = screen.getAllByLabelText('固定值')
+    fireEvent.change(values[1], { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/已跳过/)).toBeTruthy()
+    expect(screen.getByText(/already exists/)).toBeTruthy()
+    expect(screen.getByText(/创建失败/)).toBeTruthy()
+    expect(screen.getByText(/Branch creation failed: boom/)).toBeTruthy()
+  })
+
+  it('surfaces an override refusal with its code and message', async () => {
+    overrideResponse = {
+      status: 400,
+      body: {
+        detail: {
+          code: 'direction_override_unknown_variable',
+          message: "Override names unknown variable 'nope'. Valid variables: burn, cash",
+        },
+      },
+    }
+    renderPage()
+    await pickAnchorRun()
+    await expandOverrideForm()
+    fireEvent.change(screen.getByLabelText('覆盖方向名称'), { target: { value: 'Cash at 80' } })
+    fireEvent.change(screen.getByLabelText('变量'), { target: { value: 'cash' } })
+    fireEvent.change(screen.getByLabelText('固定值'), { target: { value: '80' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建覆盖方向' }))
+    expect(await screen.findByText(/direction_override_unknown_variable/)).toBeTruthy()
+    expect(screen.getByText(/Valid variables: burn, cash/)).toBeTruthy()
+    expect(screen.queryByText(/已处理/)).toBeNull()
+  })
+
+  it('labels every mapping origin and status, with an override summary', async () => {
+    mappings = [directionMappingDerived, directionMappingAuthored, directionMappingProposed, directionMappingOverride]
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText('Cautious rollout')).toBeTruthy()
+    expect(screen.getByText(/推导 · 可用/)).toBeTruthy()
+    expect(screen.getByText(/手动 · 可用 · 已编辑/)).toBeTruthy()
+    expect(screen.getByText(/LLM 提案 · 待评审/)).toBeTruthy()
+    expect(screen.getByText(/变量覆盖 · 可用/)).toBeTruthy()
+    expect(screen.getByText('变量覆盖：cash=80 · 分叉步 2')).toBeTruthy()
+    expect(screen.getAllByText(/手动/)).toHaveLength(1)
+  })
+
+  it('shows an honest message when the anchor has no bound variables', async () => {
+    variablesResponse = { status: 200, body: { ...VARIABLES, bindings: null } }
+    renderPage()
+    await pickAnchorRun()
+    expect(await screen.findByText(/没有绑定变量/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '新建变量覆盖方向' })).toBeNull()
   })
 })
