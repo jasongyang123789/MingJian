@@ -342,7 +342,10 @@ def _p05_total(trim: TrimSplit, rows_by_line: dict[str, list]) -> tuple[float | 
     """The trim's total camera count, or ``None`` when uncountable.
 
     Count-kind rows contribute their fitment; rate-kind rows contribute
-    the group size parsed from their label. Returns ``(total, False)``
+    the group size parsed from their label. Both are weighted by
+    supplier share, so a camera group split across two suppliers (two
+    rows, one solution) counts once, not twice — the real workbook
+    splits carry 16 such P05 splits. Returns ``(total, False)``
     when every P05 row is countable, ``(None, True)`` when any row
     cannot be counted (the ladder check must skip, not guess).
     """
@@ -350,12 +353,12 @@ def _p05_total(trim: TrimSplit, rows_by_line: dict[str, list]) -> tuple[float | 
     total = 0.0
     for row in rows_by_line.get("P05", []):
         if row.fitment_kind == "count":
-            total += row.fitment
+            total += row.fitment * row.supplier_share
         else:
             parsed = parse_camera_count(row.solution_code)
             if parsed is None:
                 return None, True
-            total += parsed
+            total += parsed * row.supplier_share
     return total, False
 
 

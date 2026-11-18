@@ -15,7 +15,7 @@ from planagent.domain.enums import (
 )
 from planagent.domain.types import GeneratedReportModel
 from planagent.services.mece.models import DecompositionTree
-from planagent.services.splits.models import SplitStructure
+from planagent.services.splits.models import OemProductionShares, SplitStructure
 from planagent.services.variables.models import VariableSet
 
 
@@ -177,6 +177,16 @@ class SimulationRunCreate(APIModel):
     # automotive runs accept a split structure. When absent, runs behave
     # exactly as before.
     split_structure: SplitStructure | None = None
+    # Optional stored OEM production shares (S-layer real splits). The
+    # S-layer's OEM-mix input, stored beside the split structure it
+    # covers: requires an attached split structure, must cover exactly
+    # the structure's OEMs and sum to 1, and refuses run creation on
+    # failure like the split gate. Stored in the run's split_structure
+    # fragment (so the Sprint 3 input hash covers it); the sales-layer
+    # endpoint uses the stored shares when its request body omits them.
+    # When absent, runs behave exactly as before (the caller must pass
+    # shares to the sales-layer endpoint).
+    oem_production_shares: OemProductionShares | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":

@@ -38,6 +38,7 @@ from planagent.db import get_session
 from planagent.domain.enums import SimulationRunStatus
 from planagent.domain.models import SimulationRun, StateSnapshotRecord
 from planagent.services.splits import (
+    OemProductionShares,
     PromptReport,
     SalesLayerComputation,
     SplitStructure,
@@ -86,11 +87,18 @@ class SupplyShareOverride(BaseModel):
 
 
 class SalesLayerRequest(BaseModel):
-    """S-layer computation inputs (the trajectory comes from snapshots)."""
+    """S-layer computation inputs (the trajectory comes from snapshots).
+
+    ``oem_production_shares`` is optional: when omitted, the run's
+    STORED shares (attached at run creation) are used. An explicit
+    body overrides the stored mix for this computation only — it never
+    rewrites the stored input. When neither exists, the endpoint
+    refuses with ``automotive_oem_shares_required``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    oem_production_shares: dict[str, float] = Field(min_length=1)
+    oem_production_shares: dict[str, float] | None = Field(default=None, min_length=1)
     own_supplier_id: str | None = None
     supply_shares: list[SupplyShareOverride] = Field(default_factory=list)
     default_supply_share: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -122,6 +130,7 @@ class SplitStructureRead(BaseModel):
     run_id: str
     structure: SplitStructure
     validation: dict
+    oem_production_shares: OemProductionShares | None = None
 
 
 def _automotive_error(code: str, message: str) -> HTTPException:
@@ -180,8 +189,10 @@ def _group_by_tick(
     return tick_states
 
 
-def _load_split_fragment(run: SimulationRun) -> tuple[SplitStructure, dict]:
-    """The run's stored split structure + validation, or a 400."""
+def _load_split_fragment(
+    run: SimulationRun,
+) -> tuple[SplitStructure, dict, OemProductionShares | None]:
+    """The run's stored split structure + validation + stored shares, or a 400."""
 
     configuration = run.configuration or {}
     fragment = configuration.get("split_structure")
@@ -203,7 +214,18 @@ def _load_split_fragment(run: SimulationRun) -> tuple[SplitStructure, dict]:
             f"Run {run.id} carries a split structure that no longer parses: {exc}",
         ) from exc
     validation = fragment.get("validation")
-    return structure, validation if isinstance(validation, dict) else {}
+    stored_shares: OemProductionShares | None = None
+    if fragment.get("oem_production_shares") is not None:
+        try:
+            stored_shares = OemProductionShares.model_validate(
+                fragment["oem_production_shares"]
+            )
+        except ValueError as exc:
+            raise _automotive_error(
+                "automotive_corrupt_split_fragment",
+                f"Run {run.id} carries stored OEM shares that no longer parse: {exc}",
+            ) from exc
+    return structure, validation if isinstance(validation, dict) else {}, stored_shares
 
 
 def _sales_layer_error(exc: ValueError) -> HTTPException:
@@ -270,8 +292,13 @@ async def get_automotive_split_structure(
     session: AsyncSession = Depends(get_session),
 ) -> SplitStructureRead:
     run = await _load_automotive_run(session, run_id)
-    structure, validation = _load_split_fragment(run)
-    return SplitStructureRead(run_id=run.id, structure=structure, validation=validation)
+    structure, validation, stored_shares = _load_split_fragment(run)
+    return SplitStructureRead(
+        run_id=run.id,
+        structure=structure,
+        validation=validation,
+        oem_production_shares=stored_shares,
+    )
 
 
 @router.post("/runs/{run_id}/automotive/sales-layer", response_model=SalesLayerRead)
@@ -286,12 +313,27 @@ async def compute_automotive_sales_layer(
             "automotive_run_not_completed",
             f"Run {run_id} has status {run.status!r}; the S-layer requires a COMPLETED run.",
         )
-    structure, _validation = _load_split_fragment(run)
+    structure, _validation, stored_shares = _load_split_fragment(run)
     snapshots = await _load_snapshots(session, run_id)
     if not snapshots:
         raise _automotive_error(
             "automotive_no_snapshots",
             f"Run {run_id} has no stored snapshots.",
+        )
+    if payload.oem_production_shares is not None:
+        shares = dict(payload.oem_production_shares)
+        shares_source = "caller-supplied"
+    elif stored_shares is not None:
+        shares = dict(stored_shares.shares)
+        shares_source = f"stored input {stored_shares.source}"
+        if stored_shares.as_of is not None:
+            shares_source += f" ({stored_shares.as_of})"
+    else:
+        raise _automotive_error(
+            "automotive_oem_shares_required",
+            f"Run {run_id} carries no stored OEM production shares; pass "
+            "oem_production_shares in the request body or attach shares "
+            "at run creation.",
         )
     tick_states = _group_by_tick(snapshots)
     try:
@@ -299,7 +341,7 @@ async def compute_automotive_sales_layer(
         computation = compute_sales_layer(
             structure,
             trajectory,
-            dict(payload.oem_production_shares),
+            shares,
             own_supplier_id=payload.own_supplier_id,
             supply_shares={
                 (override.oem_id, override.product_id): override.share
@@ -308,6 +350,7 @@ async def compute_automotive_sales_layer(
             or None,
             default_supply_share=payload.default_supply_share,
             strict_prices=payload.strict_prices,
+            shares_source=shares_source,
         )
     except SplitValidationError as exc:
         raise HTTPException(

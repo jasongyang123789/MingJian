@@ -306,14 +306,21 @@ def test_morphology_and_price_basis_vocabularies() -> None:
 def test_fitment_rates_need_not_sum_to_one() -> None:
     """Ho Q7 (2026-11-16): fitment rates are independent penetrations;
     the four-solution P02 block summing to 1.2 is legitimate. No
-    product-level sum gate exists — this structure must validate."""
+    product-level sum gate exists — this structure must validate.
+
+    Each solution carries its own supplier split (solution slots,
+    S-layer real splits 2026-11-18): four solutions, four suppliers,
+    each share 1.0. The pre-refinement fixture used 0.25 shares, which
+    encoded the superseded per-product slot and understated every
+    solution's units 4x.
+    """
     fitments = [
         {
             "product_id": "P02",
             "fitment_kind": "rate",
             "fitment": 0.3,
             "supplier_id": f"supplier-{index}",
-            "supplier_share": 0.25,
+            "supplier_share": 1.0,
             "price": 1000.0,
             "solution_code": code,
         }
@@ -476,6 +483,25 @@ def test_parse_camera_count() -> None:
     assert parse_camera_count("摄像头") is None
     assert parse_camera_count("前视+环视") is None
     assert parse_camera_count(None) is None
+    # Real workbook labels (S-layer real splits): the marker AND the
+    # multiplier coexist — the marker factor multiplies the segment.
+    assert parse_camera_count("前视三目摄像头*1") == 3
+    assert parse_camera_count("前视双目摄像头*1") == 2
+    assert (
+        parse_camera_count("环视摄像头*4 前视双目摄像头*1 后视摄像头*1") == 7
+    )
+    assert (
+        parse_camera_count(
+            "环视摄像头*4 前视三目摄像头*1 侧视摄像头*2 后视摄像头*1"
+        )
+        == 10
+    )
+    assert (
+        parse_camera_count(
+            "环视摄像头*4 前视双目摄像头*1 侧视摄像头*4 后视摄像头*1"
+        )
+        == 11
+    )
 
 
 def test_dc_platform() -> None:

@@ -97,7 +97,7 @@ from planagent.services.living_loop.monitoring import (
 )
 from planagent.services.living_loop.triggers import evaluate_triggers, select_window
 from planagent.services.mece.models import DecompositionTree
-from planagent.services.splits.models import SplitStructure
+from planagent.services.splits.models import OemProductionShares, SplitStructure
 from planagent.services.variables.models import VariableSet
 from planagent.simulation.domain_packs import registry
 from planagent.workers.base import public_worker_error
@@ -994,6 +994,7 @@ class SimulationLivingLoopMixin:
             decomposition = DecompositionTree.model_validate(mece_fragment["decomposition"])
 
         split_structure = None
+        oem_production_shares = None
         split_fragment = configuration.get("split_structure")
         if split_fragment is not None:
             if not isinstance(split_fragment, dict) or "structure" not in split_fragment:
@@ -1003,6 +1004,28 @@ class SimulationLivingLoopMixin:
                     "refusing to re-simulate rather than silently drop it.",
                 )
             split_structure = SplitStructure.model_validate(split_fragment["structure"])
+            stored_shares = split_fragment.get("oem_production_shares")
+            if stored_shares is not None:
+                # Stored OEM mix (S-layer real splits): inherited
+                # wholesale by the re-simulation, like the structure.
+                # Malformed stored shares refuse rather than dropping
+                # the mix silently.
+                if not isinstance(stored_shares, dict):
+                    raise LoopError(
+                        "loop_corrupt_baseline_fragment",
+                        "Baseline run carries malformed stored OEM shares; "
+                        "refusing to re-simulate rather than silently drop them.",
+                    )
+                try:
+                    oem_production_shares = OemProductionShares.model_validate(
+                        stored_shares
+                    )
+                except ValueError as exc:
+                    raise LoopError(
+                        "loop_corrupt_baseline_fragment",
+                        "Baseline run carries malformed stored OEM shares; "
+                        f"refusing to re-simulate rather than silently drop them: {exc}",
+                    ) from exc
 
         variables_fragment = configuration.get("variables")
         template_id: str | None = None
@@ -1059,6 +1082,7 @@ class SimulationLivingLoopMixin:
             "variable_set": variable_set,
             "decision_time": decision_time,
             "split_structure": split_structure,
+            "oem_production_shares": oem_production_shares,
         }
         if baseline.domain_id in ("corporate", "automotive"):
             company = (

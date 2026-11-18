@@ -75,9 +75,15 @@ class ProductFitment(BaseModel):
     ``fitment_kind`` separates the two fitment types the synthesis (§C1)
     says must never be confused: ``rate`` (a share of cars fitted, in
     [0, 1]) vs ``count`` (units per car, >= 0, e.g. cameras per vehicle).
-    Multiple rows with the same ``product_id`` but different
-    ``supplier_id`` in one trim are the legitimate supplier split: their
-    ``supplier_share`` values must sum to 1 (the validator's slot gate).
+    Multiple rows with the same ``product_id`` AND the same
+    ``solution_code`` but different ``supplier_id`` in one trim are the
+    legitimate supplier split: their ``supplier_share`` values must sum
+    to 1 (the validator's solution-slot gate). Rows with different
+    solution codes are different SOLUTIONS of one product line (e.g.
+    instrument + central screens in P03): they coexist independently
+    and each carries its own supplier split. Uncoded rows (``None``)
+    group into one slot per product, preserving the Phase 1 behavior
+    for structures without solution codes.
     ``price`` is the per-unit ASP for this product on this trim; None
     means unknown (capacity aggregation refuses unpriced slots loudly).
 
@@ -311,3 +317,50 @@ class SplitValidationResult(BaseModel):
     is_valid: bool
     checks: list[SplitCheckRecord] = Field(default_factory=list)
     issues: list[SplitValidationIssue] = Field(default_factory=list)
+
+
+class OemProductionShares(BaseModel):
+    """Stored per-OEM production shares: the S-layer's OEM-mix input.
+
+    Phase 2 left the OEM mix caller-supplied at S-layer computation
+    time because no stored mix existed. The S-layer real-splits work
+    stores it as a run input instead: attached at run creation beside
+    the split structure, validated against the structure's OEMs by the
+    same refuse-before-write gate, carried into the run's
+    ``split_structure`` configuration fragment (so the Sprint 3 input
+    hash covers it), and inherited by living-loop re-simulations. The
+    sales-layer endpoint uses the stored shares when the request body
+    omits them; an explicit body still overrides.
+
+    Shape rules live here (non-empty map, finite per-OEM values in
+    [0, 1], a non-empty provenance ``source``); the coverage + sum-to-1
+    rules live in :func:`validator.validate_oem_shares`, which needs
+    the structure. ``source`` + ``as_of`` + ``notes`` are provenance,
+    not decoration: a stored mix is only interpretable with its
+    denominator (which OEM set the shares sum over) recorded. See
+    :mod:`real_structure` for the workbook-derived instance.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    shares: dict[str, float] = Field(min_length=1)
+    source: str = Field(min_length=1, max_length=200)
+    as_of: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("shares", mode="before")
+    @classmethod
+    def _validate_share_values(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        for oem_id, share in value.items():
+            if (
+                isinstance(share, bool)
+                or not isinstance(share, (int, float))
+                or not math.isfinite(float(share))
+                or not 0.0 <= float(share) <= 1.0
+            ):
+                raise ValueError(
+                    f"Production share for OEM {oem_id!r} must be a number in [0, 1]."
+                )
+        return value
