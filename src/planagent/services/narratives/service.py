@@ -773,14 +773,15 @@ class NarrativeService:
         no MECE tree, no ensemble in the family) happen BEFORE the
         port is touched. The LLM's output is then grounding-validated
         as a whole: any proposal naming a non-existent MECE branch,
-        scenario-family run, or variable refuses the entire request
-        before any row is written (refuse, not flag — a hallucinated
-        reference impeaches the whole proposal set, and proposing is
-        cheap, explicit, and retryable). Proposals that pass
-        validation are stored as ``proposed`` mappings; a proposal
-        whose name is already taken is reported ``skipped`` and the
-        existing row is left untouched — proposals never overwrite
-        anything, including user-edited mappings.
+        scenario-family run, or variable — or a gate on an unbound
+        variable — refuses the entire request before any row is
+        written (refuse, not flag — a hallucinated reference
+        impeaches the whole proposal set, and proposing is cheap,
+        explicit, and retryable). Proposals that pass validation are
+        stored as ``proposed`` mappings; a proposal whose name is
+        already taken is reported ``skipped`` and the existing row
+        is left untouched — proposals never overwrite anything,
+        including user-edited mappings.
         """
         anchor = await session.get(SimulationRun, run_id)
         if anchor is None:
@@ -869,6 +870,7 @@ class NarrativeService:
                 proposal_record={
                     "rationale": proposal.rationale,
                     "key_variables": list(proposal.key_variables),
+                    "gates": [gate.model_dump(mode="json") for gate in proposal.gates],
                     "model": model,
                     "template_id": PROPOSAL_TEMPLATE_ID,
                     "template_version": PROPOSAL_TEMPLATE_VERSION,
@@ -982,6 +984,14 @@ class NarrativeService:
                         "direction_proposal_unknown_variable",
                         f"Proposal {proposal.name!r} names unknown variable "
                         f"{variable_id!r}. Valid variables: "
+                        f"{', '.join(sorted(variable_ids)) or '(none)'}",
+                    )
+            for gate in proposal.gates:
+                if gate.variable_id not in variable_ids:
+                    raise DirectionError(
+                        "direction_proposal_unknown_gate_variable",
+                        f"Proposal {proposal.name!r} has a gate on unknown "
+                        f"variable {gate.variable_id!r}. Valid variables: "
                         f"{', '.join(sorted(variable_ids)) or '(none)'}",
                     )
 
@@ -1621,6 +1631,15 @@ class NarrativeService:
         for candidate in candidates:
             by_run.setdefault(candidate.run_id, {})[candidate.arm] = candidate
         parents = {run.id: run.parent_run_id for run in family}
+        # The metric name each ensemble measures, read from the
+        # already-validated ensemble fragments (_assemble_candidates
+        # validated them above): the prompt names the metric so gate
+        # bases can cite the stored number they derive from.
+        metrics: dict[str, str | None] = {}
+        for run in family:
+            fragment = (run.summary or {}).get(MONTE_CARLO_SUMMARY_KEY)
+            metric = fragment.get("metric") if isinstance(fragment, dict) else None
+            metrics[run.id] = metric if isinstance(metric, str) else None
         rows: list[ProposalFamilyRun] = []
         for run_id in sorted(by_run):
             arms = by_run[run_id]
@@ -1635,6 +1654,7 @@ class NarrativeService:
                     baseline_p_loss=baseline.p_loss,
                     strategy_p50=strategy.p50,
                     strategy_p_loss=strategy.p_loss,
+                    metric=metrics.get(run_id),
                 )
             )
         return rows

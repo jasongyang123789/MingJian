@@ -58,19 +58,48 @@ describe('parseProposalRecord', () => {
     const summary = parseProposalRecord({
       rationale: 'Cash is the binding constraint.',
       key_variables: ['cash', 'burn'],
+      gates: [
+        {
+          variable_id: 'cash',
+          comparison: '>=',
+          threshold: 90,
+          basis: 'Anchor baseline P50 of cash is 100.',
+        },
+      ],
       model: 'gpt-6.1-sol',
       template_id: 'direction.propose',
-      template_version: '1',
+      template_version: '2',
       proposal_hash: 'sha256:abcdef1234567890',
     })
     expect(summary).toEqual({
       rationale: 'Cash is the binding constraint.',
       keyVariables: ['cash', 'burn'],
+      gates: [
+        {
+          variableId: 'cash',
+          comparison: '>=',
+          threshold: 90,
+          basis: 'Anchor baseline P50 of cash is 100.',
+        },
+      ],
       model: 'gpt-6.1-sol',
       templateId: 'direction.propose',
-      templateVersion: '1',
+      templateVersion: '2',
       proposalHash: 'sha256:abcdef1234567890',
     })
+  })
+
+  it('reads a v1 record without gates as an empty gates list', () => {
+    const summary = parseProposalRecord({
+      rationale: 'A v1 proposal, stored before gates existed.',
+      key_variables: ['cash'],
+      model: 'fixture',
+      template_id: 'narrative.direction_proposals',
+      template_version: '1',
+      proposal_hash: 'sha256:legacy',
+    })
+    expect(summary?.gates).toEqual([])
+    expect(summary?.templateVersion).toBe('1')
   })
 
   it('returns null when the row carries no proposal record', () => {
@@ -88,11 +117,36 @@ describe('parseProposalRecord', () => {
     expect(summary).toEqual({
       rationale: null,
       keyVariables: ['cash'],
+      gates: [],
       model: null,
       templateId: null,
       templateVersion: null,
       proposalHash: null,
     })
+  })
+
+  it('drops malformed gates and keeps well-shaped ones in order', () => {
+    const summary = parseProposalRecord({
+      gates: [
+        { variable_id: 'cash', comparison: '>=', threshold: 90, basis: 'Anchor P50 100.' },
+        { variable_id: 'cash', comparison: '~=', threshold: 90, basis: 'Bad comparison.' },
+        { variable_id: 'cash', comparison: '>=', threshold: '90', basis: 'String threshold.' },
+        { variable_id: 'cash', comparison: '>=', threshold: 90, basis: '' },
+        { variable_id: '', comparison: '>=', threshold: 90, basis: 'Blank variable.' },
+        { variable_id: 'burn', comparison: '<', threshold: 5, basis: 'Second gate.' },
+        'not an object',
+        null,
+      ],
+    })
+    expect(summary?.gates).toEqual([
+      { variableId: 'cash', comparison: '>=', threshold: 90, basis: 'Anchor P50 100.' },
+      { variableId: 'burn', comparison: '<', threshold: 5, basis: 'Second gate.' },
+    ])
+  })
+
+  it('treats a non-array gates value as no gates', () => {
+    expect(parseProposalRecord({ gates: 'cash >= 90' })?.gates).toEqual([])
+    expect(parseProposalRecord({ gates: null })?.gates).toEqual([])
   })
 })
 

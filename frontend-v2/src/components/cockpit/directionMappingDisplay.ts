@@ -33,9 +33,43 @@ export function statusLabel(status: string | null | undefined): string {
   return STATUS_LABELS[status as DirectionMappingStatus] ?? status
 }
 
+export interface ProposalGateSummary {
+  variableId: string
+  comparison: string
+  threshold: number
+  basis: string
+}
+
+const GATE_COMPARISONS = new Set(['>=', '<=', '>', '<', '=='])
+
+function asGateList(value: unknown): ProposalGateSummary[] {
+  if (!Array.isArray(value)) return []
+  const gates: ProposalGateSummary[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const raw = entry as Record<string, unknown>
+    const variableId = asNonEmptyString(raw.variable_id)
+    const comparison = raw.comparison
+    const threshold = raw.threshold
+    const basis = asNonEmptyString(raw.basis)
+    if (
+      variableId !== null &&
+      typeof comparison === 'string' &&
+      GATE_COMPARISONS.has(comparison) &&
+      typeof threshold === 'number' &&
+      Number.isFinite(threshold) &&
+      basis !== null
+    ) {
+      gates.push({ variableId, comparison, threshold, basis })
+    }
+  }
+  return gates
+}
+
 export interface ProposalRecordSummary {
   rationale: string | null
   keyVariables: string[]
+  gates: ProposalGateSummary[]
   model: string | null
   templateId: string | null
   templateVersion: string | null
@@ -55,7 +89,9 @@ function asStringList(value: unknown): string[] {
  * Read the proposal record the backend pins on an `llm_proposal` row.
  * The record is an untyped JSON object; only well-shaped fields are
  * surfaced, anything else is dropped rather than rendered raw.
- * Returns null when the row carries no proposal record.
+ * Returns null when the row carries no proposal record. Template-v1
+ * records carry no `gates` key and surface an empty gates list —
+ * the queue renders that honestly instead of hiding the row.
  */
 export function parseProposalRecord(
   record: Record<string, unknown> | null | undefined,
@@ -64,6 +100,7 @@ export function parseProposalRecord(
   return {
     rationale: asNonEmptyString(record.rationale),
     keyVariables: asStringList(record.key_variables),
+    gates: asGateList(record.gates),
     model: asNonEmptyString(record.model),
     templateId: asNonEmptyString(record.template_id),
     templateVersion: asNonEmptyString(record.template_version),

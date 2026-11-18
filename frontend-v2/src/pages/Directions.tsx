@@ -545,6 +545,22 @@ export default function Directions() {
                         {proposal?.rationale && (
                           <p className="text-sm text-slate-300">理由：{proposal.rationale}</p>
                         )}
+                        {proposal && proposal.gates.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-xs text-slate-400">决策门槛：</p>
+                            <ul className="list-inside list-disc space-y-1">
+                              {proposal.gates.map((gate, index) => (
+                                <li key={index} className="text-xs text-slate-300">
+                                  {gate.variableId} {gate.comparison} {gate.threshold}{' '}
+                                  <span className="text-slate-400">（依据：{gate.basis}）</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {proposal && proposal.gates.length === 0 && (
+                          <p className="text-xs text-slate-400">决策门槛：无</p>
+                        )}
                         {provenance.length > 0 && (
                           <p className="text-xs text-slate-500">{provenance.join(' · ')}</p>
                         )}
