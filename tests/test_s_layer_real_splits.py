@@ -97,11 +97,11 @@ def test_real_structure_validates_and_counts() -> None:
         "faw-vw": 37,
         "jetta": 8,
         "faw-toyota": 19,
-        "dongfeng-honda": 1,
+        "dongfeng-honda": 7,
     }
-    assert sum(counts.values()) == 92
+    assert sum(counts.values()) == 98
     detail = next(c for c in result.checks if c.check == "structure").detail
-    assert detail == "5 OEM(s), 252 slot(s), 268 row(s)"
+    assert detail == "5 OEM(s), 523 slot(s), 560 row(s)"
     for oem in structure.oems:
         assert sum(n.share for n in oem.nameplates) == pytest.approx(1.0)
 
@@ -216,8 +216,31 @@ def test_real_structure_placeholders_contribute_zero() -> None:
             ]
             if len(rows) == 1 and rows[0].supplier_id == "UNKNOWN":
                 placeholders.append((oem.oem_id, nameplate, rows[0]))
-    # 64 non-Hongqi forecast models + HS9 PHEV + 1 Dongfeng Honda.
-    assert len(placeholders) == 66
+    # 15 unsourced FAW-VW models + 3 unsourced FAW-Toyota models +
+    # HS9 PHEV (forecast-only, zero 2026 volume, no Hongqi-sheet rows).
+    # Dongfeng Honda is no longer a placeholder (A9).
+    assert len(placeholders) == 19
+    assert {(oem_id, nameplate.nameplate_id) for oem_id, nameplate, _row in placeholders} == {
+        ("hongqi", "HS9 PHEV（P701）"),
+        ("faw-vw", "Audi A3 Sportback"),
+        ("faw-vw", "Audi A4L"),
+        ("faw-vw", "Audi A5L（B10）"),
+        ("faw-vw", "Audi A6L（C9）"),
+        ("faw-vw", "Audi Q3"),
+        ("faw-vw", "Audi Q5L NF"),
+        ("faw-vw", "Audi A3 Limousine"),
+        ("faw-vw", "Audi Q2L"),
+        ("faw-vw", "Audi Q3 Sportback PA"),
+        ("faw-vw", "Audi Q5 Sportback"),
+        ("faw-vw", "E6L Limousine"),
+        ("faw-vw", "Q6L e-tron  LWB"),
+        ("faw-vw", "Q6L e-tron  SB"),
+        ("faw-vw", "A4 e-tron"),
+        ("faw-vw", "Q4 e-tron"),
+        ("faw-toyota", "兰德酷路泽"),
+        ("faw-toyota", "考斯特"),
+        ("faw-toyota", "960D PHEV"),
+    }
     for _oem_id, _plate, row in placeholders:
         assert (row.product_id, row.fitment, row.price) == ("P.O", 0.0, 0.0)
     hongqi = _oem(structure, "hongqi")
@@ -225,7 +248,17 @@ def test_real_structure_placeholders_contribute_zero() -> None:
     assert hs9.share == 0.0
     dfh = _oem(structure, "dongfeng-honda")
     assert dfh.customer_status == "prospect"
-    assert [n.nameplate_id for n in dfh.nameplates] == ["待开发车型"]
+    # Sheet-model order is the generator's sorted order; CR-V/HR-V/UR-V
+    # carry the sheet's non-breaking hyphen (U+2011), copied verbatim.
+    assert [n.nameplate_id for n in dfh.nameplates] == [
+        "CR‑V",
+        "ENS2",
+        "HR‑V",
+        "UR‑V",
+        "思域",
+        "艾力绅",
+        "英仕派",
+    ]
 
 
 def test_real_structure_energy_bands_and_generations() -> None:
@@ -245,14 +278,23 @@ def test_real_structure_energy_bands_and_generations() -> None:
             assert nameplate.price_band == "unknown"
             assert nameplate.model_year == 2026
             assert nameplate.transition_schedule is None
-            assert len(nameplate.generations) == 1
-            generation = nameplate.generations[0]
-            assert (generation.generation_id, generation.lifecycle_phase) == (
-                "current",
-                "mature",
-            )
-            for trim in generation.trims:
-                assert trim.morphology is None
+            if nameplate.nameplate_id == "探歌":
+                # The only two-generation nameplate (T11): the X9HP
+                # generation phases out, the 8155 generation ramps in.
+                assert [
+                    (g.generation_id, g.lifecycle_phase, g.share)
+                    for g in nameplate.generations
+                ] == [("prev", "phase_out", 0.5), ("current", "ramp", 0.5)]
+            else:
+                assert len(nameplate.generations) == 1
+                generation = nameplate.generations[0]
+                assert (generation.generation_id, generation.lifecycle_phase) == (
+                    "current",
+                    "mature",
+                )
+            for generation in nameplate.generations:
+                for trim in generation.trims:
+                    assert trim.morphology is None
 
 
 def test_jan_oct_volumes_base() -> None:
@@ -564,7 +606,7 @@ def test_living_loop_inherits_stored_shares(monkeypatch, tmp_path: Path) -> None
 
 
 def test_real_structure_end_to_end_via_api(monkeypatch, tmp_path: Path) -> None:
-    """The full 92-nameplate real structure + stored 2026 mix go through
+    """The full 98-nameplate real structure + stored 2026 mix go through
     run creation, and the S-layer computes from stored shares alone."""
 
     setup_app(monkeypatch, tmp_path)
@@ -578,7 +620,7 @@ def test_real_structure_end_to_end_via_api(monkeypatch, tmp_path: Path) -> None:
         fetched = client.get(f"/runs/{run['id']}/automotive/split-structure")
         assert fetched.status_code == 200, fetched.text
         oems = fetched.json()["structure"]["oems"]
-        assert sum(len(oem["nameplates"]) for oem in oems) == 92
+        assert sum(len(oem["nameplates"]) for oem in oems) == 98
         assert fetched.json()["oem_production_shares"]["source"] == (
             "faw_volume_forecast_2026"
         )

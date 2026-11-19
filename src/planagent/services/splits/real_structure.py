@@ -60,15 +60,64 @@ builder; a violated rule refuses to build rather than guessing):
   (aggregation never reads it), and the assumption is listed for
   per-model verification, never generalized silently.
 
+- T9 Instrument re-homing. The VW/Toyota/DFH sheets list the instrument
+  cluster (仪表) in the P01 column, but the locked product-line
+  definition says P03 = display (incl. instrument; Ho 2026-11-16, F14).
+  Every P01 row whose solution names an instrument (``仪表`` in the
+  solution text) is re-homed to P03 with fitment/supplier/price
+  unchanged. The move is capacity-neutral across P01+P03 and is what
+  the one-host backstop requires: left in P01, the instrument rows
+  would push the P01 weighted fitment over 1.0 on most VW/Toyota/DFH
+  models. Hongqi/Jetta need no re-homing (their instruments are
+  already P03).
+- T10 Same-solution multi-row supplier splits. Two workbook
+  conventions exist for one solution carried by two suppliers, and
+  the builder distinguishes them by the fitments (never by guessing):
+  (Case A) UNEQUAL fitments are the suppliers' shares of the slot —
+  the slot fitment is their sum and each supplier's share is its
+  fitment over the sum (Toyota 仪表/SA8155P groups, all summing to
+  exactly 1.0); a sum over 1.0 refuses. (Case B) EQUAL fitments repeat
+  the slot rate on each row — the slot fitment is the repeated rate
+  and the suppliers split it equally (Jetta 1M*1 0.8/0.8, DFH
+  前视+环视 0.5/0.5; the equal split is labeled assumption A7). A
+  repeated (product, solution, supplier) pair refuses: the 揽镜 PA
+  R80 RHP row is excluded at generation as an F03 copy-slip duplicate
+  (see :mod:`real_data`), never merged. Either case preserves the
+  one-host weighted sum.
+- T11 Row-group partitions. 速腾's two row-groups (R4–R7 / R8–R11)
+  are two sub-populations (trims ``子人群1`` / ``子人群2``) and 探歌's
+  two row-groups (R26 / R27–R30) are two generations (``prev``,
+  ``phase_out`` / ``current``, ``ramp``) — the agreed F02 readings
+  (synthesis §C1: Sagitar pairs are sub-populations with weights;
+  T-Roc is a generation transition). Within a group, every row belongs
+  to that group only (the 仪表 rows repeat per group, one copy each);
+  rows with no group label apply model-wide. The group weights are
+  0.5/0.5 — a LABELED assumption (A7): the workbook gives no weights,
+  and neither the 2027 sheet (single merged 速腾 group) nor the
+  forecast supplies them. No transition schedule is attached to 探歌:
+  the workbook gives no start/duration, so the static 50/50 snapshot
+  stands until Ho's team supplies timing.
+- T12 Toyota families. The 一汽丰田-2026 sheet lists 8 family models
+  (卡罗拉, 亚洲龙, 锐放, 荣放, 皇冠陆放, 格瑞维亚 HEV, BZ3, BZ5)
+  while the forecast splits them into 19 powertrain variants. Each
+  family trim tree applies to every member forecast model (explicit
+  map ``_TOYOTA_FAMILY_MAP``, never fuzzy). BZ5 has sheet rows but no
+  forecast row: it is sheet-only, not a nameplate. The three forecast
+  models with no sheet rows stay placeholders (A1).
+
 Labeled simulated values (explicitly labeled, replaceable — Ho's
 internal-calibration ruling) remain where real data is absent:
 
-- A1 Placeholder nameplates: every non-Hongqi forecast model (64),
-  HS9 PHEV (forecast-only, zero 2026 volume), and one Dongfeng Honda
-  placeholder carry a single trim with one P.O row (fitment 0.0,
-  supplier ``"UNKNOWN"``, price 0.0): zero units, zero capacity, and
-  an R13 prompt flagging the un-decomposed basket. No fitment, price,
-  or supplier is invented for them.
+- A1 Placeholder nameplates: the 15 forecast FAW-VW models with no
+  sheet rows (all Audi + Audi e-tron lines — see ``_VW_UNSOURCED``),
+  the 3 forecast FAW-Toyota models with no sheet rows (兰德酷路泽,
+  考斯特, 960D PHEV — see ``_TOYOTA_UNSOURCED``), and HS9 PHEV
+  (forecast-only, zero 2026 volume, no Hongqi-sheet rows) carry a
+  single trim with one P.O row (fitment 0.0, supplier ``"UNKNOWN"``,
+  price 0.0): zero units, zero capacity, and an R13 prompt flagging
+  the un-decomposed basket. No fitment, price, or supplier is invented
+  for them. Dongfeng Honda is NO LONGER a placeholder: its 7 sheet
+  models carry real trim trees (A9); only its OEM share stays 0.0.
 - A2 ``price_band`` is ``"unknown"`` for every nameplate: neither
   extract carries price bands.
 - A3 The OEM mix (see :func:`real_oem_shares`) sums over the MODELED
@@ -81,17 +130,43 @@ internal-calibration ruling) remain where real data is absent:
   is a separate OEM. Everything else in the market — including Audi —
   stays FAW-VW (Ho: volume spine includes Audi).
 - A5 Dongfeng Honda is a prospect with share 0.0 (no forecast
-  volume) and a placeholder nameplate; its S-layer own sales stay 0
-  by the customer-status flag, per the Q8/prospect ruling.
+  volume); its S-layer own sales stay 0 by the customer-status flag,
+  per the Q8/prospect ruling. Its 7 nameplates now carry REAL trim
+  trees from the 东风本田-2026 sheet (A9) — the prospect flag, not a
+  placeholder, is what keeps its sales at zero.
 - A6 The two Hongqi forecast/trim-split name mismatches are mapped
   explicitly (never fuzzy-matched): forecast ``国耀 GAS（N117）`` and
   ``国礼 GAS（V501）`` are the trim-split ``国耀 GAS（C817-01）`` and
   ``国礼 GAS（C872-10）`` (same model names, different internal
   codes). The builder asserts the mapped model sets are identical.
-- A7 Equal 0.5/0.5 supplier splits (T3) and the ICE default (T8)
-  are the only numeric assumptions in the real rows; both are
-  labeled here and in the report, and both are replaceable without
-  touching the transformation rules.
+- A7 Equal 0.5/0.5 splits wherever the workbook gives no ratio are
+  the only numeric assumptions in the real rows (plus the ICE default
+  in T8); all are labeled here and in the report, and all are
+  replaceable without touching the transformation rules: the T3 A/B
+  supplier cells (Hongqi), the Case B repeated-rate rows (T10: Jetta
+  1M*1, DFH 前视+环视), the 速腾 trim weights and the 探歌 generation
+  shares (T11).
+- A8 Toyota family trees (T12): the sheet gives one configuration per
+  family; no per-variant (GAS/HEV/BEV) split exists in the workbook,
+  so each member forecast model carries the family tree verbatim. If
+  Ho's team supplies per-variant splits, the map is replaced by
+  per-model rows.
+- A9 Dongfeng Honda nameplate shares come from the sheet's Jan-Oct
+  volumes (the only DFH volume source; no forecast row exists), so the
+  7 DFH nameplates sum to 1.0 within the OEM. The OEM share stays
+  0.0 (A5) — the shares affect no run's capacity.
+- A10 Sheet-vs-forecast volume conflicts are REPORTED, never resolved
+  by adjusting either side: nameplate shares always come from the
+  forecast, trim trees always from the sheets. Known conflicts: the
+  探岳 family mix (sheet Jan-Oct 20/10/70 vs forecast full-year
+  63/2/34 — Nov–Dec would need 12x the PA monthly rate); New ID.4's
+  sheet volume is 1888x0.7 (ID.4's forecast) while the forecast also
+  carries a separate New ID.4 line (10,905); ID.AURA's sheet Jan-Oct
+  volume (3,815.56) exceeds its full-year forecast (2,032); 速腾 and
+  速腾 S share one sheet volume cell (52,613, F17 — unresolvable from
+  the workbook). The reconciliation base uses sheet volumes, so the
+  sheet's own arithmetic still reconciles exactly (see
+  :func:`build_sheet_structure`).
 
 Per-model inspections (Q9: no single-case rule generalized — each
 model below was inspected individually; the full list is in
@@ -111,6 +186,37 @@ S-LAYER-REAL-SPLITS.md):
 - 国悦 has no workbook P01 row; 国悦 QM7 has only a P03 row; P-H9
   has no P04 row. Absent rows stay absent (never filled from other
   models, never assumed fused).
+- 速腾: two row-groups with mirrored host mixes (X9HP 0.1/8155 0.9
+  vs 0.9/0.1) and different P02/P03/P05 sets — two sub-population
+  trims at 0.5/0.5 (T11/A7). The 2027 sheet merges them into one
+  group (group 1's host mix), which corroborates the grouping but
+  supplies no 2026 weights.
+- 探歌: X9HP 1.0 vs 8155 1.0 sharing one volume — two generations
+  at 0.5/0.5 (T11/A7); the 2027 sheet carries only the 8155
+  generation (volume 0 — the model ends after 2026, forecast
+  2027–2031 all 0; its successor is the A SUV, forecast from 2027).
+- 揽镜 PA: the R80 P02 RHP row repeats R76 identically and is dropped
+  as an F03 copy-slip duplicate (see :mod:`real_data`); every other
+  VW model carries exactly one RHP row at 0.3.
+- Jetta VA3: the 11-camera P05 group is EXCLUDED (Ho Q6 misfill);
+  VA3 keeps P01 only. Jetta M6 keeps its identical 11-camera row:
+  M6 is the new J01 platform with a full P02/P03/P05 set, and the row
+  persists in the 2027 sheet — inspected individually per Q9, not
+  generalized from VA3. Jetta J03's P02 NGX:J6M row is excluded
+  (supplier TBD, no fitment/price). Jetta has no P04 rows anywhere
+  (Ho Q10: genuinely no T-BOX).
+- Toyota: the sheet's single-supplier P05 rows (摄像头环视 0.6–1.0)
+  and the Case A host/instrument splits (锐放 SA8155P 0.01/0.99) are
+  verbatim; 卡罗拉/亚洲龙/锐放/荣放/皇冠陆放/格瑞维亚 carry NO P02
+  rows (absent stays absent). BZ5 is sheet-only (no forecast row).
+- Dongfeng Honda: every model carries the same shape (8155 1.0 +
+  8.8仪表 1.0 + 中控 1.0 + 4G/5G 1.0 + 前视+环视 0.5/0.5 dual-supplier);
+  the P05 dual rows are Case B (T10/A7) — the sheet double-counts
+  those slots and the structure corrects P05 to half the displayed
+  total. DFH volumes are 9→10-month extrapolations (A7 in the review).
+- ID.4（30%） has no P01 rows (its host lives in the New ID.4 block);
+  absent stays absent. B NB（CSP）/B SUV（CSP）/C-CUV/A SUV carry
+  real trees at forecast share 0.0 (2026 volume 0).
 """
 
 from __future__ import annotations
@@ -124,7 +230,16 @@ from .models import (
     SplitStructure,
     TrimSplit,
 )
-from .real_data import FORECAST_2026_ROWS, HONGQI_WORKBOOK_ROWS, JAN_OCT_VOLUMES
+from .real_data import (
+    DFH_WORKBOOK_ROWS,
+    FORECAST_2026_ROWS,
+    HONGQI_WORKBOOK_ROWS,
+    JAN_OCT_VOLUMES,
+    JETTA_WORKBOOK_ROWS,
+    SHEET_JAN_OCT_VOLUMES,
+    TOYOTA_WORKBOOK_ROWS,
+    VW_WORKBOOK_ROWS,
+)
 
 #: The model year this structure describes (forecast year = workbook year).
 REAL_STRUCTURE_YEAR = 2026
@@ -165,8 +280,46 @@ _BUNDLE_ROWS = {("P-H9 PHEV（P601/E702）", "P01", "华为")}
 #: the Chinese 新能源 definition HEV is not a new-energy vehicle.
 _NEV_MARKERS = ("BEV", "PHEV", "REEV", "e-tron", "ID.", "BZ")
 
-#: The Dongfeng Honda placeholder nameplate id (A5).
-_DONGFENG_PLACEHOLDER_NAMEPLATE = "待开发车型"
+#: Toyota sheet families -> forecast member models (T12/A8). Explicit,
+#: one entry per family; the builder refuses any forecast model that
+#: maps to no family and any family with no sheet rows. BZ5 has sheet
+#: rows but no forecast row: sheet-only, not a nameplate.
+_TOYOTA_FAMILY_MAP = {
+    "卡罗拉": ["卡罗拉 Long HEV", "卡罗拉 GAS 1.2T", "卡罗拉 Long GAS"],
+    "亚洲龙": ["亚洲龙 GAS", "亚洲龙 HEV 2.0L", "亚洲龙 HEV 2.5L"],
+    "锐放": ["卡罗拉锐放 GAS", "卡罗拉锐放 HEV"],
+    "荣放": ["荣放 GAS", "荣放 HEV 2.5L", "荣放 HEV  2.0L"],
+    "皇冠陆放": ["皇冠陆放 GAS", "皇冠陆放 HEV"],
+    "格瑞维亚 HEV": ["格瑞维亚 HEV"],
+    "BZ3": ["BZ3 BEV", "BZ3C BEV"],
+}
+
+#: Forecast models with no workbook sheet rows (A1): labeled
+#: placeholders, never filled from other models.
+_VW_UNSOURCED = frozenset(
+    {
+        "Audi A3 Sportback",
+        "Audi A4L",
+        "Audi A5L（B10）",
+        "Audi A6L（C9）",
+        "Audi Q3",
+        "Audi Q5L NF",
+        "Audi A3 Limousine",
+        "Audi Q2L",
+        "Audi Q3 Sportback PA",
+        "Audi Q5 Sportback",
+        "E6L Limousine",
+        "Q6L e-tron  LWB",
+        "Q6L e-tron  SB",
+        "A4 e-tron",
+        "Q4 e-tron",
+    }
+)
+_TOYOTA_UNSOURCED = frozenset({"兰德酷路泽", "考斯特", "960D PHEV"})
+
+#: Equal split where the workbook gives no ratio (A7): sub-population
+#: trims, generation shares, and Case B supplier splits.
+_EQUAL_GROUP_SHARE = 0.5
 
 #: Split-trim labels (T1).
 _SPLIT_LABELS = ("低配", "高配")
@@ -416,28 +569,363 @@ def _hongqi_oem(volumes: dict[str, int]) -> OemSplit:
     return OemSplit(oem_id=OEM_HONGQI, customer_status="existing", nameplates=nameplates)
 
 
-def _placeholder_oem(
-    oem_id: str, customer_status: str, volumes: dict[str, int]
-) -> OemSplit:
-    """An OEM whose nameplates are all labeled-simulated placeholders."""
+def _rehome_instrument(product: str, solution: str | None) -> str:
+    """T9: 仪表 rows in the P01 column belong to P03."""
 
+    if product == "P01" and solution and "仪表" in solution:
+        return "P03"
+    return product
+
+
+def _slot_fitments(rows: list[tuple]) -> list[ProductFitment]:
+    """ProductFitment list for one trim from its raw rows (T9/T10).
+
+    ``rows`` are (model, product, trim_label, trim_source, solution,
+    fitment, supplier, price) tuples already filtered to one trim (and
+    one generation). Same-(product, solution) rows are merged per T10:
+    unequal fitments are the suppliers' shares of the slot (Case A),
+    equal fitments repeat the slot rate with an equal supplier split
+    (Case B, A7). A repeated (product, solution, supplier) pair
+    refuses — the builder never silently drops a duplicate.
+    """
+
+    groups: dict[tuple[str, str], list[tuple[float, str, float]]] = {}
+    order: list[tuple[str, str]] = []
+    for _model, product, _label, _source, solution, fitment, supplier, price in rows:
+        product = _rehome_instrument(product, solution)
+        key = (product, (solution or "").strip())
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append((float(fitment), str(supplier), float(price)))
+    fitments: list[ProductFitment] = []
+    for product, solution in order:
+        grows = groups[(product, solution)]
+        if len({supplier for _fit, supplier, _price in grows}) != len(grows):
+            raise ValueError(
+                f"Duplicate (product, solution, supplier) in one trim: "
+                f"{product} {solution!r} — refusing to build."
+            )
+        if len(grows) == 1:
+            fitment, supplier, price = grows[0]
+            fitments.append(
+                ProductFitment(
+                    product_id=product,
+                    fitment_kind="rate",
+                    fitment=fitment,
+                    supplier_id=supplier,
+                    supplier_share=1.0,
+                    price=price,
+                    solution_code=solution or None,
+                    price_basis="discrete",
+                )
+            )
+            continue
+        fits = [grow[0] for grow in grows]
+        if len(set(fits)) == 1:
+            # Case B: the fitments repeat the slot rate.
+            for fitment, supplier, price in grows:
+                fitments.append(
+                    ProductFitment(
+                        product_id=product,
+                        fitment_kind="rate",
+                        fitment=fitment,
+                        supplier_id=supplier,
+                        supplier_share=1.0 / len(grows),
+                        price=price,
+                        solution_code=solution or None,
+                        price_basis="discrete",
+                    )
+                )
+            continue
+        # Case A: the fitments ARE the suppliers' shares of the slot.
+        total = sum(fits)
+        if total > 1.0 + 1e-9:
+            raise ValueError(
+                f"Supplier-split fitments sum to {total} (> 1) for "
+                f"{product} {solution!r} — refusing to build."
+            )
+        for fitment, supplier, price in grows:
+            fitments.append(
+                ProductFitment(
+                    product_id=product,
+                    fitment_kind="rate",
+                    fitment=total,
+                    supplier_id=supplier,
+                    supplier_share=fitment / total,
+                    price=price,
+                    solution_code=solution or None,
+                    price_basis="discrete",
+                )
+            )
+    return fitments
+
+
+def _generic_trims(model: str, rows: list[tuple]) -> list[TrimSplit]:
+    """Trim tree for one non-Hongqi model from its workbook rows (T11).
+
+    Rows labeled ``子人群1`` / ``子人群2`` (source ``row_group``) form
+    two trims at 0.5/0.5 (A7); rows with no group label apply
+    model-wide (within the generation) in a single ``全车型`` trim.
+    Any other row-group structure refuses — the builder does not guess
+    partitions.
+    """
+
+    grouped: dict[str, list[tuple]] = {}
+    whole: list[tuple] = []
+    for row in rows:
+        label, source = row[2], row[3]
+        if source == "row_group":
+            grouped.setdefault(label, []).append(row)
+        elif source in ("default", "generation_prev", "generation_current"):
+            whole.append(row)
+        else:
+            raise ValueError(
+                f"Unexpected trim source {source!r} for {model!r} — "
+                "refusing to build."
+            )
+    if not grouped:
+        return [
+            TrimSplit(
+                trim_id="全车型",
+                share=1.0,
+                fitments=_slot_fitments(whole),
+            )
+        ]
+    if whole:
+        raise ValueError(
+            f"{model!r} mixes whole-model rows with row-group rows — "
+            "refusing to build."
+        )
+    if set(grouped) != {"子人群1", "子人群2"}:
+        raise ValueError(
+            f"{model!r} has unexpected row groups {sorted(grouped)} — "
+            "refusing to build."
+        )
+    return [
+        TrimSplit(
+            trim_id=label,
+            share=_EQUAL_GROUP_SHARE,
+            fitments=_slot_fitments(grouped[label]),
+        )
+        for label in ("子人群1", "子人群2")
+    ]
+
+
+def _generic_generations(model: str, rows: list[tuple]) -> list[GenerationSplit]:
+    """Generation tree for one non-Hongqi model from its rows (T11).
+
+    Rows tagged ``generation_prev`` / ``generation_current`` form two
+    generations (``prev``/``phase_out`` and ``current``/``ramp``) at
+    0.5/0.5 (A7); untagged rows form a single ``current``/``mature``
+    generation. A lone generation tag refuses.
+    """
+
+    prev = [row for row in rows if row[3] == "generation_prev"]
+    current = [row for row in rows if row[3] == "generation_current"]
+    whole = [row for row in rows if row[3] in ("default", "row_group")]
+    if prev and current:
+        if whole:
+            raise ValueError(
+                f"{model!r} mixes generation rows with untagged rows — "
+                "refusing to build."
+            )
+        return [
+            GenerationSplit(
+                generation_id="prev",
+                lifecycle_phase="phase_out",
+                share=_EQUAL_GROUP_SHARE,
+                trims=_generic_trims(model, prev),
+            ),
+            GenerationSplit(
+                generation_id="current",
+                lifecycle_phase="ramp",
+                share=_EQUAL_GROUP_SHARE,
+                trims=_generic_trims(model, current),
+            ),
+        ]
+    if prev or current:
+        raise ValueError(
+            f"{model!r} has a lone generation tag — refusing to build."
+        )
+    return [
+        GenerationSplit(
+            generation_id="current",
+            lifecycle_phase="mature",
+            share=1.0,
+            trims=_generic_trims(model, whole),
+        )
+    ]
+
+
+def _rows_by_model(rows: list[tuple]) -> dict[str, list[tuple]]:
+    """Group workbook rows by their sheet model name."""
+
+    grouped: dict[str, list[tuple]] = {}
+    for row in rows:
+        grouped.setdefault(row[0], []).append(row)
+    return grouped
+
+
+def _nameplate_from_rows(
+    nameplate_id: str, share: float, rows: list[tuple]
+) -> NameplateSplit:
+    """One real nameplate from its workbook rows (T9–T11)."""
+
+    return NameplateSplit(
+        nameplate_id=nameplate_id,
+        energy=_energy_for(nameplate_id),
+        price_band="unknown",
+        share=share,
+        model_year=REAL_STRUCTURE_YEAR,
+        generations=_generic_generations(nameplate_id, rows),
+    )
+
+
+def _mapped_oem(
+    oem_id: str,
+    volumes: dict[str, int],
+    rows_by_model: dict[str, list[tuple]],
+    *,
+    unsourced: frozenset[str] = frozenset(),
+    customer_status: str = "existing",
+) -> OemSplit:
+    """An OEM whose models map 1:1 to sheet models (VW/Jetta/DFH).
+
+    Every volume model must have sheet rows or be in ``unsourced``
+    (placeholder, A1); every sheet model must have a volume. Either
+    mismatch refuses.
+    """
+
+    mapped = set(rows_by_model)
+    unmapped = set(volumes) - mapped
+    if unmapped != set(unsourced):
+        raise ValueError(
+            f"{oem_id}: volume models without sheet rows "
+            f"{sorted(unmapped)} != expected unsourced {sorted(unsourced)} "
+            "— refusing to build."
+        )
+    if mapped - set(volumes):
+        raise ValueError(
+            f"{oem_id}: sheet models without volumes "
+            f"{sorted(mapped - set(volumes))} — refusing to build."
+        )
     shares = _shares_from_volumes(volumes)
+    nameplates: list[NameplateSplit] = []
+    for nameplate_id, share in shares.items():
+        rows = rows_by_model.get(nameplate_id)
+        if rows is None:
+            nameplates.append(_placeholder_nameplate(nameplate_id, share))
+            continue
+        nameplates.append(
+            _nameplate_from_rows(nameplate_id, share, rows)
+        )
     return OemSplit(
         oem_id=oem_id,
         customer_status=customer_status,  # type: ignore[arg-type]
+        nameplates=nameplates,
+    )
+
+
+def _toyota_oem(volumes: dict[str, int]) -> OemSplit:
+    """The FAW-Toyota OEM: family trim trees per forecast member (T12).
+
+    Every forecast model must map to exactly one sheet family or be in
+    ``_TOYOTA_UNSOURCED`` (placeholder, A1); every family must have
+    sheet rows; every member of the map must be a forecast model.
+    """
+
+    rows_by_family = _rows_by_model(TOYOTA_WORKBOOK_ROWS)
+    family_of: dict[str, str] = {}
+    for family, members in _TOYOTA_FAMILY_MAP.items():
+        for member in members:
+            if member in family_of:
+                raise ValueError(
+                    f"Toyota member {member!r} is in two families — "
+                    "refusing to build."
+                )
+            family_of[member] = family
+    if set(family_of) - set(volumes):
+        raise ValueError(
+            "Toyota family-map members without forecast volumes "
+            f"{sorted(set(family_of) - set(volumes))} — refusing to build."
+        )
+    if set(rows_by_family) - set(_TOYOTA_FAMILY_MAP) - {"BZ5"}:
+        raise ValueError(
+            "Toyota sheet families outside the map "
+            f"{sorted(set(rows_by_family) - set(_TOYOTA_FAMILY_MAP) - {'BZ5'})} "
+            "— refusing to build."
+        )
+    unmapped = set(volumes) - set(family_of)
+    if unmapped != set(_TOYOTA_UNSOURCED):
+        raise ValueError(
+            f"Toyota volume models without a family {sorted(unmapped)} != "
+            f"expected unsourced {sorted(_TOYOTA_UNSOURCED)} — refusing."
+        )
+    shares = _shares_from_volumes(volumes)
+    nameplates: list[NameplateSplit] = []
+    for nameplate_id, share in shares.items():
+        family = family_of.get(nameplate_id)
+        if family is None:
+            nameplates.append(_placeholder_nameplate(nameplate_id, share))
+            continue
+        nameplates.append(
+            _nameplate_from_rows(nameplate_id, share, rows_by_family[family])
+        )
+    return OemSplit(
+        oem_id=OEM_FAW_TOYOTA, customer_status="existing", nameplates=nameplates
+    )
+
+
+def _toyota_sheet_oem(volumes: dict[str, float]) -> OemSplit:
+    """The FAW-Toyota OEM on the sheet-volume base (reconciliation).
+
+    Nameplates are the sheet families themselves (BZ5 included — its
+    rows are part of the sheet's totals), each carrying its family
+    tree at its sheet-volume share.
+    """
+
+    rows_by_family = _rows_by_model(TOYOTA_WORKBOOK_ROWS)
+    if set(volumes) != set(rows_by_family):
+        raise ValueError(
+            "Toyota sheet-volume families disagree with the sheet rows: "
+            f"{sorted(set(volumes) ^ set(rows_by_family))} — refusing."
+        )
+    shares = _shares_from_volumes(volumes)
+    return OemSplit(
+        oem_id=OEM_FAW_TOYOTA,
+        customer_status="existing",
         nameplates=[
-            _placeholder_nameplate(nameplate_id, share)
-            for nameplate_id, share in shares.items()
+            _nameplate_from_rows(family, share, rows_by_family[family])
+            for family, share in shares.items()
         ],
+    )
+
+
+def _dfh_oem() -> OemSplit:
+    """The Dongfeng Honda OEM: real trim trees, sheet-volume shares (A9).
+
+    Dongfeng Honda has no forecast volume (A5): the sheet's Jan-Oct
+    volumes are its only volume source, so the 7 nameplates sum to 1.0
+    within the OEM while the OEM share stays 0.0.
+    """
+
+    volumes = dict(SHEET_JAN_OCT_VOLUMES[OEM_DONGFENG_HONDA])
+    return _mapped_oem(
+        OEM_DONGFENG_HONDA,
+        volumes,
+        _rows_by_model(DFH_WORKBOOK_ROWS),
+        customer_status="prospect",
     )
 
 
 def build_real_structure() -> SplitStructure:
     """The full real split structure: 5 OEMs, 2026 forecast shares.
 
-    Hongqi carries the real workbook trim trees; FAW-VW, Jetta, and
-    FAW-Toyota carry real forecast nameplate shares with placeholder
-    trim detail (A1); Dongfeng Honda is the zero-share prospect (A5).
+    Hongqi, FAW-VW, Jetta, and FAW-Toyota carry real workbook trim
+    trees where the sheets have rows (A1 lists the 19 forecast models
+    that stay placeholders); Dongfeng Honda carries real trim trees on
+    sheet-volume shares with a 0.0 OEM share (A5/A9).
     """
 
     volumes = _forecast_volumes_by_oem()
@@ -450,19 +938,69 @@ def build_real_structure() -> SplitStructure:
     return SplitStructure(
         oems=[
             _hongqi_oem(volumes[OEM_HONGQI]),
-            _placeholder_oem(OEM_FAW_VW, "existing", volumes[OEM_FAW_VW]),
-            _placeholder_oem(OEM_JETTA, "existing", volumes[OEM_JETTA]),
-            _placeholder_oem(OEM_FAW_TOYOTA, "existing", volumes[OEM_FAW_TOYOTA]),
-            OemSplit(
-                oem_id=OEM_DONGFENG_HONDA,
-                customer_status="prospect",
-                nameplates=[
-                    _placeholder_nameplate(
-                        _DONGFENG_PLACEHOLDER_NAMEPLATE, 1.0, energy="ICE"
-                    )
-                ],
+            _mapped_oem(
+                OEM_FAW_VW,
+                volumes[OEM_FAW_VW],
+                _rows_by_model(VW_WORKBOOK_ROWS),
+                unsourced=_VW_UNSOURCED,
             ),
+            _mapped_oem(
+                OEM_JETTA,
+                volumes[OEM_JETTA],
+                _rows_by_model(JETTA_WORKBOOK_ROWS),
+            ),
+            _toyota_oem(volumes[OEM_FAW_TOYOTA]),
+            _dfh_oem(),
         ]
+    )
+
+
+def build_sheet_structure(oem_id: str) -> SplitStructure:
+    """The single-OEM structure on the sheet Jan-Oct volume base.
+
+    The reconciliation view: nameplate shares come from the sheet's
+    own Jan-Oct volumes (``SHEET_JAN_OCT_VOLUMES``), so the
+    structure's capacity reproduces the workbook's sheet totals
+    exactly (after the T9/T10/T11 corrections — see
+    :mod:`real_data`). Hongqi delegates to
+    :func:`build_hongqi_structure` (``"jan_oct_actuals"``); Toyota
+    nameplates are the sheet families themselves (BZ5 included).
+    """
+
+    if oem_id == OEM_HONGQI:
+        return build_hongqi_structure(shares_source="jan_oct_actuals")
+    if oem_id == OEM_FAW_VW:
+        return SplitStructure(
+            oems=[
+                _mapped_oem(
+                    OEM_FAW_VW,
+                    dict(SHEET_JAN_OCT_VOLUMES[OEM_FAW_VW]),
+                    _rows_by_model(VW_WORKBOOK_ROWS),
+                )
+            ]
+        )
+    if oem_id == OEM_JETTA:
+        return SplitStructure(
+            oems=[
+                _mapped_oem(
+                    OEM_JETTA,
+                    dict(SHEET_JAN_OCT_VOLUMES[OEM_JETTA]),
+                    _rows_by_model(JETTA_WORKBOOK_ROWS),
+                )
+            ]
+        )
+    if oem_id == OEM_FAW_TOYOTA:
+        return SplitStructure(
+            oems=[
+                _toyota_sheet_oem(dict(SHEET_JAN_OCT_VOLUMES[OEM_FAW_TOYOTA]))
+            ]
+        )
+    if oem_id == OEM_DONGFENG_HONDA:
+        return SplitStructure(oems=[_dfh_oem()])
+    raise ValueError(
+        f"Unknown oem_id {oem_id!r}; expected one of "
+        f"{OEM_HONGQI}, {OEM_FAW_VW}, {OEM_JETTA}, {OEM_FAW_TOYOTA}, "
+        f"{OEM_DONGFENG_HONDA}."
     )
 
 
