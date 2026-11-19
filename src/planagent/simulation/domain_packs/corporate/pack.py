@@ -42,6 +42,26 @@ class CorporateDomainPack(DomainPack):
             StateFieldSpec("gross_margin", "Normalized gross margin ratio.", 0.62),
             StateFieldSpec("nrr", "Net revenue retention index.", 1.02),
             StateFieldSpec("churn_risk", "Renewal and logo churn risk.", 0.12),
+            # Revenue / profit magnitude (Fix 3, 2026-11-19): the backtest
+            # showed revenue magnitude could not be expressed — the pack
+            # had no revenue state field, so `cash` sat at its template
+            # value for the whole run. Both fields are in the same
+            # abstract units as `cash` (pack default 100.0); a case
+            # declares its own unit convention (e.g. 亿 RMB) through its
+            # revenue/profit variables and tick-driver formulas, exactly
+            # as cases already do for `market_share`. Defaults are
+            # template-consistent (see actor_templates) and change no
+            # existing field's default.
+            StateFieldSpec(
+                "revenue",
+                "Total revenue for the period, same abstract units as cash.",
+                100.0,
+            ),
+            StateFieldSpec(
+                "profit",
+                "Net profit for the period, same abstract units as cash.",
+                20.0,
+            ),
         ]
 
     @property
@@ -85,6 +105,11 @@ class CorporateDomainPack(DomainPack):
                     "gross_margin": 0.58,
                     "nrr": 1.03,
                     "churn_risk": 0.11,
+                    # Revenue/profit track cash (120.0) at a 20% net-margin
+                    # assumption — a labeled template assumption, not a
+                    # measured margin; cases override both via variables.
+                    "revenue": 120.0,
+                    "profit": 24.0,
                 },
             ),
             ActorTemplate(
@@ -105,6 +130,8 @@ class CorporateDomainPack(DomainPack):
                     "gross_margin": 0.74,
                     "nrr": 1.01,
                     "churn_risk": 0.1,
+                    "revenue": 60.0,
+                    "profit": 12.0,
                 },
             ),
         ]
