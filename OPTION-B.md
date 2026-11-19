@@ -214,6 +214,28 @@ hunt for it:
    the name check does not consult origin or status), and
    derive skips override rows. The override row is never
    silently rewritten by any automated path.
+8. **Arm resampling is opt-in per direction**
+   (`resample_variables`, fix/arm-resample). Default `false`:
+   the child run starts from the anchor's fork-snapshot state,
+   exactly as before — a sampled variable that names a state
+   field keeps the forked value, so when every remaining driver
+   variable is pinned FIXED the arm's Monte Carlo ensemble
+   collapses to a degenerate point estimate (P10 = P50 = P90;
+   the first backtest run measured this on all three cases) and
+   `most_robust` duplicates `highest_p50`. With
+   `resample_variables: true` on a direction, that direction's
+   child re-draws its non-pinned variables from their own
+   distributions, deterministically from the run seed, and the
+   re-drawn values take precedence over the inherited fork state
+   for exactly the state fields they cover; pinned FIXED
+   overrides still sample at exactly their pinned value, and
+   every other forked state field is unchanged. The flag is
+   stored on the child's `scenario` fragment (and in the
+   mapping's `override_record`), so Monte Carlo trials and
+   replays of the child inherit it, and a re-fork inherits the
+   stored setting unless its request states one explicitly.
+   The same flag exists on `ScenarioRunCreate`, so the direct
+   scenario-branch endpoint offers the same opt-in.
 
 ### Refuse, not flag
 
@@ -267,6 +289,29 @@ that already succeeded.
   `test_direction_derivation_api.py`,
   `test_direction_proposals_api.py`, `test_narratives_api.py`,
   `test_distributions_api.py` — 83 passed, 0 failed.
+
+### Arm resampling (fix/arm-resample, 2026-11-19): 4 new tests, all passed
+
+- `tests/test_arm_resample.py`: 4 passed — resampled arm
+  ensemble non-degenerate (P10 < P50 < P90, 18 distinct trial
+  values of 20) while the same-pin control arm stays degenerate
+  (P10 = P50 = P90 = 0.1082, the backtest's Huawei B value);
+  same-seed re-run reproduces identical trial values; pinned
+  FIXED values land exactly (driver variable and state-field
+  variable alike); `most_robust` selects the safe arm while
+  `highest_p50` selects the risky arm on a crafted case.
+- Neighbor regression for the flag plumbing (no behavior change
+  at the default): `test_direction_overrides_api.py`,
+  `test_direction_override_reforks_api.py`,
+  `test_direction_overrides_hardening.py`,
+  `test_direction_overrides_unit.py`, `test_distributions_api.py`,
+  `test_tick_drivers.py`, `test_direction_derivation_api.py`,
+  `unit/test_direction_derivation.py`,
+  `test_trial_values_api.py`, `test_robustness_api.py`,
+  `unit/test_replay_comparison.py`,
+  `test_simulation_action_selection.py`,
+  `test_s_layer_real_splits.py` — 204 passed, 0 failed.
+  (Full suite left to the integration gate, per the task.)
 
 ### Full backend suite (the gate): 1976 passed, via 4 partitioned chunks
 

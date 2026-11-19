@@ -433,7 +433,16 @@ class DirectionOverrideSpec(BaseModel):
     At least one override is required: an empty override set
     would create a run identical to the anchor. ``fork_step``
     names the anchor tick the child run forks from; omitted, the
-    scenario-branch midpoint default applies.
+    scenario-branch midpoint default applies. ``resample_variables``
+    (default False) turns on arm resampling for this direction's
+    child run: the child re-draws its non-pinned variables from
+    their own distributions, deterministically from the run seed,
+    and the re-drawn values take precedence over the inherited
+    fork-snapshot state for the state fields they cover — so a
+    Monte Carlo ensemble over the child is a real distribution
+    instead of the degenerate point estimate the fork snapshot
+    otherwise forces when every driver variable is pinned. Pinned
+    FIXED overrides still sample at exactly their pinned value.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -443,6 +452,7 @@ class DirectionOverrideSpec(BaseModel):
     arm: Literal["baseline", "strategy"] = "baseline"
     mece_branches: list[str] = Field(default_factory=list, max_length=20)
     fork_step: int | None = Field(default=None, ge=1)
+    resample_variables: bool = False
 
     @field_validator("name", mode="before")
     @classmethod
@@ -544,13 +554,18 @@ class DirectionOverrideReforkRequest(BaseModel):
     new child run forks from; omitted, the scenario-branch
     midpoint default applies (the same default as override
     creation — the previous fork step is NOT inherited, so the
-    caller states the fork point it wants).
+    caller states the fork point it wants). ``resample_variables``
+    is None by default, which inherits the stored mapping's arm
+    resampling setting; an explicit true/false overrides it for
+    the new branch run (and is stored as the mapping's new
+    setting).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     overrides: dict[str, float] = Field(min_length=1, max_length=MAX_VARIABLES)
     fork_step: int | None = Field(default=None, ge=1)
+    resample_variables: bool | None = None
 
     @field_validator("overrides", mode="before")
     @classmethod

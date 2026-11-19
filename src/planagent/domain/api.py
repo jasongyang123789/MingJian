@@ -270,6 +270,20 @@ class ScenarioRunCreate(APIModel):
     variable_template_id: str | None = None
     variable_set: VariableSet | None = None
     decomposition_branch: str | None = None
+    # Arm resampling (fix/arm-resample). False (default): the child
+    # run starts from the parent's fork-snapshot state, so a sampled
+    # variable that names a state field keeps the forked value and a
+    # Monte Carlo ensemble over the child can collapse to a degenerate
+    # point estimate when every remaining driver variable is pinned.
+    # True: the child re-draws its non-pinned variables from their own
+    # distributions, deterministically from the run seed, and the
+    # re-drawn values take precedence over the inherited fork state
+    # for exactly the state fields they cover; pinned FIXED overrides
+    # still sample at exactly their pinned value, and every other
+    # forked state field is unchanged. The flag is stored on the
+    # child's ``scenario`` fragment, so Monte Carlo trials and replays
+    # of the child inherit it.
+    resample_variables: bool = False
 
 
 class ScenarioSearchRequest(APIModel):

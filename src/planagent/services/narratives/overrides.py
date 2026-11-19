@@ -95,6 +95,13 @@ class BranchRequest:
     fork_step: int
     variable_set: VariableSet
     assumptions: list[str] = field(default_factory=list)
+    # Arm resampling (fix/arm-resample): when true, the child run
+    # re-draws its non-pinned variables from their own
+    # distributions, deterministically from the run seed (see
+    # ScenarioRunCreate.resample_variables). False keeps the
+    # fork-snapshot precedence for every caller that does not opt
+    # in — the pre-fix behavior.
+    resample_variables: bool = False
 
 
 @dataclass

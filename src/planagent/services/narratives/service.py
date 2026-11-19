@@ -1112,6 +1112,7 @@ class NarrativeService:
                         fork_step=fork_step,
                         variable_set=merged,
                         assumptions=[assumption_line(spec.name, spec.overrides)],
+                        resample_variables=spec.resample_variables,
                     ),
                 )
             except BranchCreationFailed as exc:
@@ -1243,6 +1244,17 @@ class NarrativeService:
                 f"No state snapshot found at fork step {fork_step} for run {anchor_id!r}.",
             )
         override_hash = sha256_hash(request.model_dump(mode="json"))
+        # Arm resampling (fix/arm-resample): a refork inherits the
+        # stored mapping's setting unless the request states one
+        # explicitly; pre-flag records read as False.
+        stored_resample = False
+        if isinstance(row.override_record, dict):
+            stored_resample = bool(row.override_record.get("resample_variables", False))
+        resample_variables = (
+            request.resample_variables
+            if request.resample_variables is not None
+            else stored_resample
+        )
 
         if not self._branch_runner.is_available():
             # Grounding passed, but branch creation is not wired:
@@ -1262,6 +1274,7 @@ class NarrativeService:
                     fork_step=fork_step,
                     variable_set=merged,
                     assumptions=[assumption_line(mapping_name, request.overrides)],
+                    resample_variables=resample_variables,
                 ),
             )
         except BranchCreationFailed as exc:
@@ -1319,6 +1332,7 @@ class NarrativeService:
             "branch_id": result.branch_id,
             "fork_step": fork_step,
             "override_hash": override_hash,
+            "resample_variables": resample_variables,
         }
         # A re-fork is an explicit human edit of the row, like
         # the name/source edit: mark it so.
@@ -1473,6 +1487,7 @@ class NarrativeService:
                         "branch_id": branch_result.branch_id,
                         "fork_step": fork_step,
                         "override_hash": override_hash,
+                        "resample_variables": spec.resample_variables,
                     },
                     user_edited=False,
                     position=next_position,

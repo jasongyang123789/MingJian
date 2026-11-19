@@ -308,6 +308,13 @@ class SimulationScenariosMixin:
                 "decision_deltas": payload.decision_deltas,
                 "state_overrides": payload.state_overrides,
                 "probability_band": payload.probability_band,
+                # Arm resampling (fix/arm-resample): when true, the
+                # executor lets this run's own seeded sampled values
+                # win over the inherited fork-snapshot initial state
+                # for the state fields they cover (see _execute_run).
+                # Stored here so Monte Carlo trials and replays of
+                # the child inherit it with the configuration copy.
+                "resample_variables": payload.resample_variables,
             },
             "military_use_mode": parent_run.military_use_mode,
         }
