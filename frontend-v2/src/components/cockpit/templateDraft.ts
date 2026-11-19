@@ -31,6 +31,8 @@ export const FORMULA_OPERATORS: FormulaOperator[] = [
   'divide',
   'min',
   'max',
+  'pow',
+  'logistic',
 ]
 
 /** Numeric distribution parameters (every key of the distribution except `type`). */
