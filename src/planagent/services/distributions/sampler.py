@@ -16,6 +16,21 @@ variable set twice from two RNGs built from the same seed yields identical
 vectors; that is the seed contract the golden-run and replay tests rely
 on.
 
+Correlation (Phase 2, Track 3): a set may carry a ``correlations`` spec
+— pairwise target Pearson correlations between sampled variables. The
+spec is realised as a Gaussian copula (see
+``services/variables/correlation.py``): the correlated variables share
+one draw of correlated standard normals, mapped through the normal CDF
+to uniforms and then through each marginal's inverse CDF. A set with no
+correlations samples EXACTLY as before — same draw order, same RNG
+consumption, byte-identical golden draws — so the default is independent
+sampling and existing behaviour is unchanged. A set WITH correlations
+consumes one ``gauss`` draw per correlated variable, up front, before
+the per-variable loop; the achieved Pearson correlation is approximate
+(exact for normal marginals, slightly attenuated for bounded/skewed
+and Bernoulli marginals). ``fixed`` variables cannot be correlated
+(zero variance); the validator rejects such pairs at the gate.
+
 Beta-PERT follows the reference parameterization: ``alpha = 1 + 4r``,
 ``beta = 1 + 4(1 - r)`` with ``r = (mode - min) / (max - min)``, scaled
 into ``[min, max]``.
@@ -26,8 +41,14 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Mapping
+from statistics import NormalDist
 from typing import Any
 
+from planagent.services.variables.correlation import (
+    beta_ppf,
+    build_correlation_matrix,
+    correlated_uniforms,
+)
 from planagent.services.variables.formulas import evaluate_formulas
 from planagent.services.variables.models import (
     DistributionType,
@@ -71,6 +92,67 @@ def _sample_one(
     raise ValueError(f"Unsupported distribution type: {distribution_type!r}.")
 
 
+def _inverse_cdf(
+    distribution_type: DistributionType, params: Mapping[str, Any], uniform: float
+) -> float:
+    """Inverse CDF of a marginal at ``uniform`` in (0, 1) — the copula
+    arm of sampling. Mirrors :func:`_sample_one`'s parameterization
+    (including the Beta-PERT ``alpha = 1 + 4r`` / ``beta = 1 + 4(1 - r)``
+    shape), so a correlated draw and an independent draw of the same
+    variable have the same marginal distribution."""
+
+    if distribution_type is DistributionType.FIXED:
+        return float(params["value"])
+    if distribution_type is DistributionType.NORMAL:
+        return float(NormalDist(params["mean"], params["std"]).inv_cdf(uniform))
+    if distribution_type is DistributionType.TRIANGULAR:
+        low, mode, high = params["min"], params["mode"], params["max"]
+        span = high - low
+        split = (mode - low) / span
+        if uniform < split:
+            return float(low + math.sqrt(uniform * span * (mode - low)))
+        return float(high - math.sqrt((1.0 - uniform) * span * (high - mode)))
+    if distribution_type is DistributionType.BETA_PERT:
+        low, mode, high = params["min"], params["mode"], params["max"]
+        ratio = (mode - low) / (high - low)
+        alpha = 1.0 + 4.0 * ratio
+        beta = 1.0 + 4.0 * (1.0 - ratio)
+        return float(low + (high - low) * beta_ppf(uniform, alpha, beta))
+    if distribution_type is DistributionType.BERNOULLI:
+        return 1.0 if uniform < params["p"] else 0.0
+    raise ValueError(f"Unsupported distribution type: {distribution_type!r}.")
+
+
+def _correlated_uniforms_for_set(variable_set: VariableSet, rng: random.Random) -> dict[str, float]:
+    """Correlated uniforms for the variables named in the set's spec.
+
+    Returns {} when the set carries no correlations — the sampler then
+    follows the independent path exactly (no RNG consumed here). The
+    correlated variables are taken in set order; their uniforms come
+    from one Gaussian-copula draw (one ``gauss`` draw per variable).
+    The validator has already rejected unknown ids, self-pairs,
+    duplicates, out-of-range rho, fixed-variable pairs, and
+    non-positive-semidefinite matrices, so the matrix builds cleanly.
+    """
+
+    if not variable_set.correlations:
+        return {}
+    involved = [
+        variable.id
+        for variable in variable_set.variables
+        if any(
+            spec.variable_a == variable.id or spec.variable_b == variable.id
+            for spec in variable_set.correlations
+        )
+    ]
+    pairs = [
+        (spec.variable_a, spec.variable_b, spec.correlation) for spec in variable_set.correlations
+    ]
+    matrix = build_correlation_matrix(involved, pairs)
+    uniforms = correlated_uniforms(matrix, rng)
+    return dict(zip(involved, uniforms))
+
+
 def sample_variable_set(
     variable_set: VariableSet,
     rng: random.Random,
@@ -84,6 +166,12 @@ def sample_variable_set(
     the drawn value for their variable id, after the draw is consumed, so
     paired runs on shared seeds keep identical streams for non-levered
     variables. Lever ids that name no variable in the set are ignored.
+
+    When the set carries a ``correlations`` spec, the correlated
+    variables are drawn jointly through a Gaussian copula (see the
+    module docstring); uncorrelated variables in the same set still draw
+    independently. With no spec, sampling is exactly the historical
+    independent path.
     """
 
     result = validate_variable_set(variable_set)
@@ -101,6 +189,7 @@ def sample_variable_set(
             raise ValueError(f"Lever {lever_id!r} must be a finite number.")
 
     sampled: dict[str, float] = {}
+    correlated = _correlated_uniforms_for_set(variable_set, rng)
     for variable in variable_set.variables:
         distribution = variable.distribution
         params = {
@@ -112,7 +201,10 @@ def sample_variable_set(
             "max": distribution.max,
             "p": distribution.p,
         }
-        sampled[variable.id] = _sample_one(distribution.type, params, rng)
+        if variable.id in correlated:
+            sampled[variable.id] = _inverse_cdf(distribution.type, params, correlated[variable.id])
+        else:
+            sampled[variable.id] = _sample_one(distribution.type, params, rng)
     for lever_id, lever_value in lever_values.items():
         if lever_id in sampled:
             sampled[lever_id] = float(lever_value)

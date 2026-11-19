@@ -33,6 +33,7 @@ def record_to_template(record: VariableTemplateRecord) -> VariableTemplate:
         policies=record.policies,
         variables=record.variables,
         formulas=record.formulas or [],
+        correlations=record.correlations or [],
         internal=record.internal,
         assumption_data=record.assumption_data or {},
         is_builtin=False,
@@ -147,6 +148,7 @@ async def create_variable_template(
         policies=data.policies,
         variables=data.variables,
         formulas=data.formulas,
+        correlations=data.correlations,
         internal=data.internal,
         assumption_data=data.assumption_data,
     )
@@ -161,6 +163,7 @@ async def create_variable_template(
         policies={metric: spec.model_dump(mode="json") for metric, spec in data.policies.items()},
         variables=[variable.model_dump(mode="json") for variable in data.variables],
         formulas=[formula.model_dump(mode="json") for formula in data.formulas],
+        correlations=[spec.model_dump(mode="json") for spec in data.correlations],
         internal=dict(data.internal),
         assumption_data=dict(data.assumption_data),
         tenant_id=tenant_id,
@@ -186,6 +189,7 @@ async def update_variable_template(
         policies=data.policies if data.policies is not None else current.policies,
         variables=data.variables if data.variables is not None else current.variables,
         formulas=data.formulas if data.formulas is not None else current.formulas,
+        correlations=(data.correlations if data.correlations is not None else current.correlations),
         internal=data.internal if data.internal is not None else current.internal,
         assumption_data=(
             data.assumption_data if data.assumption_data is not None else current.assumption_data
@@ -202,6 +206,7 @@ async def update_variable_template(
     }
     record.variables = [variable.model_dump(mode="json") for variable in merged.variables]
     record.formulas = [formula.model_dump(mode="json") for formula in merged.formulas]
+    record.correlations = [spec.model_dump(mode="json") for spec in merged.correlations]
     record.internal = dict(merged.internal)
     record.assumption_data = dict(merged.assumption_data)
     await session.flush()

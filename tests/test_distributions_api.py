@@ -320,6 +320,24 @@ def test_monte_carlo_distributions_pairing_and_storage(monkeypatch, tmp_path: Pa
         assert prefixed.json()["ensemble_id"] == body["ensemble_id"]
 
 
+def test_monte_carlo_acme_baseline_p50_is_pinned(monkeypatch, tmp_path: Path) -> None:
+    """Backward-compatibility pin (Phase 2, Track 3): the BOUND_SET Acme
+    baseline Monte Carlo (trials 5, seed 42, metric cash) must keep
+    P50 exactly 99.8143 — the default-independent sampler path may not
+    change the draw stream. Any change to the sampler, draw order, or
+    RNG breaks this on purpose."""
+
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_bound_run(client)
+        response = client.post(
+            f"/runs/{run['id']}/monte-carlo",
+            json={"trials": 5, "seed": 42, "metric": "cash"},
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["baseline"]["p50"] == 99.8143
+
+
 def test_monte_carlo_same_seed_reproduces_identical_results(monkeypatch, tmp_path: Path) -> None:
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
