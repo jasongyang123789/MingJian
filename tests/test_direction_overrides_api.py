@@ -525,6 +525,11 @@ def test_derive_skips_override_direction(monkeypatch, tmp_path: Path) -> None:
         )
         assert overridden.status_code == 201, overridden.text
         child_run_id = overridden.json()["outcomes"][0]["child_run_id"]
+        # The override child needs an ensemble to be a candidate
+        # direction: under v2 the anchor is excluded from direction
+        # selection, so without it highest_p50 would be "none" and
+        # there would be nothing for the no-clobber rule to skip.
+        _create_ensemble(client, child_run_id)
         derived = client.post(f"/runs/{parent['id']}/directions/derive")
         assert derived.status_code == 200, derived.text
         highest = next(

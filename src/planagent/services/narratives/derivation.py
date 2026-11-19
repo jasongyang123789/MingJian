@@ -15,12 +15,24 @@ rule) that has a stored ensemble, each ``(run, arm)`` pair one
 candidate. Arms are the ensemble's two fixed summaries,
 ``baseline`` and ``strategy``.
 
-Rules, in evaluation order (``derivation-rules-v1``):
+The anchor run itself is a candidate only for rule 3. Rules 1
+and 2 compare CANDIDATE DIRECTIONS ONLY: the anchor (the
+undecided direction) is excluded. Rationale (fix/derive-exclude-anchor,
+Desay backtest 2026-11-19): a sub-run forks at anchor tick 1, so
+it applies one fewer arm growth step than the anchor over the
+same horizon — on a 5-year horizon that is 20% of the horizon,
+and the anchor's ensemble systematically outranks every arm, so
+``highest_p50`` kept recommending "stay undecided". The anchor
+stays visible as the ``baseline_control`` reference instead.
 
-1. ``highest_p50`` — the candidate with the highest P50.
+Rules, in evaluation order (``derivation-rules-v2``):
+
+1. ``highest_p50`` — the candidate direction (any run except the
+   anchor) with the highest P50.
    Tie-breaks, in order: lowest loss probability, lowest run id,
    lowest arm (``baseline`` before ``strategy``).
-2. ``most_robust`` — the candidate with the lowest loss
+2. ``most_robust`` — the candidate direction (any run except the
+   anchor) with the lowest loss
    probability. Tie-breaks, in order: a stored lower-tail expected
    shortfall beats none; higher expected-shortfall value wins (the
    tail mean is less bad); highest P50; lowest run id; lowest arm.
@@ -32,6 +44,10 @@ Rules, in evaluation order (``derivation-rules-v1``):
    mixed-alpha comparison stays auditable.
 3. ``baseline_control`` — the anchor run's ``baseline`` arm, when
    the anchor has a stored ensemble.
+
+A direction rule with no eligible candidate reports ``none``
+(the anchor-only family case: rules 1–2 are ``none`` while rule
+3 still produces the baseline control).
 
 Dedup: rules run in fixed order; a rule that selects a
 ``(run, arm)`` pair already taken by an earlier rule reports
@@ -60,7 +76,7 @@ from planagent.services.narratives.models import (
     DirectionDefinition,
 )
 
-DERIVATION_RULES_VERSION = "derivation-rules-v1"
+DERIVATION_RULES_VERSION = "derivation-rules-v2"
 
 RuleId = Literal["highest_p50", "most_robust", "baseline_control"]
 ArmName = Literal["baseline", "strategy"]
@@ -92,8 +108,10 @@ class DerivationResult(BaseModel):
     Carries no ids or timestamps, so its canonical JSON (and
     SHA-256) is stable across repeated derivations over identical
     inputs. ``candidates`` is the evaluated set in canonical
-    ``(run_id, arm)`` order; ``directions`` are the produced
-    direction definitions in rule order.
+    ``(run_id, arm)`` order — it lists the anchor's arms too, so
+    the exclusion is auditable; the two direction rules select
+    only among the non-anchor candidates. ``directions`` are the
+    produced direction definitions in rule order.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -131,8 +149,24 @@ def _most_robust_key(candidate: DerivationCandidate) -> tuple[float, int, float,
 def derive_directions(
     anchor_run_id: str, candidates: list[DerivationCandidate]
 ) -> DerivationResult:
-    """Apply the v1 rules to a candidate set, in fixed rule order."""
+    """Apply the v2 rules to a candidate set, in fixed rule order.
+
+    ``highest_p50`` and ``most_robust`` select only among
+    candidates whose run is not the anchor: the anchor is the
+    undecided direction, not a candidate direction. ``baseline_control``
+    still selects the anchor's ``baseline`` arm as the reference.
+    """
     ordered = sorted(candidates, key=_candidate_sort_key)
+    # Direction pool: every candidate except the anchor run's arms.
+    # The anchor's ensemble applies one more growth step than any
+    # sub-run forked at tick 1, so comparing it against arms
+    # systematically favors "stay undecided" on short horizons.
+    direction_pool = [c for c in ordered if c.run_id != anchor_run_id]
+    no_direction_reason = (
+        "No candidate direction has a stored ensemble "
+        "(the anchor run is excluded from direction selection; "
+        "it is reported by baseline_control)."
+    )
     taken: dict[tuple[str, str], str] = {}
     outcomes: list[DerivationRuleOutcome] = []
     directions: list[DirectionDefinition] = []
@@ -140,13 +174,13 @@ def derive_directions(
     selections: list[tuple[RuleId, DerivationCandidate | None, str]] = [
         (
             "highest_p50",
-            min(ordered, key=_highest_p50_key) if ordered else None,
-            "No candidate has a stored ensemble.",
+            min(direction_pool, key=_highest_p50_key) if direction_pool else None,
+            no_direction_reason,
         ),
         (
             "most_robust",
-            min(ordered, key=_most_robust_key) if ordered else None,
-            "No candidate has a stored ensemble.",
+            min(direction_pool, key=_most_robust_key) if direction_pool else None,
+            no_direction_reason,
         ),
         (
             "baseline_control",

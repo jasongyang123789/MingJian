@@ -162,13 +162,16 @@ def _branch(client: TestClient, parent_id: str, cash: float) -> dict:
 
 
 def _expected_rule_picks(anchor_id: str, summaries: dict) -> dict:
-    """Apply the documented v1 rules to summaries read back via API.
+    """Apply the documented v2 rules to summaries read back via API.
 
     ``summaries`` maps run id -> {"baseline": {...}, "strategy":
     {...}, "es": {"baseline": value, "strategy": value, "alpha": a}
     | None}. Returns {rule_id: (status, run_id, arm)} after dedup.
     The pure unit tests pin the rules themselves; this helper only
-    checks the API path applies them to real stored data.
+    checks the API path applies them to real stored data. The
+    direction rules (highest_p50, most_robust) compare candidate
+    directions ONLY — the anchor run is excluded; baseline_control
+    still reports the anchor baseline.
     """
     candidates = []
     for run_id, data in summaries.items():
@@ -198,17 +201,21 @@ def _expected_rule_picks(anchor_id: str, summaries: dict) -> dict:
             candidate["arm"],
         )
 
+    direction_pool = [c for c in candidates if c["run_id"] != anchor_id]
     picks = {
-        "highest_p50": min(candidates, key=highest_key),
-        "most_robust": min(candidates, key=robust_key),
+        "highest_p50": min(direction_pool, key=highest_key) if direction_pool else None,
+        "most_robust": min(direction_pool, key=robust_key) if direction_pool else None,
         "baseline_control": next(
             c for c in candidates if c["run_id"] == anchor_id and c["arm"] == "baseline"
         ),
     }
     taken: dict[tuple[str, str], str] = {}
-    expected: dict[str, tuple[str, str, str]] = {}
+    expected: dict[str, tuple[str, str | None, str | None]] = {}
     for rule_id in ("highest_p50", "most_robust", "baseline_control"):
         pick = picks[rule_id]
+        if pick is None:
+            expected[rule_id] = ("none", None, None)
+            continue
         pair = (pick["run_id"], pick["arm"])
         if pair in taken:
             expected[rule_id] = ("duplicate", pick["run_id"], pick["arm"])
@@ -249,7 +256,7 @@ def test_derive_writes_mappings_from_family(monkeypatch, tmp_path: Path) -> None
         response = _derive(client, parent["id"])
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["rules_version"] == "derivation-rules-v1"
+        assert body["rules_version"] == "derivation-rules-v2"
         assert body["derivation_hash"].startswith("sha256:")
         assert body["family_size"] == 3
         assert body["candidates_considered"] == 6
@@ -274,7 +281,7 @@ def test_derive_writes_mappings_from_family(monkeypatch, tmp_path: Path) -> None
             assert mapping["arm"] == outcome["arm"]
             assert mapping["origin"] == "derived"
             assert mapping["rule_id"] == outcome["rule_id"]
-            assert mapping["rules_version"] == "derivation-rules-v1"
+            assert mapping["rules_version"] == "derivation-rules-v2"
             assert mapping["rule_record"]["derivation_hash"] == body["derivation_hash"]
             assert mapping["user_edited"] is False
         # Second derive: byte-identical derivation, same mapping rows.
@@ -294,6 +301,36 @@ def test_derive_refuses_without_ensemble_and_writes_nothing(monkeypatch, tmp_pat
         assert detail["code"] == "direction_no_ensemble"
         assert f"/runs/{run['id']}/monte-carlo" in detail["message"]
         assert _list_mappings(client, run["id"])["mappings"] == []
+
+
+def test_derive_anchor_only_family_reports_direction_rules_none(monkeypatch, tmp_path: Path) -> None:
+    """v2: with no sub-run ensemble, the direction rules are none.
+
+    The anchor is excluded from direction selection, so an
+    anchor-only family produces just the Baseline mapping; the
+    derivation still succeeds (it is not a refusal — the baseline
+    control is a real, reportable reference).
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        run = _create_run(client)
+        _create_ensemble(client, run["id"])
+        response = _derive(client, run["id"])
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["rules_version"] == "derivation-rules-v2"
+        assert body["family_size"] == 1
+        assert body["candidates_considered"] == 2
+        by_rule = {o["rule_id"]: o for o in body["outcomes"]}
+        assert by_rule["highest_p50"]["status"] == "none"
+        assert "anchor run is excluded" in by_rule["highest_p50"]["reason"]
+        assert by_rule["most_robust"]["status"] == "none"
+        assert "anchor run is excluded" in by_rule["most_robust"]["reason"]
+        control = by_rule["baseline_control"]
+        assert control["status"] == "produced"
+        assert control["source_run_id"] == run["id"]
+        assert control["arm"] == "baseline"
+        assert [m["name"] for m in body["mappings"]] == ["Baseline"]
 
 
 def test_derive_refuses_noncompleted_anchor(monkeypatch, tmp_path: Path) -> None:
@@ -317,8 +354,10 @@ def test_derive_uses_lower_tail_shortfall(monkeypatch, tmp_path: Path) -> None:
     with TestClient(create_app()) as client:
         run = _create_run(client)
         ensemble = _create_ensemble(client, run["id"])
+        child = _branch(client, run["id"], 120.0)
+        child_ensemble = _create_ensemble(client, child["run_id"])
         es = client.post(
-            f"/runs/{run['id']}/robustness/expected-shortfall",
+            f"/runs/{child['run_id']}/robustness/expected-shortfall",
             json={"alpha": 0.1, "tail": "lower"},
         )
         assert es.status_code == 201, es.text
@@ -327,16 +366,24 @@ def test_derive_uses_lower_tail_shortfall(monkeypatch, tmp_path: Path) -> None:
             run["id"]: {
                 "baseline": ensemble["baseline"],
                 "strategy": ensemble["strategy"],
+                "es": None,
+            },
+            child["run_id"]: {
+                "baseline": child_ensemble["baseline"],
+                "strategy": child_ensemble["strategy"],
                 "es": {
                     "baseline": es_body["baseline"]["value"],
                     "strategy": es_body["strategy"]["value"],
                     "alpha": 0.1,
                 },
-            }
+            },
         }
         # Derivation must SUCCEED on the enriched run: it reads the
         # expected_shortfall sub-fragment directly (see the fix-batch-1
         # tests below for the narrative side of the same shape rule).
+        # The shortfall is read from the CHILD's fragment: the anchor
+        # is excluded from direction selection, so most_robust must
+        # pick a child arm and pin that arm's lower-tail value.
         response = _derive(client, run["id"])
         assert response.status_code == 200, response.text
         body = response.json()
@@ -346,6 +393,7 @@ def test_derive_uses_lower_tail_shortfall(monkeypatch, tmp_path: Path) -> None:
         assert robust["status"] == status
         assert robust["source_run_id"] == run_id
         assert robust["arm"] == arm
+        assert robust["source_run_id"] == child["run_id"]
         assert robust["expected_shortfall"] == es_body[arm]["value"]
         assert robust["expected_shortfall_alpha"] == 0.1
 
@@ -355,14 +403,24 @@ def test_derive_ignores_upper_tail_shortfall(monkeypatch, tmp_path: Path) -> Non
     with TestClient(create_app()) as client:
         run = _create_run(client)
         _create_ensemble(client, run["id"])
+        child = _branch(client, run["id"], 120.0)
+        _create_ensemble(client, child["run_id"])
         es = client.post(
-            f"/runs/{run['id']}/robustness/expected-shortfall",
+            f"/runs/{child['run_id']}/robustness/expected-shortfall",
             json={"alpha": 0.1, "tail": "upper"},
         )
         assert es.status_code == 201, es.text
         response = _derive(client, run["id"])
         assert response.status_code == 200, response.text
         robust = next(o for o in response.json()["outcomes"] if o["rule_id"] == "most_robust")
+        # The child is the only direction candidate, and its two arms
+        # are identical (no levers), so most_robust duplicates
+        # highest_p50's pick of the child baseline — but the
+        # upper-tail shortfall is ignored, so no shortfall value is
+        # pinned on the duplicate outcome either.
+        assert robust["status"] == "duplicate"
+        assert robust["duplicate_of_rule"] == "highest_p50"
+        assert robust["source_run_id"] == child["run_id"]
         assert robust["expected_shortfall"] is None
         assert robust["expected_shortfall_alpha"] is None
 
@@ -377,6 +435,11 @@ def test_derive_never_overwrites_user_edited_mapping(monkeypatch, tmp_path: Path
     with TestClient(create_app()) as client:
         run = _create_run(client)
         _create_ensemble(client, run["id"])
+        # A child direction is needed: "Highest P50" can only come
+        # from a non-anchor run now, so the anchor-only family would
+        # produce just the Baseline mapping.
+        child = _branch(client, run["id"], 120.0)
+        _create_ensemble(client, child["run_id"])
         first = _derive(client, run["id"])
         assert first.status_code == 200, first.text
         mapping = next(m for m in first.json()["mappings"] if m["name"] == "Highest P50")
