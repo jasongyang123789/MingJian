@@ -24,6 +24,7 @@ from planagent.services.narratives.service import NarrativeService
 from planagent.services.openai_client import OpenAIService
 from planagent.services.pipeline import PhaseOnePipelineService
 from planagent.services.platform_topology import PlatformTopologyService
+from planagent.services.redteam.service import RedTeamService
 from planagent.services.runtime import RuntimeMonitorService
 from planagent.services.seminar.service import SeminarService
 from planagent.services.simulation import SimulationService
@@ -43,6 +44,7 @@ _CACHED_SERVICE_ATTRS = (
     "platform_topology_service",
     "assistant_service",
     "skill_service",
+    "red_team_service",
     "narrative_service",
 )
 _last_app_state = None
@@ -159,6 +161,10 @@ def _cache_business_services(state: object) -> None:
         )
     if not hasattr(state, "skill_service"):
         state.skill_service = SkillDeliberationService(settings, state.openai_service)
+    if not hasattr(state, "red_team_service"):
+        # Default live port is Kakouai (vault-backed); the service
+        # constructor wires it when no port is injected.
+        state.red_team_service = RedTeamService(settings)
     if not hasattr(state, "narrative_service"):
         # The simulation service is cached above, so the branch
         # runner for option B override directions can be wired here.
@@ -245,6 +251,13 @@ def get_skill_service(request: Request) -> SkillDeliberationService:
             get_settings(), request.app.state.openai_service
         )
     return request.app.state.skill_service  # type: ignore[no-any-return]  # app.state 动态属性
+
+
+def get_red_team_service(request: Request) -> RedTeamService:
+    ensure_app_services(request)
+    if not hasattr(request.app.state, "red_team_service"):
+        request.app.state.red_team_service = RedTeamService(get_settings())
+    return request.app.state.red_team_service  # type: ignore[no-any-return]  # app.state 动态属性
 
 
 def get_narrative_service(request: Request) -> NarrativeService:
