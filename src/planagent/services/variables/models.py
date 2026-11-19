@@ -170,6 +170,14 @@ class VariableDefinition(BaseModel):
     estimate. ``scope_tags`` optionally bind the variable to MECE scope tags
     from the run's decomposition tree (cross-checked by the validator).
 
+    ``observed_value`` / ``observed_label`` (Phase 4, Track 9) optionally
+    record an OBSERVED historical rate that the modeled distribution
+    deliberately discounts — e.g. a growth variable whose triangular mode
+    is 0.15 while the observed 2020 growth was +27.39%. The annotation is
+    opt-in and changes no number: the opportunity detector reads it and
+    surfaces a key-opportunity prompt (observed vs discounted vs gap vs
+    conditional). Without the annotation there is no prompt.
+
     ``unit`` and ``evidence_ref`` default to empty (rather than failing
     Pydantic shape validation) so missing values surface as structured
     validation issues from the validator, matching the empty-set rule.
@@ -183,13 +191,22 @@ class VariableDefinition(BaseModel):
     evidence_ref: str = Field(default="", max_length=500)
     description: str = Field(default="", max_length=2000)
     scope_tags: list[str] = Field(default_factory=list)
+    observed_value: float | None = None
+    observed_label: str = Field(default="", max_length=500)
 
-    @field_validator("id", "unit", "evidence_ref", "description", mode="before")
+    @field_validator("id", "unit", "evidence_ref", "description", "observed_label", mode="before")
     @classmethod
     def _strip_strings(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip()
         return value
+
+    @field_validator("observed_value", mode="before")
+    @classmethod
+    def _validate_observed_value(cls, value: object) -> float | None:
+        if value is None:
+            return None
+        return _require_finite_number(value)
 
     @field_validator("scope_tags", mode="before")
     @classmethod

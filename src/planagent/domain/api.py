@@ -17,6 +17,10 @@ from planagent.domain.types import GeneratedReportModel
 from planagent.services.mece.models import DecompositionTree
 from planagent.services.splits.models import OemProductionShares, SplitStructure
 from planagent.services.variables.models import VariableSet
+from planagent.services.variables.opportunities import (
+    BreakoutPrompt,
+    KeyOpportunityPrompt,
+)
 
 
 class APIModel(BaseModel):
@@ -225,6 +229,18 @@ class SimulationRunRead(APIModel):
     tenant_id: str | None = None
     preset_id: str | None = None
     military_use_mode: str | None = None
+    # Phase 4, Track 9 — report-time opportunity / breakout prompts,
+    # computed at run creation from the effective variable set. They
+    # change no numbers; they only surface what the inputs discount
+    # (``key_opportunities``: a modeled value deliberately below an
+    # observed rate) or stretch (``breakout_prompts``: T1 growth
+    # assumptions above the sustained-growth trigger). T2–T4 need
+    # post-decision actuals or diagnostic fitted values, so they are
+    # review-time checks, not part of this response. Reads of an existing
+    # run (GET) do not re-derive them — they are in the creation
+    # response and re-derivable from the stored bindings.
+    key_opportunities: list[KeyOpportunityPrompt] = Field(default_factory=list)
+    breakout_prompts: list[BreakoutPrompt] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod

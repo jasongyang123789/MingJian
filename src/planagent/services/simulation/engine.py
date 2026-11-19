@@ -44,7 +44,13 @@ from planagent.services.splits.validator import (
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
 from planagent.services.variables.formulas import evaluate_tick_drivers, validate_formulas
 from planagent.services.variables.models import VariableSet, VariableValidationResult
+from planagent.services.variables.opportunities import (
+    BreakoutPrompt,
+    KeyOpportunityPrompt,
+    detect_creation_prompts,
+)
 from planagent.services.variables.presets import (
+    CONFIGURATION_KEY,
     resolve_policies,
     resolve_state_defaults,
     variables_configuration_fragment,
@@ -122,6 +128,33 @@ def _firewall_configuration_fragment(payload: SimulationRunCreate) -> dict[str, 
     if payload.decision_time is not None:
         return firewall_configuration_fragment(payload.decision_time, CUTOFF_SOURCE_EXPLICIT)
     return firewall_configuration_fragment(utc_now(), CUTOFF_SOURCE_CREATION_TIME)
+
+
+def _creation_prompts(
+    variables_fragment: dict[str, Any],
+    tick_count: int,
+) -> tuple[list[KeyOpportunityPrompt], list[BreakoutPrompt]]:
+    """Creation-time prompts from the effective variable bindings.
+
+    Reconstructs the effective VariableSet from the bindings fragment
+    (template + inline already merged by ``_resolve_variable_bindings``)
+    and runs the decision-time checks: discounted-growth prompts + T1.
+    Returns ([], []) when no variable set is attached. A prompt
+    computation must never fail run creation — the prompts are advisory
+    and the bindings were validated moments earlier — so an unexpected
+    failure logs a warning and returns empty lists.
+    """
+
+    try:
+        fragment = variables_fragment.get(CONFIGURATION_KEY)
+        bindings = fragment.get("bindings") if isinstance(fragment, dict) else None
+        if not isinstance(bindings, dict):
+            return [], []
+        effective = VariableSet.model_validate(bindings)
+        return detect_creation_prompts(effective.variables, tick_count)
+    except Exception:  # noqa: BLE001 - advisory prompts must not block runs
+        _logger.warning("creation-prompt detection failed; continuing without prompts")
+        return [], []
 
 
 class SimulationEngineMixin:
@@ -314,6 +347,17 @@ class SimulationEngineMixin:
 
         await session.commit()
         await session.refresh(run)
+        # Phase 4, Track 9 — report-time opportunity / breakout prompts.
+        # Pure functions over the effective variable set: they change no
+        # numbers and never touch the simulation. Attached transiently
+        # (not a column, not in the input hash); the creation route copies
+        # them onto the response. Set AFTER refresh() so the refresh
+        # cannot drop the transient attributes.
+        key_opportunities, breakout_prompts = _creation_prompts(
+            variables_fragment, run.tick_count
+        )
+        run.key_opportunities = key_opportunities
+        run.breakout_prompts = breakout_prompts
         return run
 
     async def process_queued_runs(
