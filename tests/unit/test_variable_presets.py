@@ -62,8 +62,8 @@ def test_builtin_preset_matches_pack_defaults_and_policies(domain_id: str) -> No
 
 
 def test_builtin_preset_field_and_policy_counts() -> None:
-    assert len(builtin_template("corporate").state_fields) == 15
-    assert len(builtin_template("corporate").policies) == 14
+    assert len(builtin_template("corporate").state_fields) == 17
+    assert len(builtin_template("corporate").policies) == 16
     assert len(builtin_template("military").state_fields) == 19
     assert len(builtin_template("military").policies) == 19
 
