@@ -126,9 +126,10 @@ class AutomotiveDomainPack(DomainPack):
                 "Consumer-confidence proxy, 1.0 = 2024Q4 baseline.",
                 1.0,
             ),
-            # Synthesis C1/B4: ASSUMPTION PARAMETER. Normalized index, 1.0 =
-            # baseline; the live LPR value is bound per run (Phase 2 data item).
-            # No LPR point value is baked into the pack.
+            # Calibration v3: lpr_proxy = 1y LPR / 3.85% (2020-2021 modal
+            # 1y LPR, the pre-easing level); 1.0 = 3.85%. The live LPR
+            # value is bound per run (Phase 2 data item). No LPR point
+            # value is baked into the pack.
             StateFieldSpec("lpr_proxy", "Interest-rate environment proxy, 1.0 = baseline.", 1.0),
             # Synthesis C1/B3: 5% halved rate in 2026-27 (MOF/STA/MIIT 2023 No.10).
             StateFieldSpec("policy_tax_rate", "NEV purchase-tax rate.", 0.05),

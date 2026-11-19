@@ -331,7 +331,8 @@ def test_dual_track_splits_sum_to_spine_every_tick(monkeypatch, tmp_path: Path) 
             penetrations.append(state["nev_penetration"])
         assert penetrations == sorted(penetrations)
         assert penetrations[0] == pytest.approx(0.479)
-        assert penetrations[-1] == pytest.approx(0.479 + 6 * 0.002)
+        # Calibration v3 drift: 0.0068/mo (OLS trend on CAAM 2023-2025).
+        assert penetrations[-1] == pytest.approx(0.479 + 6 * 0.0068)
 
 
 # --- Transmission links ----------------------------------------------------
