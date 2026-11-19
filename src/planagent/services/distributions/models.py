@@ -56,7 +56,15 @@ class MonteCarloRequest(BaseModel):
 
 
 class DistributionSummary(BaseModel):
-    """Per-arm distribution summary for the aggregated metric."""
+    """Per-arm distribution summary for the aggregated metric.
+
+    ``decline_probability`` is the fraction of trials whose trajectory
+    falls in at least one tick (tick-over-tick decline in the metric),
+    read from the trial snapshots — 0.0 for ensembles computed before
+    the downside mechanism, which never stored it. It is the statistic
+    that stays meaningful for growth cases, where ``p_loss`` (final
+    value below the loss threshold) is structurally near-zero.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -69,6 +77,7 @@ class DistributionSummary(BaseModel):
     p90: float
     stddev: float
     p_loss: float
+    decline_probability: float = 0.0
 
 
 class PairedDeltaSummary(BaseModel):

@@ -43,6 +43,7 @@ from planagent.services.splits.validator import (
 )
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
 from planagent.services.variables.formulas import evaluate_tick_drivers, validate_formulas
+from .downside import DOWNSIDE_CONFIGURATION_KEY, resolve_downside
 from planagent.services.variables.models import VariableSet, VariableValidationResult
 from planagent.services.variables.presets import (
     resolve_policies,
@@ -108,6 +109,19 @@ def _split_configuration_fragment(
             mode="json"
         )
     return {"split_structure": fragment}
+
+
+def _downside_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
+    """Downside-shock fragment for a run under creation (fix/downside-mechanism).
+
+    Stored inside ``SimulationRun.configuration`` (existing JSON column),
+    so no schema migration is needed. Returns {} when no downside
+    config was attached — the default-off path. Mirrors
+    :func:`_mece_configuration_fragment`.
+    """
+    if payload.downside is None:
+        return {}
+    return {"downside": payload.downside.model_dump(mode="json")}
 
 
 def _firewall_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
@@ -374,6 +388,7 @@ class SimulationEngineMixin:
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
             **_firewall_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -426,6 +441,7 @@ class SimulationEngineMixin:
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
             **_firewall_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -494,6 +510,7 @@ class SimulationEngineMixin:
             **(variables_fragment or {}),
             **_split_configuration_fragment(payload, split_result),
             **_firewall_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -580,6 +597,15 @@ class SimulationEngineMixin:
         variable_scope = {**sampled_values, **derived_values}
         driver_formulas = tick_driver_formulas(run.configuration)
         state_field_names = {field.name for field in pack.state_fields}
+        # Downside shock (fix/downside-mechanism): resolved once per run
+        # from the sampled scope, applied per tick after the drivers.
+        # None when the fragment is absent or disabled — the default-off
+        # path, which leaves the run exactly as before. A misconfigured
+        # enabled fragment raises DownsideError here, before any tick
+        # executes, and fails the run loudly (same as a driver failure).
+        downside_state = resolve_downside(
+            run.configuration, variable_scope, state_field_names
+        )
         effective_policies = resolve_policies(run.domain_id, run.configuration)
         # Sprint 5: hindsight firewall — resolve the decision-time cutoff
         # from the run's stored configuration and filter claim reads to
@@ -702,6 +728,22 @@ class SimulationEngineMixin:
                 for key, value in driver_updates.items():
                     if key in state_field_names:
                         current_state[key] = value
+            if downside_state is not None:
+                # Downside shock (fix/downside-mechanism): applied AFTER
+                # the drivers and BEFORE the decision record and
+                # snapshot, so the snapshot (and its hash) captures the
+                # shocked state. The level hit persists as a scar —
+                # drivers recompute from the current state each tick,
+                # so growth resumes from the lower base instead of
+                # snapping back. Rounding matches the drivers' 4-decimal
+                # rounding, so stored state stays exact.
+                downside_factor = downside_state.factor(tick)
+                if downside_factor < 1.0:
+                    for field in downside_state.fields:
+                        if field in current_state:
+                            current_state[field] = round(
+                                current_state[field] * downside_factor, 4
+                            )
             action_history.append(selected.action_id)
             decision_record = DecisionRecordRecord(
                 run_id=run.id,
@@ -775,6 +817,14 @@ class SimulationEngineMixin:
             "evidence_audit": evidence_audit,
             "matched_rules": sorted(set(matched_rules)),
             "final_state": deepcopy(current_state),
+            # Downside shock (fix/downside-mechanism): resolved parameters
+            # + per-tick multipliers, recorded only when the mechanism is
+            # enabled; runs without it carry no such key.
+            **(
+                {DOWNSIDE_CONFIGURATION_KEY: downside_state.summary(run.tick_count)}
+                if downside_state is not None
+                else {}
+            ),
             # Sprint 3: determinism audit trail — the input hash recorded
             # at creation, the per-tick state hashes, and the sampled
             # variable values (with the subset applied to the state).

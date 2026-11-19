@@ -134,6 +134,49 @@ class ReviewItemRead(APIModel):
     updated_at: datetime
 
 
+class DownsideConfig(APIModel):
+    """Opt-in cyclical downturn / reversal shock (fix/downside-mechanism).
+
+    Default OFF: when absent (or ``enabled`` false) the run behaves
+    exactly as before. When enabled, the named variables must be bound
+    as sampled variables on the run (Bernoulli for ``occurs``,
+    triangular for ``depth`` / ``start`` / ``duration``); the executor
+    resolves them per run from the run seed and applies the shock after
+    the tick drivers. ``persistent_variable`` is None by default (pure
+    cycle, no reversal regime); name a Bernoulli variable to enable the
+    reversal draw. All parameters are LABELED ASSUMPTIONS with no
+    independent estimate — see
+    :mod:`planagent.services.simulation.downside`.
+    """
+
+    enabled: bool = False
+    fields: list[str] = Field(default_factory=lambda: ["revenue", "profit"])
+    occurs_variable: str = "downturn_occurs"
+    depth_variable: str = "downturn_depth"
+    start_variable: str = "downturn_start"
+    duration_variable: str = "downturn_duration"
+    persistent_variable: str | None = None
+    label: str | None = None
+
+    @field_validator("fields", mode="before")
+    @classmethod
+    def _validate_fields(cls, value: object) -> object:
+        if not isinstance(value, list) or not value:
+            raise ValueError("Downside 'fields' must be a non-empty list of state-field names.")
+        if not all(isinstance(item, str) and item.strip() for item in value):
+            raise ValueError("Downside 'fields' entries must be non-empty strings.")
+        return [item.strip() for item in value]
+
+    @field_validator(
+        "occurs_variable", "depth_variable", "start_variable", "duration_variable", mode="before"
+    )
+    @classmethod
+    def _validate_variable_name(cls, value: object) -> object:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Downside variable names must be non-empty strings.")
+        return value.strip()
+
+
 class SimulationRunCreate(APIModel):
     company_id: str | None = None
     company_name: str | None = None
@@ -187,6 +230,13 @@ class SimulationRunCreate(APIModel):
     # When absent, runs behave exactly as before (the caller must pass
     # shares to the sales-layer endpoint).
     oem_production_shares: OemProductionShares | None = None
+    # Optional cyclical downturn / reversal shock (fix/downside-mechanism).
+    # Default OFF: when absent, runs behave exactly as before. When
+    # enabled, the named variables must be bound as sampled variables;
+    # the executor applies the shock after the tick drivers. Stored in
+    # the run's ``downside`` fragment, so the Sprint 3 input hash covers
+    # it and Monte Carlo trials, scenario branches, and replays inherit it.
+    downside: DownsideConfig | None = None
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":

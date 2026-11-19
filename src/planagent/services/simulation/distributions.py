@@ -175,10 +175,16 @@ class SimulationDistributionsMixin:
             loss_threshold=request.loss_threshold,
             strategy_levers=dict(request.strategy_levers),
             baseline=DistributionSummary(
-                **summarize_samples(baseline_values, request.loss_threshold)
+                **summarize_samples(baseline_values, request.loss_threshold),
+                decline_probability=await self._trial_decline_probability(
+                    session, trial_run_ids["baseline"], request.metric
+                ),
             ),
             strategy=DistributionSummary(
-                **summarize_samples(strategy_values, request.loss_threshold)
+                **summarize_samples(strategy_values, request.loss_threshold),
+                decline_probability=await self._trial_decline_probability(
+                    session, trial_run_ids["strategy"], request.metric
+                ),
             ),
             paired=PairedDeltaSummary(**paired_delta_stats(baseline_values, strategy_values)),
             trial_run_ids=trial_run_ids,
@@ -191,6 +197,48 @@ class SimulationDistributionsMixin:
         await session.commit()
         await session.refresh(base_run)
         return result
+
+    async def _trial_decline_probability(
+        self,
+        session: AsyncSession,
+        trial_run_ids: list[str],
+        metric: str,
+    ) -> float:
+        """Fraction of trials whose metric trajectory falls in >= 1 tick.
+
+        Read from the trial runs' stored state snapshots (never
+        re-executed): tick 0 through the final tick, in order. A trial
+        counts as declining when any tick's value is below the previous
+        tick's. Growth cases with the downside mechanism enabled produce
+        a non-zero value here even when ``p_loss`` stays 0 — the
+        trajectory can dip mid-horizon and still end above its starting
+        value. Trials without snapshots (or without the metric) count as
+        non-declining rather than failing the ensemble: the final-value
+        summaries above are the authoritative record, and a missing
+        snapshot row must not void them.
+        """
+
+        if not trial_run_ids:
+            return 0.0
+        declined = 0
+        for trial_id in trial_run_ids:
+            snapshots = list(
+                (
+                    await session.scalars(
+                        select(StateSnapshotRecord)
+                        .where(StateSnapshotRecord.run_id == trial_id)
+                        .order_by(StateSnapshotRecord.tick.asc())
+                    )
+                ).all()
+            )
+            values = [
+                float(item.state[metric])
+                for item in snapshots
+                if isinstance(item.state, dict) and metric in item.state
+            ]
+            if any(later < earlier for earlier, later in zip(values, values[1:])):
+                declined += 1
+        return round(declined / len(trial_run_ids), 4)
 
     async def _create_monte_carlo_trial(
         self,
