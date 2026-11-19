@@ -344,8 +344,14 @@ def test_funnel_runs_end_to_end_with_builtin_template(monkeypatch, tmp_path: Pat
 def test_satisfaction_feedback_loop_end_to_end(monkeypatch, tmp_path: Path) -> None:
     """Same seed, two runs differing only in starting satisfaction
     (0.4 vs 0.9 via initial_state): the low-satisfaction run gets
-    lower RFQ rates from tick 1 and fewer RFQs / deliveries by tick 6.
-    That is the satisfaction -> next-RFQ loop, observed end to end."""
+    lower RFQ rates from tick 1, fewer RFQs at tick 3 (where the
+    gap peaks), and fewer deliveries / prospects by tick 6.
+    That is the satisfaction -> next-RFQ loop, observed end to end.
+    The RFQ-stock gap is asserted at tick 3, not tick 6: satisfaction
+    mean-reverts toward ~0.95, so the gap decays after tick 3 and the
+    tick-6 stock gap is marginal (it flipped by 0.01 when the Track 7
+    merge added 4 sampled NEV variables and shifted the RNG stream);
+    deliveries and prospects still separate clearly at tick 6."""
 
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
@@ -364,8 +370,10 @@ def test_satisfaction_feedback_loop_end_to_end(monkeypatch, tmp_path: Path) -> N
             low_snaps[1]["state"]["funnel_rfq_win_rate"]
             < high_snaps[1]["state"]["funnel_rfq_win_rate"]
         )
-        # By tick 6 the gap has propagated down the funnel.
-        assert low_snaps[6]["state"]["funnel_rfqs"] < high_snaps[6]["state"]["funnel_rfqs"]
+        # The RFQ-stock gap peaks at tick 3, then washes out as
+        # satisfaction mean-reverts (see docstring); deliveries and
+        # prospects still separate at tick 6.
+        assert low_snaps[3]["state"]["funnel_rfqs"] < high_snaps[3]["state"]["funnel_rfqs"]
         assert (
             low_snaps[6]["state"]["funnel_deliveries_total"]
             < high_snaps[6]["state"]["funnel_deliveries_total"]

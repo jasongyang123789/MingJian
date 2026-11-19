@@ -253,10 +253,10 @@ class SimulationScenariosMixin:
                 raise ValueError(
                     "Military scenario branching requires a force-backed baseline run."
                 )
-        elif parent_run.domain_id == "corporate":
+        elif parent_run.domain_id in ("corporate", "automotive"):
             if parent_run.company_id is None:
                 raise ValueError(
-                    "Corporate scenario branching requires a company-backed baseline run."
+                    f"{parent_run.domain_id.capitalize()} scenario branching requires a company-backed baseline run."
                 )
         else:
             raise ValueError(

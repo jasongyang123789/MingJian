@@ -221,6 +221,32 @@ class AutomotiveDomainPack(DomainPack):
             # inflow — satisfaction feeds the NEXT RFQ, modeled, not
             # overridden by hand.
             StateFieldSpec("delivery_satisfaction", "Delivery satisfaction score, 0-1.", 0.75),
+            # Track 7 (2026-11-19, NEV transmission chain): company-level
+            # magnitude fields for a representative Tier-1 supplier, so a
+            # case can express revenue / profit / share trajectories on the
+            # automotive domain exactly as corporate cases do (Fix 3 added
+            # the same three fields to the corporate pack for the same
+            # reason). Defaults mirror the corporate pack (100.0 / 20.0 /
+            # 0.05, abstract units on the cash scale); a case declares its
+            # own unit convention (e.g. RMB m per tick) through its
+            # revenue/profit/market_share variables and tick-driver
+            # formulas, exactly as cases already do for `market_share`.
+            # No template driver moves these fields: generic automotive
+            # runs leave them at their defaults, and only a case that
+            # supplies the growth drivers (e.g. the Desay backtest, with
+            # the NEV-chain revenue term) moves them. Adding the fields
+            # changes no existing field's default or trajectory.
+            StateFieldSpec("market_share", "Representative Tier-1 supplier market share.", 0.05),
+            StateFieldSpec(
+                "revenue",
+                "Supplier revenue for the period, same abstract units as cash.",
+                100.0,
+            ),
+            StateFieldSpec(
+                "profit",
+                "Supplier net profit for the period, same abstract units as cash.",
+                20.0,
+            ),
             # Ho 2026-11-16 generation/lifecycle dimension (NOT in synthesis
             # C1): coarse Phase 1 representation. 0 = outgoing generation
             # fully, 1 = successor fully ramped. Assumption parameter; the

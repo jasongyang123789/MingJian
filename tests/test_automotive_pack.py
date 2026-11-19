@@ -39,8 +39,11 @@ def test_pack_registered_and_state_fields() -> None:
     # transition index (Ho's generation dimension) + 4 Phase 2
     # dual-track splits (NEV/ICE production + retail) + 14 Track 4
     # funnel/satisfaction fields (7 pipeline stocks + 2 cumulative
-    # totals + 5 stage rates + overall conversion + satisfaction).
-    assert len(fields) == 45
+    # totals + 5 stage rates + overall conversion + satisfaction)
+    # + 3 Track 7 supplier magnitude fields (market_share /
+    # revenue / profit, mirroring the corporate pack so cases
+    # can score them).
+    assert len(fields) == 48
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -75,6 +78,11 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["funnel_project_to_delivery_rate"] == 0.92
     assert fields["funnel_overall_conversion"] == 0.10
     assert fields["delivery_satisfaction"] == 0.75
+    # Track 7 supplier magnitude fields mirror the corporate pack
+    # defaults; no template driver moves them.
+    assert fields["market_share"] == 0.05
+    assert fields["revenue"] == 100.0
+    assert fields["profit"] == 20.0
 
 
 def test_pack_actions_events_actors() -> None:
@@ -114,7 +122,7 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 52
+    assert len(TEMPLATE_VARIABLES) == 56
     assert len(TEMPLATE_FORMULAS) == 36
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
     assert len(drivers) == 33
@@ -159,10 +167,13 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 31 of 52 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 21 formula parameters are the 9
+    # 31 of 56 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 25 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
-    # parameters (7 base rates/inflow/gain + 5 attrition rates).
+    # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
+    # the 4 Track 7 NEV-chain variables (the chain's penetration is
+    # the pack's nev_penetration state field, reused, not a fifth
+    # variable).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -187,6 +198,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "funnel_rfq_attrition",
         "funnel_contract_attrition",
         "funnel_project_attrition",
+        "nev_ceiling",
+        "nev_rate",
+        "nev_midpoint",
+        "nev_coupling",
     }
 
 
@@ -194,7 +209,7 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 52
+    assert len(template.variables) == 56
     assert len(template.formulas) == 36
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a

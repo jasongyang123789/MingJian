@@ -214,6 +214,8 @@ def tracked_branch_metrics(domain_id: str) -> list[str]:
             "churn_risk",
             "market_share",
         ]
+    if domain_id == "automotive":
+        return ["market_share", "revenue", "profit"]
     return [
         "readiness",
         "logistics_throughput",
