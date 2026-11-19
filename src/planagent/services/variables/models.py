@@ -56,9 +56,16 @@ MAX_FORMULA_DEPTH = 15
 class FormulaOperator(str, Enum):
     """The formula-graph operator vocabulary.
 
-    Ported from the SimplifySimulation reference (``OPS``): exactly six
-    binary operators, no arbitrary code. ``min``/``max`` are binary here
+    Ported from the SimplifySimulation reference (``OPS``): six binary
+    operators, no arbitrary code. ``min``/``max`` are binary here
     (two arguments), matching the reference's two-argument expressions.
+
+    ``pow`` and ``logistic`` extend the reference vocabulary (Fix 2,
+    inflection/diffusion dynamics) without changing its shape: still
+    binary, still arity 2, still no function calls or arbitrary code.
+    ``pow(base, exponent)`` is the power function; ``logistic(z,
+    ceiling)`` is ``ceiling / (1 + exp(-z))``, the S-curve primitive
+    a disruptor-adoption driver is built from.
     """
 
     ADD = "add"
@@ -67,6 +74,8 @@ class FormulaOperator(str, Enum):
     DIVIDE = "divide"
     MIN = "min"
     MAX = "max"
+    POW = "pow"
+    LOGISTIC = "logistic"
 
 
 class FormulaDefinition(BaseModel):

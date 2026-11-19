@@ -70,7 +70,7 @@ export interface MeceRunRead {
 // ---------------------------------------------------------------------------
 
 export type DistributionType = 'fixed' | 'normal' | 'triangular' | 'beta_pert' | 'bernoulli'
-export type FormulaOperator = 'add' | 'subtract' | 'multiply' | 'divide' | 'min' | 'max'
+export type FormulaOperator = 'add' | 'subtract' | 'multiply' | 'divide' | 'min' | 'max' | 'pow' | 'logistic'
 
 export interface VariableDistribution {
   type: DistributionType

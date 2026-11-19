@@ -3,9 +3,22 @@
 Ported from agilhaykal/strategic-simulation (``SimplifySimulation``,
 ``backend/engine.py``): a formula graph is an ordered list of formulas; each
 formula names an output id and an expression over number literals, references
-to known ids, and six binary operators (``add``/``subtract``/``multiply``/
-``divide``/``min``/``max``) with exactly two arguments. No arbitrary code:
-anything else is rejected at validation time, before any row is written.
+to known ids, and eight binary operators (``add``/``subtract``/``multiply``/
+``divide``/``min``/``max``/``pow``/``logistic``) with exactly two arguments.
+No arbitrary code: anything else is rejected at validation time, before any
+row is written.
+
+``pow(base, exponent)`` is the power function (``math.pow`` semantics:
+a negative base with a non-integer exponent, ``0`` to a negative power,
+and overflow all fail loudly as :class:`FormulaEvaluationError`).
+``logistic(z, ceiling)`` is ``ceiling / (1 + exp(-z))`` — the S-curve
+primitive for inflection/diffusion dynamics (Fix 2): the first argument
+is the logit, usually ``rate * (tick - midpoint)`` built from the other
+operators, and the second is the saturation ceiling (an ordinary sampled
+variable or literal). It is evaluated in the numerically stable form so
+no ``exp()`` of a positive argument is ever taken, however large ``|z|``
+is; the result always lies between ``0`` and ``ceiling`` for a positive
+ceiling.
 
 Evaluation order is the list order, which is a valid topological order by
 construction: a formula may only reference sampled variable ids and the
@@ -58,7 +71,9 @@ from .models import (
 #: expressions. No variable id or formula output may use this name.
 TICK_REFERENCE = "tick"
 
-_FORMULA_OPERATORS = frozenset({"add", "subtract", "multiply", "divide", "min", "max"})
+_FORMULA_OPERATORS = frozenset(
+    {"add", "subtract", "multiply", "divide", "min", "max", "pow", "logistic"}
+)
 
 
 class FormulaEvaluationError(ValueError):
@@ -337,7 +352,23 @@ def _evaluate_expression(
             return left / right
         if operator == "min":
             return min(left, right)
-        return max(left, right)
+        if operator == "max":
+            return max(left, right)
+        if operator == "pow":
+            try:
+                return math.pow(left, right)
+            except (ValueError, OverflowError) as exc:
+                raise FormulaEvaluationError(
+                    output, f"Invalid power {left!r} ** {right!r}: {exc}."
+                ) from exc
+        # logistic(z, ceiling) = ceiling / (1 + exp(-z)), in the stable
+        # form: exp() is only ever taken of a non-positive argument, so
+        # no |z|, however large, can overflow. The result lies between
+        # 0 and ceiling for a positive ceiling.
+        if left >= 0:
+            return right / (1.0 + math.exp(-left))
+        exp_left = math.exp(left)
+        return right * exp_left / (1.0 + exp_left)
     raise FormulaEvaluationError(output, f"Invalid expression shape: {expression!r}.")
 
 
