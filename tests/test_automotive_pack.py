@@ -172,14 +172,14 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
     income_rate = by_id["income_growth_rate_annual"]
     assert income_rate.unit == "rate/year"
     assert income_rate.distribution.type == DistributionType.FIXED
-    assert income_rate.distribution.value == 0.05
-    assert income_rate.evidence_ref.startswith("NBS")
+    assert income_rate.distribution.value == 0.055
+    assert income_rate.evidence_ref.startswith("calibration:v3")
 
     drift = by_id["nev_penetration_monthly_drift"]
     assert drift.unit == "rate points/month"
     assert drift.distribution.type == DistributionType.FIXED
-    assert drift.distribution.value == 0.002
-    assert drift.evidence_ref.startswith("assumption:pending-calibration")
+    assert drift.distribution.value == 0.0068
+    assert drift.evidence_ref.startswith("calibration:v3")
 
     # The drivers reference the promoted variables, not literals.
     by_output = {formula.output: formula for formula in template.formulas}
@@ -191,19 +191,19 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
     assert penetration_refs == {"nev_penetration", "nev_penetration_monthly_drift"}
 
     # Sampling the template resolves both rates, and the drivers evaluate
-    # to exactly the old literal behavior (fixed values, no drift).
+    # to the calibrated behavior (v3: income 5.50%/yr, drift 0.0068/mo).
     sampled = sample_variable_set(
         VariableSet(variables=list(template.variables)), random.Random(7)
     )
-    assert sampled["income_growth_rate_annual"] == 0.05
-    assert sampled["nev_penetration_monthly_drift"] == 0.002
+    assert sampled["income_growth_rate_annual"] == 0.055
+    assert sampled["nev_penetration_monthly_drift"] == 0.0068
     updates = evaluate_tick_drivers(
         [by_output["income_index"], by_output["nev_penetration"]],
         sampled,
         {"income_index": 1.0, "nev_penetration": 0.479},
         1,
     )
-    assert updates == {"income_index": 1.0042, "nev_penetration": 0.481}
+    assert updates == {"income_index": 1.0046, "nev_penetration": 0.4858}
 
 
 def test_builtin_corporate_template_unchanged() -> None:

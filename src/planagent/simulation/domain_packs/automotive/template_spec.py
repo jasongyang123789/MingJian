@@ -16,6 +16,14 @@ presented as fact when the synthesis marks it unknown:
   SIMULATED values for supply share, payment terms, gross margin, and
   annual-cut execution (2026-11-16); replaceable via the template
   mechanism when internal data arrives. Do not block on internal data.
+- ``calibration:v3`` — the value was fitted by
+  ``planagent.services.calibration.transmission`` from decision-time
+  public series (cutoff 2025-12-31); the method, window, gates, and
+  sources are on the calibration report. Two of the eight
+  transmission coefficients are calibrated v3 (income growth,
+  NEV drift); the other six keep their placeholder values with the
+  failed v3 attempt recorded in their evidence_ref — the report, not
+  the label, is what changed for them.
 
 Variable ids MATCH state-field names wherever the variable IS a state
 quantity: that alignment is what makes sampling move trajectories
@@ -53,6 +61,16 @@ Formula graph (evaluation order matters — drivers chain within a tick):
 
 from __future__ import annotations
 
+# Calibration v3 (elasticity calibration): the eight transmission
+# coefficients below read their values from
+# ``planagent.services.calibration.transmission`` (ADOPTED_VALUES) —
+# the fitted value where the v3 gates passed, the prior placeholder
+# where they did not. The template and the fit cannot drift apart:
+# tests assert the template values equal ADOPTED_VALUES exactly. See
+# the transmission module for the panel, the methods, the gates, and
+# the per-coefficient adoption record.
+from planagent.services.calibration.transmission import ADOPTED_VALUES
+
 # Fixed-distribution variables double as C4 scenario lever handles: a
 # lever can only replace a sampled value, so every C4 lever id must be a
 # sampled variable. Fixed values equal the pack defaults, so a run with
@@ -77,15 +95,15 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "income_growth_rate_annual",
         "unit": "rate/year",
-        "distribution": {"type": "fixed", "value": 0.05},
-        "evidence_ref": "NBS via synthesis B4 (per-capita disposable income nominal +5.0% in 2025; same anchor as income_index)",
-        "description": "Annual disposable-income growth rate. The income tick driver compounds the income_index monthly at this rate / 12 (C2 link: income -> demand). Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; fixed at the NBS 2025 value, a lever handle for income-growth scenarios.",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["income_growth_rate_annual"]},
+        "evidence_ref": "calibration:v3 (transmission.calibrate_transmission_coefficients; ridge location fit, lambda=5, toward prior 0.05 on NBS nominal per-capita disposable-income growth 2020-2025, n=6, mean 5.92%, fitted 5.50%; decision-time cutoff 2025-12-31; replaces the NBS 2025 single-year anchor)",
+        "description": "Annual disposable-income growth rate. The income tick driver compounds the income_index monthly at this rate / 12 (C2 link: income -> demand). Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; calibrated v3 (ridge location fit on 2020-2025 NBS growth, 5.50%/year), a lever handle for income-growth scenarios.",
     },
     {
         "id": "lpr_proxy",
         "unit": "index (1.0 = baseline)",
         "distribution": {"type": "fixed", "value": 1.0},
-        "evidence_ref": "assumption:pending-calibration (synthesis C1/B4: normalized index, 1.0 = baseline; the live LPR value is bound per run — no point value is baked in)",
+        "evidence_ref": "calibration:v3 baseline definition (transmission.LPR_PROXY_BASELINE_PCT): lpr_proxy = 1y LPR / 3.85% (2020-2021 modal 1y LPR, the pre-easing level); 1.0 = 3.85%. The live LPR value is bound per run — no point value is baked in. (Was: assumption:pending-calibration, baseline undefined.)",
         "description": "Interest-rate environment proxy. Below 1.0 = easier financing, supporting demand through the retail driver (C2 link: LPR -> financing cost -> demand). Lever for the C4 monetary-easing family.",
     },
     {
@@ -164,9 +182,9 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "nev_penetration_monthly_drift",
         "unit": "rate points/month",
-        "distribution": {"type": "fixed", "value": 0.002},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: placeholder drift; no public monthly penetration-drift series exists — direction and mechanism are the Phase 2 deliverable, magnitude is a sensitivity-analysis input)",
-        "description": "Monthly NEV penetration drift applied by the penetration tick driver, capped at 1.0. Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; placeholder magnitude, a lever handle for adoption-speed scenarios.",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["nev_penetration_monthly_drift"]},
+        "evidence_ref": "calibration:v3 (transmission.calibrate_transmission_coefficients; OLS trend on CAAM total-caliber annual NEV penetration 2023-2025: 31.6% -> 40.9% -> 47.9%, slope +8.15pp/yr = 0.0068/mo, R2=0.993; cross-checks 2025-only 0.0058, 2025 Jul-Dec monthly anchors 0.0072, logistic recent segment 0.0059; decision-time cutoff 2025-12-31)",
+        "description": "Monthly NEV penetration drift applied by the penetration tick driver, capped at 1.0. Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; calibrated v3 (OLS trend on CAAM 2023-2025, 0.0068/mo — the 0.002 placeholder implied +2.4pp/year against an observed +8.15pp/year trend), a lever handle for adoption-speed scenarios.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
@@ -243,15 +261,15 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "confidence_sensitivity",
         "unit": "growth per index point",
-        "distribution": {"type": "fixed", "value": 0.05},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: the confidence transmission coefficient has no initial value; placeholder sensitivity for tornado analysis)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["confidence_sensitivity"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: the confidence transmission coefficient has no initial value; placeholder sensitivity for tornado analysis; v3 NOT ESTIMABLE — no verifiable quarterly PBOC willingness series, see transmission.CALIBRATION_REPORT)",
         "description": "Monthly retail growth per point of the confidence proxy above 1.0. Magnitude is a placeholder; direction and mechanism are the Phase 1 deliverable.",
     },
     {
         "id": "income_sensitivity",
         "unit": "growth per index point",
-        "distribution": {"type": "fixed", "value": 0.05},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5/A9: no public income elasticity exists; placeholder sensitivity for tornado analysis)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["income_sensitivity"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5/A9: no public income elasticity exists; v3 ATTEMPTED — joint ridge fit on the 2020-2025 annual panel gives beta=1.01 -> 0.153, but LOO RMSE 7.64pp fails the mean baseline 5.14pp and the slope is unstable across windows (OLS 1.18 with 2020, 0.27 without); placeholder RETAINED, see transmission.CALIBRATION_REPORT)",
         "description": "Monthly retail growth per point of the income index above 1.0. Magnitude is a placeholder; direction and mechanism are the Phase 1 deliverable.",
     },
     {
@@ -265,29 +283,29 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "lpr_sensitivity",
         "unit": "growth per index point",
-        "distribution": {"type": "fixed", "value": 0.10},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public rate elasticity exists; placeholder sensitivity for tornado analysis)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["lpr_sensitivity"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public rate elasticity exists; v3 ATTEMPTED — joint ridge fit gives beta=-0.35 -> 0.112, but LOO RMSE 7.64pp fails the mean baseline 5.14pp and the bivariate slope flips sign across windows (OLS +13.08 with 2020, -5.97 without); placeholder RETAINED, see transmission.CALIBRATION_REPORT)",
         "description": "Monthly retail growth per point of the LPR proxy BELOW 1.0 (easing supports demand; tightening drags it). Magnitude is a placeholder; direction and mechanism are the Phase 2 deliverable.",
     },
     {
         "id": "material_passthrough",
         "unit": "price ratio per index point",
-        "distribution": {"type": "fixed", "value": 0.30},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public passthrough estimate exists; placeholder sensitivity for tornado analysis)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["material_passthrough"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public passthrough estimate exists; v3 NOT ESTIMABLE — one clean annual pair only (2023->2024: lithium -64.5%, avg price +0.5%), wrong sign, mix-shift dominated; composite weights undefined, see transmission.CALIBRATION_REPORT)",
         "description": "Share of raw-material cost pressure passed into transaction prices: the price driver's target level is 1 + passthrough x (material_cost_index - 1). The unpassed remainder squeezes the Tier-1 margin (C2 links 7-8).",
     },
     {
         "id": "price_sensitivity",
         "unit": "growth per index point",
-        "distribution": {"type": "fixed", "value": 0.20},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5/A9: no public price elasticity exists; placeholder sensitivity for tornado analysis)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["price_sensitivity"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5/A9: no public price elasticity exists; v3 ATTEMPTED — joint ridge fit gives beta=-0.46 -> 0.039, but LOO RMSE 7.64pp fails the mean baseline 5.14pp; the joint 95% CI bounds price_sensitivity at [0, 0.159], so the 0.20 placeholder sits ABOVE the bound and is retained only as an upper-end sensitivity input, see transmission.CALIBRATION_REPORT)",
         "description": "Monthly retail growth drag per point of the price index above 1.0. Magnitude is a placeholder; direction and mechanism are the Phase 2 deliverable.",
     },
     {
         "id": "margin_material_sensitivity",
         "unit": "margin points per index point",
-        "distribution": {"type": "fixed", "value": 0.02},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; placeholder sensitivity)",
+        "distribution": {"type": "fixed", "value": ADOPTED_VALUES["margin_material_sensitivity"]},
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; v3 NOT ESTIMABLE — wrong-sign episode: Desay margins fell 20% -> 19.1% (2023-25) while lithium collapsed, i.e. unpassed pressure was negative; the margin driver lacks the annual-cut channel, see transmission.CALIBRATION_REPORT)",
         "description": "Tier-1 margin points lost per tick per point of unpassed material-cost pressure (material_cost_index minus the current price index). Price passthrough mitigates the squeeze.",
     },
     # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
@@ -398,7 +416,7 @@ TEMPLATE_FORMULAS: list[dict] = [
                 },
             ],
         },
-        "description": "Tick driver (C2 link: income -> demand, Phase 2): disposable income compounds monthly at income_growth_rate_annual / 12 (NBS 2025 nominal growth, 5.0%/year; promoted from a Phase 2 literal when the cap was raised to 100). The retail driver reads the current level each tick.",
+        "description": "Tick driver (C2 link: income -> demand, Phase 2): disposable income compounds monthly at income_growth_rate_annual / 12 (calibrated v3: ridge location fit on NBS 2020-2025 growth, 5.50%/year; promoted from a Phase 2 literal when the cap was raised to 100). The retail driver reads the current level each tick.",
     },
     {
         "output": "sales_volume_retail",
@@ -608,7 +626,7 @@ TEMPLATE_FORMULAS: list[dict] = [
                 1,
             ],
         },
-        "description": "Tick driver (Phase 2 dual track): NEV penetration drifts nev_penetration_monthly_drift per month (0.002 placeholder), capped at 1.0. The drift is a placeholder assumption parameter (promoted from a Phase 2 literal when the cap was raised to 100); the split drivers below read the same-tick value.",
+        "description": "Tick driver (Phase 2 dual track): NEV penetration drifts nev_penetration_monthly_drift per month (0.0068/mo, calibrated v3: OLS trend on CAAM 2023-2025), capped at 1.0. The drift is a calibrated value (promoted from a Phase 2 literal when the cap was raised to 100); the split drivers below read the same-tick value.",
     },
     {
         "output": "nev_retail_volume",
