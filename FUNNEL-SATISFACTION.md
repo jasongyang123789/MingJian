@@ -102,8 +102,15 @@ the self-referential stock drivers.
   26.28; complaint rule fires (`auto.delivery_satisfaction_slip`),
   tick-1 satisfaction 0.7841 → 0.7441 (exactly −0.05 × 0.8, the
   driver pulling 20% back toward target).
-- Full suite: (see commit message / report-back; run under
-  `~/workspace/scripts/full-run-lock.sh` per `~/AGENTS.md`.)
+- Full suite: **2105 passed in 740.32s (0:12:20), 0 failed** —
+  single-process run under `~/workspace/scripts/full-run-lock.sh`
+  with `TMPDIR=/dev/shm/pytest-tmp-funnel` (792M free at start, gate
+  passed), `env -u NO_PROXY -u no_proxy .venv/bin/python -m pytest
+  -q`, tip `a05df51`. (Two earlier attempts never ran: the first
+  waited 60 min in the lock queue behind other tracks' suites and
+  timed out; the second was killed by a runtime restart while still
+  queued. The third attempt acquired the lock immediately after the
+  restart and ran clean.)
 - Lint: `ruff check` clean, `ruff format` applied to touched files.
 
 ## Limits (honest)
