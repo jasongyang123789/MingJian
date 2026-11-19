@@ -67,6 +67,7 @@ from .real_structure import (
     REAL_OEM_SHARES_2026,
     build_hongqi_structure,
     build_real_structure,
+    build_sheet_structure,
     real_oem_shares,
 )
 from .sales_layer import (
@@ -131,6 +132,7 @@ __all__ = [
     "aggregate_units",
     "build_hongqi_structure",
     "build_real_structure",
+    "build_sheet_structure",
     "classify_solution",
     "compute_sales_layer",
     "dc_platform",
