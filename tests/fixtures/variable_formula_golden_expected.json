@@ -148,6 +148,8 @@
         },
         "evidence_ref": "estimate: prototype case_example.json",
         "id": "研发投入(人月)",
+        "observed_label": "",
+        "observed_value": null,
         "scope_tags": [],
         "unit": "人月"
       },
@@ -165,6 +167,8 @@
         },
         "evidence_ref": "estimate: prototype case_example.json",
         "id": "获客成本 CAC",
+        "observed_label": "",
+        "observed_value": null,
         "scope_tags": [],
         "unit": "元/客户"
       },
@@ -182,6 +186,8 @@
         },
         "evidence_ref": "estimate: prototype case_example.json",
         "id": "AI 功能客单价 uplift",
+        "observed_label": "",
+        "observed_value": null,
         "scope_tags": [],
         "unit": "%"
       },
@@ -199,6 +205,8 @@
         },
         "evidence_ref": "estimate: prototype case_example.json",
         "id": "12 个月客户流失率",
+        "observed_label": "",
+        "observed_value": null,
         "scope_tags": [],
         "unit": "%"
       }

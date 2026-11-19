@@ -125,7 +125,12 @@ async def create_simulation_run(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SimulationRunRead.model_validate(run)
+    read = SimulationRunRead.model_validate(run)
+    # Phase 4, Track 9 — creation-time opportunity / breakout prompts,
+    # attached transiently by the service (not stored, not hashed).
+    read.key_opportunities = getattr(run, "key_opportunities", []) or []
+    read.breakout_prompts = getattr(run, "breakout_prompts", []) or []
+    return read
 
 
 @router.get("/simulation/runs", response_model=list[SimulationRunRead])
