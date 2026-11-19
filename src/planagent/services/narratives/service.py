@@ -1549,11 +1549,11 @@ class NarrativeService:
     def _check_override_domain(anchor: SimulationRun) -> None:
         """Branchability gates, mirroring scenario branching.
 
-        Military runs need a force-backed baseline; corporate runs
-        need a company; other domains are not implemented for
-        branching. The scenario-branch runner re-checks these on
-        its own path; the upfront check refuses before any work
-        is staged.
+        Military runs need a force-backed baseline; corporate and
+        automotive runs need a company; other domains are not
+        implemented for branching. The scenario-branch runner
+        re-checks these on its own path; the upfront check refuses
+        before any work is staged.
         """
         if anchor.domain_id == "military":
             if anchor.force_id is None:
@@ -1561,11 +1561,11 @@ class NarrativeService:
                     "direction_override_domain_unsupported",
                     "Military variable-override directions require a force-backed baseline run.",
                 )
-        elif anchor.domain_id == "corporate":
+        elif anchor.domain_id in ("corporate", "automotive"):
             if anchor.company_id is None:
                 raise DirectionError(
                     "direction_override_domain_unsupported",
-                    "Corporate variable-override directions require a company-backed baseline run.",
+                    f"{anchor.domain_id.capitalize()} variable-override directions require a company-backed baseline run.",
                 )
         else:
             raise DirectionError(

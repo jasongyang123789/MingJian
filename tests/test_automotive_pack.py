@@ -37,8 +37,10 @@ def test_pack_registered_and_state_fields() -> None:
     fields = {field.name: float(field.default) for field in pack.state_fields}
     # 25 synthesis C1 fields + cash (MC continuity) + the generation
     # transition index (Ho's generation dimension) + 4 Phase 2
-    # dual-track splits (NEV/ICE production + retail).
-    assert len(fields) == 31
+    # dual-track splits (NEV/ICE production + retail) + 3 Track 7
+    # supplier magnitude fields (market_share / revenue / profit,
+    # mirroring the corporate pack so cases can score them).
+    assert len(fields) == 34
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -57,6 +59,11 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["nev_retail_volume"] == 94.79
     assert fields["ice_retail_volume"] == 103.11
     assert fields["nev_retail_volume"] + fields["ice_retail_volume"] == 197.9
+    # Track 7 supplier magnitude fields mirror the corporate pack
+    # defaults; no template driver moves them.
+    assert fields["market_share"] == 0.05
+    assert fields["revenue"] == 100.0
+    assert fields["profit"] == 20.0
 
 
 def test_pack_actions_events_actors() -> None:
@@ -92,7 +99,7 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 32
+    assert len(TEMPLATE_VARIABLES) == 36
     assert len(TEMPLATE_FORMULAS) == 16
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
     assert len(drivers) == 13
@@ -115,10 +122,12 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 23 of 32 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 9 formula parameters are the 7
+    # 23 of 36 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 13 formula parameters are the 7
     # sensitivity coefficients plus the 2 rates promoted from Phase 2
-    # literals when the cap was raised from 30 to 100.
+    # literals when the cap was raised from 30 to 100, plus the 4 Track 7
+    # NEV-chain variables (the chain's penetration is the pack's
+    # nev_penetration state field, reused, not a fifth variable).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -131,6 +140,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "margin_material_sensitivity",
         "income_growth_rate_annual",
         "nev_penetration_monthly_drift",
+        "nev_ceiling",
+        "nev_rate",
+        "nev_midpoint",
+        "nev_coupling",
     }
 
 
@@ -138,7 +151,7 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 32
+    assert len(template.variables) == 36
     assert len(template.formulas) == 16
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
@@ -192,9 +205,7 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
 
     # Sampling the template resolves both rates, and the drivers evaluate
     # to exactly the old literal behavior (fixed values, no drift).
-    sampled = sample_variable_set(
-        VariableSet(variables=list(template.variables)), random.Random(7)
-    )
+    sampled = sample_variable_set(VariableSet(variables=list(template.variables)), random.Random(7))
     assert sampled["income_growth_rate_annual"] == 0.05
     assert sampled["nev_penetration_monthly_drift"] == 0.002
     updates = evaluate_tick_drivers(

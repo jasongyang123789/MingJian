@@ -23,6 +23,38 @@ quantity: that alignment is what makes sampling move trajectories
 and levers can only target sampled ids — fixed-distribution variables
 double as lever handles for the C4 scenario families).
 
+NEV transmission chain (Track 7, 2026-11-19; diagnostic build spec
+``desay-backtest-2026-11-19/diagnostic-2020/new-parameter.md`` §2):
+
+- Parameters: the four template variables ``nev_ceiling`` /
+  ``nev_rate`` / ``nev_midpoint`` / ``nev_coupling`` (distributions
+  exactly per the diagnostic spec). The penetration itself is the
+  pack's ``nev_penetration`` STATE field, reused — the diagnostic
+  spec's intermediate is a within-tick value, while here it is the
+  shared state the dual-track split drivers already read, so the
+  chain's penetration also drives the NEV/ICE volume splits.
+- Attachment (case-level, two formulas; see
+  ``docs/causal-chain-pattern.md``): a logistic tick driver with
+  output ``nev_penetration`` — ``logistic(nev_rate * (tick -
+  nev_midpoint), nev_ceiling)`` — which replaces this template's
+  drift driver per-output at variable-set merge time (generic runs
+  keep the drift driver), and a revenue tick driver that gains
+  exactly one additive term: ``revenue * (1 + revenue_growth +
+  revenue_coupling * adoption + nev_coupling * nev_penetration)``.
+  No interaction term; share and profit formulas are untouched.
+- Planning-path check (diagnostic §5.2): at mode values the logistic
+  gives nev_penetration(1..4) = 0.044 / 0.079 / 0.133 / 0.200 — tick 4
+  is exactly the 2025 20% plan target. The realized path (ceiling
+  0.50, rate 0.90, midpoint 2.0) matches actual 2021-2024 penetration
+  within 2pp. The chain changes the LEVEL, not the shape: with any
+  constant coupling and non-decreasing penetration, per-tick growth
+  is still non-decreasing, so the chain cannot fix the desay-2020
+  shape problem (actual growth decelerates) — that needs a separate
+  decay / order-book mechanism (Track 7 report §5).
+- Domain-controller substitution is deliberately NOT a separate
+  mechanism here (diagnostic §5.1c: real but secondary; its
+  reasonable core is covered by the NEV-chain coupling).
+
 Formula graph (evaluation order matters — drivers chain within a tick):
 
 - ``demand_growth_rate`` (initial): monthly growth from confidence
@@ -167,6 +199,47 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "fixed", "value": 0.002},
         "evidence_ref": "assumption:pending-calibration (synthesis C5: placeholder drift; no public monthly penetration-drift series exists — direction and mechanism are the Phase 2 deliverable, magnitude is a sensitivity-analysis input)",
         "description": "Monthly NEV penetration drift applied by the penetration tick driver, capped at 1.0. Promoted from a Phase 2 formula literal when the variable cap was raised from 30 to 100; placeholder magnitude, a lever handle for adoption-speed scenarios.",
+    },
+    # --- NEV transmission chain (Track 7, 2026-11-19) ---
+    # Diagnostic build spec: desay-backtest-2026-11-19/diagnostic-2020/
+    # new-parameter.md §2 (DIAGNOSTIC-2020.md §5.2). The four variables
+    # are the chain's parameters; the penetration itself is NOT a fifth
+    # variable — it is the pack's existing `nev_penetration` STATE field,
+    # reused rather than duplicated. A case attaches the chain with two
+    # formulas (see the module docstring): a logistic tick driver whose
+    # output `nev_penetration` replaces this template's drift driver
+    # per-output at merge time, and a revenue tick driver that gains the
+    # additive term `+ nev_coupling * nev_penetration`. Generic
+    # automotive runs keep the drift driver and leave these four
+    # variables dormant (sampled, unread — the same standing as the
+    # other lever-handle variables in this template).
+    {
+        "id": "nev_ceiling",
+        "unit": "share (0-1)",
+        "distribution": {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
+        "evidence_ref": "State Council NEV plan (2021-2035), released 2020-11-02: NEV ~20% of new-car sales by 2025; saturation 40% is an extrapolation, not the plan text (diagnostic-2020/new-parameter.md §4.1)",
+        "description": "Long-run saturation level K of NEV penetration for the chain's logistic path. Mode 0.40: the 2025 plan target is 20%, saturation sits above it with ICE persisting; max 0.60 admits faster electrification, min 0.30 admits the plan falling short.",
+    },
+    {
+        "id": "nev_rate",
+        "unit": "per-year",
+        "distribution": {"type": "triangular", "min": 0.50, "mode": 0.70, "max": 1.00},
+        "evidence_ref": "Fitted slope of the logistic through the plan endpoints (5.4% NEV in 2020 -> 20% in 2025); CAAM Dec-2020 forecast: 2021 NEV 180k units (+40%) (diagnostic-2020/evidence-2020.md §1.1-1.2)",
+        "description": "Steepness r of the NEV penetration logistic. Mode 0.70 fits the plan endpoints; same order as the disruptor rate but slower, because powertrain switching is slower than electronics-configuration switching.",
+    },
+    {
+        "id": "nev_midpoint",
+        "unit": "years (tick)",
+        "distribution": {"type": "triangular", "min": 3.0, "mode": 4.0, "max": 5.0},
+        "evidence_ref": "Logistic fit of the plan's linear path (5.4% -> 20%) puts the midpoint at ~2024 (tick 4) (diagnostic-2020/new-parameter.md §4.1)",
+        "description": "Tick at which NEV penetration passes K/2. Mode 4.0 is the plan-implied midpoint; deliberately different from the disruptor midpoint — the two diffusion curves have different midpoints, and forcing them to share one was part of the desay-2020 failure mechanism.",
+    },
+    {
+        "id": "nev_coupling",
+        "unit": "per-unit-penetration",
+        "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — no 2020 source quantifies the supplier-revenue elasticity to NEV penetration; mode 0.25 matches revenue_coupling's optimistic mode (diagnostic-2020/evidence-2020.md §3(b))",
+        "description": "Revenue-growth uplift per unit of NEV penetration: the revenue tick driver gains + nev_coupling * nev_penetration. The post-hoc fitted values that would reach the desay-2020 actuals (2.08 year-5 / 9.69 year-3 on the planning path) are 5-24x this distribution's max and were indefensible at 2020-12-31 — they must never be used as parameters.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {

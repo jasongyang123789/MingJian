@@ -1,0 +1,144 @@
+# Causal-chain pattern: driver variable + link formulas
+
+- Date: 2026-11-19 (Track 7, Phase 4)
+- Status: pattern + worked example (NEV transmission chain). The shape
+  fix (decay / order-book mechanism) is a separate design in the
+  Track 7 report, not part of this pattern.
+- Authority: desay-backtest-2026-11-19/diagnostic-2020/DIAGNOSTIC-2020.md
+  §5.2 + new-parameter.md §2 (the NEV-chain build spec); the Desay
+  re-run harness under
+  research/strategy-engine/desay-backtest-2026-11-19/autopack-rerun/.
+
+## 1. The pattern
+
+A causal chain is **a driver variable + link formulas**. It replaces the
+older practice of expressing adoption as a closed-form time curve
+(`logistic(rate * (tick - midpoint), ceiling)` as a free-standing
+intermediate) with a chain of state-reading links:
+
+```
+external driver (sampled variable, decision-time evidence)
+  → intermediate state (pack state field, driven per tick)
+    → demand / value / share links (tick-driver formulas)
+      → revenue / profit (tick-driver formulas, scored metrics)
+```
+
+Rules:
+
+1. **Links read state, never `tick` alone.** A link formula's inputs
+   are sampled variables and current state fields. The one exception
+   is the driver itself when the diagnostic spec parameterizes it as
+   a logistic in `tick` (the NEV chain below): the logistic is still
+   driven by sampled variables (`nev_ceiling` / `nev_rate` /
+   `nev_midpoint`), never by a hardcoded time series — and it writes
+   to a shared state field so downstream links and the dual track see
+   the same value.
+2. **The driver variable is a first-class template variable** with a
+   decision-time evidence anchor and a distribution (triangular for
+   the NEV chain). Arms pin it (levers) or leave it sampled; they
+   never rewrite the link.
+3. **One additive term per channel.** Each channel adds exactly one
+   term to the downstream formula (the NEV chain adds
+   `+ nev_coupling * nev_penetration` to revenue). No interaction
+   terms unless evidence quantifies one. Channels stay decomposable:
+   any run's uplift splits exactly into per-channel contributions.
+4. **Share and profit formulas are untouched by a revenue channel**
+   unless their own transmission is separately evidenced.
+5. **Initial-state calibration is explicit.** When a link's t=0
+   identity has a free parameter (e.g. value-per-vehicle), its mode is
+   set so the chain reproduces the decision-time known starting level
+   at mode inputs, and the calibration arithmetic is written down.
+   Calibrating t=0 to known inputs is not tuning to outcomes.
+
+## 2. Worked example: the NEV transmission chain
+
+Build spec: diagnostic-2020/new-parameter.md §2. Template variables
+(`simulation/domain_packs/automotive/template_spec.py`):
+
+| Variable | Distribution | Decision-time anchor |
+|---|---|---|
+| `nev_ceiling` | triangular(0.30, 0.40, 0.60) | State Council NEV plan 2020-11-02: 20% by 2025; saturation is an extrapolation |
+| `nev_rate` | triangular(0.50, 0.70, 1.00) | Logistic slope fitting the plan endpoints (5.4% → 20%) |
+| `nev_midpoint` | triangular(3.0, 4.0, 5.0) | Plan linear path's logistic midpoint ≈ 2024 (tick 4) |
+| `nev_coupling` | triangular(0.10, 0.25, 0.40) | Labeled assumption; mode matches `revenue_coupling`'s optimistic mode |
+
+The penetration is the pack's existing `nev_penetration` STATE field,
+reused rather than duplicated. Difference from the diagnostic spec:
+the diagnostic's `nev_penetration` is a within-tick intermediate,
+while here it is the shared state the dual-track split drivers
+already read — so the chain's penetration also drives the NEV/ICE
+volume splits, and it is visible in snapshots and the trajectory
+endpoint. The dynamics are identical: at mode values the logistic
+gives nev_penetration(1..4) = 0.044 / 0.079 / 0.133 / 0.200 (tick 4
+is exactly the 2025 20% plan target).
+
+A case attaches the chain with two formulas (the Desay harness shows
+the full form):
+
+```python
+# 1. Logistic tick driver, output `nev_penetration`. At merge time it
+#    replaces the template's drift driver per-output (generic runs keep
+#    the drift driver).
+{"output": "nev_penetration",
+ "expression": {"op": "logistic", "args": [
+     {"op": "multiply", "args": [
+         {"ref": "nev_rate"},
+         {"op": "subtract", "args": [{"ref": "tick"}, {"ref": "nev_midpoint"}]}]},
+     {"ref": "nev_ceiling"}]},
+ "tick_driver": True}
+
+# 2. Revenue tick driver gains exactly one term.
+revenue = max(0, revenue * (1 + revenue_growth
+                            + revenue_coupling * disruptor_adoption
+                            + nev_coupling * nev_penetration))
+```
+
+The revenue/profit/market_share state fields the case drives are
+pack fields (Track 7 added them to the automotive pack mirroring the
+corporate pack: defaults 100.0 / 20.0 / 0.05 on the cash scale; a case
+declares its unit convention, e.g. RMB m per tick). No template driver
+moves them; only a case that supplies the growth drivers does.
+
+## 3. What the chain does and does not do
+
+- It fixes the **missing channel**: a publicly planned demand variable
+  (NEV penetration) now has a path into supplier revenue, with
+  distributions set from the plan document, not from outcomes.
+- It does **not** fix the **shape problem** (DIAGNOSTIC-2020.md §4):
+  with any constant coupling and non-decreasing penetration, per-tick
+  growth is still non-decreasing, while the desay-2020 actuals
+  decelerate (47.7%/yr in the first three years, 21.9%/yr in the last
+  two). Fitting year-3 overshoots year-5 by 1.3–4.2×; fitting year-5
+  undershoots year-3 by 36–44%. The chain changes the level, not the
+  shape. The shape fix (decay / order-book mechanism) is designed
+  separately in the Track 7 report.
+- Post-hoc fitted couplings that would reach the desay-2020 actuals
+  (planning path: 9.69 year-3 / 2.08 year-5; realized path: 3.01 /
+  0.79) are 5–24× the distribution max 0.40 and were indefensible at
+  2020-12-31. They must never be used as parameters. A run that comes
+  out far above the expected validation values (B year-3 ~10201,
+  year-5 ~18212 at defensible values) should first be suspected of
+  post-hoc widened distributions.
+
+## 4. Controlled comparisons: the frozen-baseline method
+
+(Diagnostic Appendix A.) The sampler draws variables in table order;
+pinning a variable consumes no draw, so pinning a NEW variable shifts
+the resampled values of every variable drawn after it. A one-lever
+comparison that pins a new variable is therefore contaminated: the
+row differs in the pinned lever AND in the resampled base.
+
+For controlled comparisons, freeze the baseline: pin ALL variables at
+the baseline run's sampled values (read from its replay package,
+`determinism.sampled_values`) plus the one lever changed. A control
+run that pins all variables at the baseline's sampled values must
+reproduce the baseline replay exactly. Note that a fully frozen
+variant has a degenerate Monte Carlo ensemble (P50 = P10 = P90 =
+replay value) because nothing is left to resample — take genuine P50s
+from single-lever-pinned variants, and use the frozen variant for
+replay comparisons only.
+
+The NEV-chain test `test_nev_chain_frozen_baseline_k_zero_is_no_chain`
+demonstrates the method: with every variable fixed, `nev_coupling`
+0.0 reproduces the no-chain revenue exactly, and 0.25 lifts it by the
+NEV term alone, with share and profit bit-identical.
