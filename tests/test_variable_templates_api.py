@@ -225,8 +225,8 @@ def test_builtin_templates_are_read_only(monkeypatch, tmp_path: Path) -> None:
         assert preset.status_code == 200
         body = preset.json()
         assert body["is_builtin"] is True
-        assert len(body["state_fields"]) == 15
-        assert len(body["policies"]) == 14
+        assert len(body["state_fields"]) == 17  # 15 pre-Fix-3 + revenue + profit
+        assert len(body["policies"]) == 16  # 14 pre-Fix-3 + revenue + profit
         assert body["created_at"] is None
 
         assert client.get("/variable-templates/builtin:nope").status_code == 404

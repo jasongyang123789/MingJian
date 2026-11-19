@@ -84,6 +84,8 @@ class ReportService:
                 "churn_risk",
                 "brand_index",
                 "market_share",
+                "revenue",
+                "profit",
                 "cash",
             ],
         )

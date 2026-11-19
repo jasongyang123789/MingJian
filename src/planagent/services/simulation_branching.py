@@ -27,6 +27,12 @@ _STATE_POLICIES: dict[str, dict[str, MetricPolicy]] = {
         "gross_margin": MetricPolicy("increase", 0.6, 0.48),
         "nrr": MetricPolicy("increase", 1.0, 0.92),
         "churn_risk": MetricPolicy("decrease", 0.14, 0.24),
+        # Revenue / profit magnitude (Fix 3, 2026-11-19): thresholds are
+        # scoring heuristics on the same abstract scale as `cash`
+        # (revenue mirrors the cash alert/critical lines); the profit
+        # critical line is 0.0 (loss-making), the alert line 10.0.
+        "revenue": MetricPolicy("increase", 50.0, 25.0),
+        "profit": MetricPolicy("increase", 10.0, 0.0),
     },
     "military": {
         "readiness": MetricPolicy("increase", 0.88, 0.75),
