@@ -49,8 +49,13 @@ NEV transmission chain (Track 7, 2026-11-19; diagnostic build spec
   within 2pp. The chain changes the LEVEL, not the shape: with any
   constant coupling and non-decreasing penetration, per-tick growth
   is still non-decreasing, so the chain cannot fix the desay-2020
-  shape problem (actual growth decelerates) — that needs a separate
-  decay / order-book mechanism (Track 7 report §5).
+  shape problem (actual growth decelerates) — that needs the separate
+  order-book mechanism, built in Track 11 (see the
+  ``order_backlog`` / ``order_intake_rate`` / ``backlog_conversion`` /
+  ``order_decay`` variables below and docs/causal-chain-pattern.md):
+  the backlog term is the SHAPE term to this chain's LEVEL term, and
+  the two channels stay separately decomposable (frozen-baseline per
+  channel).
 - Domain-controller substitution is deliberately NOT a separate
   mechanism here (diagnostic §5.1c: real but secondary; its
   reasonable core is covered by the NEV-chain coupling).
@@ -240,6 +245,64 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
         "evidence_ref": "estimate: LABELED ASSUMPTION — no 2020 source quantifies the supplier-revenue elasticity to NEV penetration; mode 0.25 matches revenue_coupling's optimistic mode (diagnostic-2020/evidence-2020.md §3(b))",
         "description": "Revenue-growth uplift per unit of NEV penetration: the revenue tick driver gains + nev_coupling * nev_penetration. The post-hoc fitted values that would reach the desay-2020 actuals (2.08 year-5 / 9.69 year-3 on the planning path) are 5-24x this distribution's max and were indefensible at 2020-12-31 — they must never be used as parameters.",
+    },
+    # --- Order-book (backlog) mechanism (Track 11, 2026-11-19) ---
+    # Track 7 report §7 build spec (diagnostic-2020 §5.3 shape problem):
+    # the NEV chain is the LEVEL term; the backlog term is the SHAPE
+    # term. The four variables are the mechanism's parameters; the
+    # stock/flow themselves are the pack's `order_backlog` /
+    # `order_intake` STATE fields. A case attaches the mechanism by
+    # binding the opening book and flow as variables (both =
+    # order_intake_rate * mode revenue — the stock proxy is one year
+    # of intake, a LABELED ASSUMPTION: the order stock itself was
+    # never disclosed) and three tick drivers: the revenue driver
+    # gains exactly one additive term
+    # (+ backlog_conversion * order_backlog / revenue), the intake
+    # driver decays the flow (order_intake * (1 - order_decay)), and
+    # the backlog driver updates the stock
+    # (backlog + intake - backlog_conversion * backlog, floored at 0).
+    # Driver order within a tick (see docs/causal-chain-pattern.md):
+    # revenue reads the PRE-tick backlog, then intake decays, then the
+    # backlog updates — so the converted amount in a tick is
+    # backlog_conversion * pre-tick backlog, exactly the amount the
+    # revenue term adds. Generic automotive runs keep these four
+    # variables dormant (sampled, unread — the same standing as the
+    # NEV-chain variables in generic runs) and the pack defaults
+    # (backlog 0, intake 0) leave them with no effect.
+    {
+        "id": "order_backlog",
+        "unit": "RMB m (same units as the case's revenue)",
+        "distribution": {"type": "fixed", "value": 0.0},
+        "evidence_ref": "assumption:pending-calibration — the order stock is a case-level quantity (a case binds it directly, e.g. one year of intake at mode revenue); 0.0 is the no-book generic default, never a market estimate",
+        "description": "Stock of unfulfilled orders at run start. Lever handle: a case overrides it with its decision-time order book (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed). The tick driver updates it as backlog + intake - converted, floored at 0.",
+    },
+    {
+        "id": "order_intake",
+        "unit": "RMB m per tick (same units as the case's revenue)",
+        "distribution": {"type": "fixed", "value": 0.0},
+        "evidence_ref": "assumption:pending-calibration — the new-orders flow is a case-level quantity (a case binds it directly, e.g. order_intake_rate * mode revenue); 0.0 is the no-book generic default",
+        "description": "New-orders flow per tick at run start. Lever handle: a case overrides it with its decision-time intake flow. The tick driver decays it by (1 - order_decay) per tick. (Bound as a variable — not an initial formula — because merge is per-output: an initial formula and a tick driver cannot share the output id, the driver would replace the formula.)",
+    },
+    {
+        "id": "order_intake_rate",
+        "unit": "annualized new orders / current revenue",
+        "distribution": {"type": "triangular", "min": 0.50, "mode": 1.00, "max": 1.50},
+        "evidence_ref": "assumption:pending-calibration — generic range around 1.0x revenue (one year of intake ≈ one year of revenue); a case overrides it from its decision-time order announcements (Desay 2020: ~70亿 annualised orders / 67.99亿 revenue ≈ 1.03, triangular(0.80, 1.00, 1.20))",
+        "description": "Annualized new orders as a multiple of current revenue. Sets both the intake flow and (via the initial formula) the opening backlog stock. The 2021-2023 realized order path is scoring evidence only, never an input (hindsight firewall).",
+    },
+    {
+        "id": "backlog_conversion",
+        "unit": "fraction of backlog converted per tick",
+        "distribution": {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — fraction of the order backlog converted to revenue per tick, calibratable from the historical order-to-revenue lag (design-in to start-of-production ~1-2 years for auto electronics, so ~0.40/yr turns the book over in ~2.5 years); no 2020 source states a conversion rate",
+        "description": "Fraction of the pre-tick backlog converted to revenue each tick: the revenue driver gains + backlog_conversion * (order_backlog / revenue), and the same amount leaves the backlog. Mode 0.40.",
+    },
+    {
+        "id": "order_decay",
+        "unit": "fraction of the order flow lost per tick",
+        "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — per-tick decay of the new-orders flow (mean-reversion of order growth after a surge year; the flow cannot sustain surge growth without continuous wins). No 2020 source states a decay rate; mode 0.25 is the planning assumption.",
+        "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). The decay is the point of the mechanism: as the surge passes, the backlog term shrinks and per-tick growth falls even while penetration and adoption keep rising.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {

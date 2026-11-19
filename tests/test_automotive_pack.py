@@ -39,8 +39,9 @@ def test_pack_registered_and_state_fields() -> None:
     # transition index (Ho's generation dimension) + 4 Phase 2
     # dual-track splits (NEV/ICE production + retail) + 3 Track 7
     # supplier magnitude fields (market_share / revenue / profit,
-    # mirroring the corporate pack so cases can score them).
-    assert len(fields) == 34
+    # mirroring the corporate pack so cases can score them) + 2
+    # Track 11 order-book fields (order_backlog / order_intake).
+    assert len(fields) == 36
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -64,6 +65,10 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["market_share"] == 0.05
     assert fields["revenue"] == 100.0
     assert fields["profit"] == 20.0
+    # Track 11 order-book fields default to an empty book, so generic
+    # runs are exactly unaffected.
+    assert fields["order_backlog"] == 0.0
+    assert fields["order_intake"] == 0.0
 
 
 def test_pack_actions_events_actors() -> None:
@@ -99,7 +104,7 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 36
+    assert len(TEMPLATE_VARIABLES) == 41
     assert len(TEMPLATE_FORMULAS) == 16
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
     assert len(drivers) == 13
@@ -122,12 +127,15 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 23 of 36 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 13 formula parameters are the 7
+    # 25 of 41 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 17 formula parameters are the 7
     # sensitivity coefficients plus the 2 rates promoted from Phase 2
     # literals when the cap was raised from 30 to 100, plus the 4 Track 7
     # NEV-chain variables (the chain's penetration is the pack's
-    # nev_penetration state field, reused, not a fifth variable).
+    # nev_penetration state field, reused, not a fifth variable), plus
+    # the 3 Track 11 order-book parameters (order_intake_rate /
+    # backlog_conversion / order_decay — the backlog stock itself is
+    # the pack's order_backlog state field, bound, not a parameter).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -144,6 +152,9 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "nev_rate",
         "nev_midpoint",
         "nev_coupling",
+        "order_intake_rate",
+        "backlog_conversion",
+        "order_decay",
     }
 
 
@@ -151,7 +162,7 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 36
+    assert len(template.variables) == 41
     assert len(template.formulas) == 16
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a

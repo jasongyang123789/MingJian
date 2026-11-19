@@ -191,6 +191,35 @@ class AutomotiveDomainPack(DomainPack):
                 "Supplier net profit for the period, same abstract units as cash.",
                 20.0,
             ),
+            # Track 11 (2026-11-19, order-book / backlog mechanism):
+            # the shape term to the NEV chain's level term (Track 7
+            # report §7). `order_backlog` is the stock of unfulfilled
+            # orders (same units as the case's revenue, e.g. RMB m);
+            # `order_intake` is the new-orders flow per tick (same
+            # units). Both default to 0.0, so generic automotive runs
+            # — which attach no backlog drivers — are exactly
+            # unaffected, and only a case that supplies the backlog
+            # drivers (the revenue term + the intake-decay and
+            # backlog-update drivers, with the opening book/intake
+            # bound as case variables) moves them. The opening book
+            # is bound as a variable, not an initial formula: merge
+            # is per-output, so an initial formula and a tick driver
+            # cannot share an output id. The flow
+            # decays per tick by (1 - order_decay), so the backlog
+            # term shrinks as the order surge passes and per-tick
+            # growth FALLS even while penetration and adoption keep
+            # rising — the front-loaded shape the monotone channels
+            # cannot express (diagnostic-2020 §4).
+            StateFieldSpec(
+                "order_backlog",
+                "Stock of unfulfilled orders, same units as revenue.",
+                0.0,
+            ),
+            StateFieldSpec(
+                "order_intake",
+                "New orders arriving per tick, same units as revenue.",
+                0.0,
+            ),
             # Ho 2026-11-16 generation/lifecycle dimension (NOT in synthesis
             # C1): coarse Phase 1 representation. 0 = outgoing generation
             # fully, 1 = successor fully ramped. Assumption parameter; the

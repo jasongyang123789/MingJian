@@ -74,7 +74,7 @@ def _logistic(x: float, ceiling: float) -> float:
 
 def test_nev_chain_variables_match_diagnostic_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    assert len(TEMPLATE_VARIABLES) == 36
+    assert len(TEMPLATE_VARIABLES) == 41
     assert len(TEMPLATE_FORMULAS) == 16
     assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 13
     expected = {
@@ -91,7 +91,7 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    assert len(template.variables) == 36
+    assert len(template.variables) == 41
     assert len(template.formulas) == 16
 
 
