@@ -1,9 +1,10 @@
 # Causal-chain pattern: driver variable + link formulas
 
-- Date: 2026-11-19 (Track 7, Phase 4)
-- Status: pattern + worked example (NEV transmission chain). The shape
-  fix (decay / order-book mechanism) is a separate design in the
-  Track 7 report, not part of this pattern.
+- Date: 2026-11-19 (Track 7, Phase 4; Track 11 adds §5, the order-book
+  worked example, 2026-11-19)
+- Status: pattern + two worked examples (NEV transmission chain, level
+  term; order-book mechanism, shape term). The shape fix is now BUILT
+  (Track 11), not just designed.
 - Authority: desay-backtest-2026-11-19/diagnostic-2020/DIAGNOSTIC-2020.md
   §5.2 + new-parameter.md §2 (the NEV-chain build spec); the Desay
   re-run harness under
@@ -110,8 +111,8 @@ moves them; only a case that supplies the growth drivers does.
   decelerate (47.7%/yr in the first three years, 21.9%/yr in the last
   two). Fitting year-3 overshoots year-5 by 1.3–4.2×; fitting year-5
   undershoots year-3 by 36–44%. The chain changes the level, not the
-  shape. The shape fix (decay / order-book mechanism) is designed
-  separately in the Track 7 report.
+  shape. The shape fix is the order-book mechanism in §5 below
+  (Track 11) — a second channel, decomposable separately from this one.
 - Post-hoc fitted couplings that would reach the desay-2020 actuals
   (planning path: 9.69 year-3 / 2.08 year-5; realized path: 3.01 /
   0.79) are 5–24× the distribution max 0.40 and were indefensible at
@@ -142,3 +143,67 @@ The NEV-chain test `test_nev_chain_frozen_baseline_k_zero_is_no_chain`
 demonstrates the method: with every variable fixed, `nev_coupling`
 0.0 reproduces the no-chain revenue exactly, and 0.25 lifts it by the
 NEV term alone, with share and profit bit-identical.
+
+## 5. Worked example 2: the order-book (backlog) mechanism — the shape term
+
+Build spec: Track 7 report §7 (diagnostic-2020 §5.3 shape problem).
+Template variables (`template_spec.py`):
+
+| Variable | Distribution | Decision-time anchor |
+|---|---|---|
+| `order_backlog` | fixed 0.0 | Case-level stock; a case binds it (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed) |
+| `order_intake` | fixed 0.0 | Case-level flow; a case binds it the same way |
+| `order_intake_rate` | triangular(0.50, 1.00, 1.50) | Generic range around 1.0× revenue; a case overrides it from its decision-time order announcements (Desay 2020: ~70亿 annualised orders / 67.99亿 revenue ≈ 1.03) |
+| `backlog_conversion` | triangular(0.30, 0.40, 0.60) | Labeled assumption; mode 0.40 turns the book over in ~2.5 years (design-in to start-of-production ~1–2 years) |
+| `order_decay` | triangular(0.10, 0.25, 0.40) | Labeled assumption; mode 0.25 is the planning assumption for mean-reversion of order growth after a surge year |
+
+The stock and flow are the pack's `order_backlog` / `order_intake`
+STATE fields (defaults 0.0; generic runs keep them dormant). A case
+attaches the mechanism by binding the opening book/flow as variables
+and adding three tick drivers, in list order — the order is
+load-bearing:
+
+```python
+# 1. Revenue driver gains exactly one term (after the NEV term).
+revenue = max(0, revenue * (1 + revenue_growth
+                            + revenue_coupling * disruptor_adoption
+                            + nev_coupling * nev_penetration
+                            + backlog_conversion * order_backlog / revenue))
+#    reads the PRE-tick backlog.
+
+# 2. Intake driver decays the flow.
+order_intake = order_intake * (1 - order_decay)
+
+# 3. Backlog driver updates the stock from the pre-tick backlog.
+order_backlog = max(0, order_backlog + order_intake
+                       - backlog_conversion * order_backlog)
+```
+
+Why variables, not initial formulas, for the opening book: merge is
+per-output, so an initial formula and a tick driver cannot share an
+output id — the driver replaces the formula (caught by test during
+Track 11: the initial-formula version silently left the tick-0 book
+at 0.0). The opening book is therefore bound as a variable, exactly
+like `nev_penetration`'s opening level.
+
+What it does and does not do (measured on the Desay re-run,
+Track 11 report): at 2020 mode values the B-replay growth factors
+FALL tick by tick (1.616 → 1.615 → 1.557 → 1.522) while adoption and
+penetration keep rising — the shape property the monotone channels
+cannot express — and both absolute errors shrink by about two thirds
+(yr-3 replay −52.7% → −18.0%; yr-5 P50 −49.9% → +19.4%). What it
+does NOT do: make the two SIGNED errors converge (they move from
+2.7pp apart to 37.4pp apart, because yr-5 crosses zero), or raise the
+yr-3/yr-5 level ratio (0.583 → 0.422 vs actual 0.673). That is
+structural, not a parameter choice: a positive additive term
+compounds into year 5, so it can fix the growth-rate shape but cannot
+raise the level ratio — the §7 criterion as literally written ("yr-3
+and yr-5 errors moving toward each other") is unachievable by any
+positive additive term, and the criterion should be restated as
+"per-tick growth becomes decreasing AND both absolute errors shrink".
+The mechanism also over-lifts a non-surging case: the 2015 control
+book (0.25× revenue) still lifts B's year-5 P50 by +44%, because the
+decaying intake flow keeps replenishing the stock (the stock only
+drains via conversion). The intake-rate assumption therefore needs
+real calibration data (the internal order book) before the mechanism
+is used for planning — see the Track 11 report §"Limits".

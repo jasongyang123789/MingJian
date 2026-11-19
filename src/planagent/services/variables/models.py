@@ -47,9 +47,13 @@ class DistributionType(str, Enum):
 MAX_VARIABLES = 100
 MAX_INTERNAL_KEY_LENGTH = 64
 MAX_INTERNAL_VALUE_LENGTH = 2000
-#: Maximum formulas per set/template, ported from the SimplifySimulation
-#: reference (``len(formula_graph) > 40`` is rejected there).
-MAX_FORMULAS = 40
+#: Maximum formulas per set/template. Ported from the SimplifySimulation
+#: reference (``len(formula_graph) > 40`` is rejected there); raised
+#: from 40 to 50 on the Track 11 merge (2026-11-19): the merged
+#: automotive template alone holds 36 formulas, and Desay-style cases
+#: add 6 case formulas on top (42 total), so the reference cap now
+#: refuses the exact usage the order-book backtest verifies.
+MAX_FORMULAS = 50
 #: Maximum expression nesting depth, ported from the reference
 #: (``depth > 15`` is rejected there).
 MAX_FORMULA_DEPTH = 15
