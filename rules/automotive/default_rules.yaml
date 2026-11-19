@@ -297,3 +297,44 @@ rules:
         value: 0.01
     priority: 79
     explanation_template: "NEV momentum appeared in '{statement}', so the run selected {action_id}; penetration steps up and the dual-track split drivers re-derive both tracks (Phase 2 dual track)."
+
+  # Track 4 (one-click funnel + satisfaction feedback): the funnel rates
+  # themselves are model-determined (tick drivers), so these rules do NOT
+  # set rates by hand. They move the STOCKS and the SATISFACTION score,
+  # which the drivers then carry through the funnel: a delivery complaint
+  # dips satisfaction (the driver pulls it back toward the delivery
+  # target over following ticks, so the dip decays instead of vanishing
+  # outright), and an RFQ inflow adds one open RFQ to the stock (the
+  # self-referential stock driver keeps it in the flow).
+  - id: "auto.delivery_satisfaction_slip"
+    domain: "automotive"
+    action_id: "improve_delivery_quality"
+    trigger:
+      keywords:
+        - "late delivery"
+        - "delivery delay"
+        - "quality complaint"
+        - "customer complaint"
+        - "delivery satisfaction"
+    effects:
+      - target: "delivery_satisfaction"
+        op: "add"
+        value: -0.05
+    priority: 80
+    explanation_template: "Delivery-satisfaction evidence appeared in '{statement}', so the run selected {action_id}; the satisfaction dip feeds back into next tick's RFQ rates (Track 4 feedback loop)."
+
+  - id: "auto.rfq_momentum"
+    domain: "automotive"
+    action_id: "accelerate_rfq_response"
+    trigger:
+      keywords:
+        - "new RFQ"
+        - "request for quotation"
+        - "RFQ surge"
+        - "RFQ inflow"
+    effects:
+      - target: "funnel_rfqs"
+        op: "add"
+        value: 1.0
+    priority: 82
+    explanation_template: "RFQ-inflow evidence appeared in '{statement}', so the run selected {action_id} and added one open RFQ to the funnel."

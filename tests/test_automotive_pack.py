@@ -2,8 +2,8 @@
 (Phase 1 automotive pack).
 
 Covers pack registration and state fields/defaults, the action/event/
-actor surface, the built-in template synthesis (32 variables, 16
-formulas, 13 drivers, assumption data), corporate-template invariance,
+actor surface, the built-in template synthesis (52 variables, 36
+formulas, 33 drivers, assumption data), corporate-template invariance,
 assumption-data merging, and ``resolve_assumption_data`` precedence.
 """
 
@@ -37,8 +37,10 @@ def test_pack_registered_and_state_fields() -> None:
     fields = {field.name: float(field.default) for field in pack.state_fields}
     # 25 synthesis C1 fields + cash (MC continuity) + the generation
     # transition index (Ho's generation dimension) + 4 Phase 2
-    # dual-track splits (NEV/ICE production + retail).
-    assert len(fields) == 31
+    # dual-track splits (NEV/ICE production + retail) + 14 Track 4
+    # funnel/satisfaction fields (7 pipeline stocks + 2 cumulative
+    # totals + 5 stage rates + overall conversion + satisfaction).
+    assert len(fields) == 45
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -57,6 +59,22 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["nev_retail_volume"] == 94.79
     assert fields["ice_retail_volume"] == 103.11
     assert fields["nev_retail_volume"] + fields["ice_retail_volume"] == 197.9
+    # Track 4 funnel/satisfaction defaults: pipeline stocks, cumulative
+    # totals consistent with the 0.10 overall default (12 / 120).
+    assert fields["funnel_prospects"] == 40.0
+    assert fields["funnel_leads"] == 12.0
+    assert fields["funnel_rfqs"] == 4.0
+    assert fields["funnel_contracts"] == 2.0
+    assert fields["funnel_projects"] == 6.0
+    assert fields["funnel_deliveries_total"] == 12.0
+    assert fields["funnel_prospects_total"] == 120.0
+    assert fields["funnel_prospect_to_lead_rate"] == 0.25
+    assert fields["funnel_lead_to_rfq_rate"] == 0.30
+    assert fields["funnel_rfq_win_rate"] == 0.25
+    assert fields["funnel_contract_to_project_rate"] == 0.90
+    assert fields["funnel_project_to_delivery_rate"] == 0.92
+    assert fields["funnel_overall_conversion"] == 0.10
+    assert fields["delivery_satisfaction"] == 0.75
 
 
 def test_pack_actions_events_actors() -> None:
@@ -72,6 +90,9 @@ def test_pack_actions_events_actors() -> None:
         "shift_mix_nev",
         "shift_product_mix",
         "expand_channel",
+        "qualify_leads",
+        "accelerate_rfq_response",
+        "improve_delivery_quality",
         "hold_and_monitor",
     }
     events = {event.event_type for event in pack.event_types}
@@ -82,6 +103,7 @@ def test_pack_actions_events_actors() -> None:
         "price_war_escalation",
         "generation_changeover",
         "dealer_inventory_alert",
+        "delivery_satisfaction_feedback",
     }
     templates = {template.actor_type: template for template in pack.actor_templates}
     assert set(templates) == {"oem", "dealer", "tier1_supplier"}
@@ -92,10 +114,10 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 32
-    assert len(TEMPLATE_FORMULAS) == 16
+    assert len(TEMPLATE_VARIABLES) == 52
+    assert len(TEMPLATE_FORMULAS) == 36
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 13
+    assert len(drivers) == 33
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -110,15 +132,37 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "ice_production_volume",
         "tier1_gross_margin",
         "generation_transition_index",
+        # Track 4 funnel drivers, in chain order: rates -> flows ->
+        # stocks -> satisfaction -> overall conversion.
+        "funnel_prospect_to_lead_rate",
+        "funnel_lead_to_rfq_rate",
+        "funnel_rfq_win_rate",
+        "funnel_contract_to_project_rate",
+        "funnel_project_to_delivery_rate",
+        "funnel_new_prospects",
+        "funnel_new_leads",
+        "funnel_new_rfqs",
+        "funnel_new_contracts",
+        "funnel_new_projects",
+        "funnel_new_deliveries",
+        "funnel_prospects",
+        "funnel_leads",
+        "funnel_rfqs",
+        "funnel_contracts",
+        "funnel_projects",
+        "funnel_deliveries_total",
+        "funnel_prospects_total",
+        "delivery_satisfaction",
+        "funnel_overall_conversion",
     ]
     # Every variable carries a unit and an evidence reference.
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 23 of 32 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 9 formula parameters are the 7
-    # sensitivity coefficients plus the 2 rates promoted from Phase 2
-    # literals when the cap was raised from 30 to 100.
+    # 31 of 52 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 21 formula parameters are the 9
+    # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
+    # parameters (7 base rates/inflow/gain + 5 attrition rates).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -131,6 +175,18 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "margin_material_sensitivity",
         "income_growth_rate_annual",
         "nev_penetration_monthly_drift",
+        "prospect_inflow_monthly",
+        "funnel_prospect_to_lead_base",
+        "funnel_lead_to_rfq_base",
+        "funnel_rfq_win_base",
+        "funnel_contract_to_project_base",
+        "funnel_project_to_delivery_base",
+        "satisfaction_feedback_gain",
+        "funnel_prospect_attrition",
+        "funnel_lead_attrition",
+        "funnel_rfq_attrition",
+        "funnel_contract_attrition",
+        "funnel_project_attrition",
     }
 
 
@@ -138,8 +194,8 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 32
-    assert len(template.formulas) == 16
+    assert len(template.variables) == 52
+    assert len(template.formulas) == 36
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
@@ -192,9 +248,7 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
 
     # Sampling the template resolves both rates, and the drivers evaluate
     # to exactly the old literal behavior (fixed values, no drift).
-    sampled = sample_variable_set(
-        VariableSet(variables=list(template.variables)), random.Random(7)
-    )
+    sampled = sample_variable_set(VariableSet(variables=list(template.variables)), random.Random(7))
     assert sampled["income_growth_rate_annual"] == 0.05
     assert sampled["nev_penetration_monthly_drift"] == 0.002
     updates = evaluate_tick_drivers(
