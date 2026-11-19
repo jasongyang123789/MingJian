@@ -66,6 +66,13 @@ _STATE_POLICIES: dict[str, dict[str, MetricPolicy]] = {
         "chip_supply_index": MetricPolicy("increase", 0.9, 0.7),
         "price_cut_expectation": MetricPolicy("decrease", 0.5, 0.65),
         "cash": MetricPolicy("increase", 50.0, 25.0),
+        # B2B funnel + satisfaction (Track 4). Thresholds are scoring
+        # heuristics anchored to the pack defaults (satisfaction neutral
+        # 0.75, overall conversion 0.10, win rate 0.25); tunable via
+        # variable templates like the other automotive thresholds.
+        "delivery_satisfaction": MetricPolicy("increase", 0.7, 0.5),
+        "funnel_overall_conversion": MetricPolicy("increase", 0.08, 0.05),
+        "funnel_rfq_win_rate": MetricPolicy("increase", 0.2, 0.12),
     },
 }
 

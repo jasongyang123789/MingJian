@@ -57,6 +57,14 @@ Formula graph (evaluation order matters — drivers chain within a tick):
   driver transforms the post-rule state, it does not reset it) —
   except the four split drivers, which re-derive their fields from
   the spine x penetration each tick by construction.
+
+- ``funnel_*`` drivers (Track 4, one-click funnel + satisfaction
+  feedback): rates from the sampled bases + the PREVIOUS tick's
+  satisfaction (one-tick feedback lag, by driver order) -> flow
+  intermediates (``funnel_new_*``, not state fields) -> pipeline
+  stocks -> satisfaction (20% toward the delivery-performance
+  target) -> the overall-conversion identity. See the driver
+  descriptions at the end of ``TEMPLATE_FORMULAS``.
 """
 
 from __future__ import annotations
@@ -307,6 +315,169 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "fixed", "value": ADOPTED_VALUES["margin_material_sensitivity"]},
         "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; v3 NOT ESTIMABLE — wrong-sign episode: Desay margins fell 20% -> 19.1% (2023-25) while lithium collapsed, i.e. unpassed pressure was negative; the margin driver lacks the annual-cut channel, see transmission.CALIBRATION_REPORT)",
         "description": "Tier-1 margin points lost per tick per point of unpassed material-cost pressure (material_cost_index minus the current price index). Price passthrough mitigates the squeeze.",
+    },
+    # --- B2B funnel + satisfaction feedback (Track 4, one-click) ---
+    # The 8-stage Tier-1 chain (customer development -> lead funnel ->
+    # RFQ/contract -> demand/product matching/project mgmt -> manufacturing
+    # -> delivery satisfaction) as MODELED quantities: the base rates and
+    # the feedback gain are sampled variables, and the tick drivers at the
+    # end of TEMPLATE_FORMULAS turn them into per-tick conversion rates,
+    # pipeline stocks, and the satisfaction score. No manual variable
+    # override is needed to run the funnel — attaching the built-in
+    # template is the one click. All magnitudes are
+    # assumption:pending-calibration (no public Tier-1 funnel series
+    # exists); directions and mechanisms are the deliverable.
+    {
+        "id": "prospect_inflow_monthly",
+        "unit": "accounts/month",
+        "distribution": {"type": "fixed", "value": 4.0},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 prospecting series exists; placeholder inflow for the customer-development stage)",
+        "description": "New target accounts prospected per month (customer-development stage). The funnel_new_prospects driver lifts this inflow with delivery satisfaction (referral / reputation), so satisfaction feeds the top of the NEXT funnel.",
+    },
+    {
+        "id": "funnel_prospect_to_lead_base",
+        "unit": "rate",
+        "distribution": {"type": "triangular", "min": 0.15, "mode": 0.25, "max": 0.35},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 prospect-to-lead series exists; placeholder spread for sensitivity analysis)",
+        "description": "Base prospect-to-lead conversion rate (customer development -> qualified lead).",
+    },
+    {
+        "id": "funnel_lead_to_rfq_base",
+        "unit": "rate",
+        "distribution": {"type": "triangular", "min": 0.20, "mode": 0.30, "max": 0.45},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 lead-to-RFQ series exists; placeholder spread for sensitivity analysis)",
+        "description": "Base lead-to-RFQ conversion rate. The tick driver scales it by the previous tick's delivery satisfaction (feedback loop).",
+    },
+    {
+        "id": "funnel_rfq_win_base",
+        "unit": "rate",
+        "distribution": {"type": "triangular", "min": 0.15, "mode": 0.25, "max": 0.35},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 RFQ win-rate series exists; placeholder spread for sensitivity analysis)",
+        "description": "Base RFQ win rate (RFQ -> contract). The tick driver scales it by the previous tick's delivery satisfaction (feedback loop).",
+    },
+    {
+        "id": "funnel_contract_to_project_base",
+        "unit": "rate",
+        "distribution": {"type": "triangular", "min": 0.80, "mode": 0.90, "max": 0.95},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 contract-to-project series exists; placeholder spread for sensitivity analysis)",
+        "description": "Base contract-to-project conversion rate (won contract -> active project: demand management + product matching + project kickoff).",
+    },
+    {
+        "id": "funnel_project_to_delivery_base",
+        "unit": "rate/month",
+        "distribution": {"type": "triangular", "min": 0.85, "mode": 0.92, "max": 0.97},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 project-to-delivery series exists; placeholder spread for sensitivity analysis)",
+        "description": "Base share of active projects delivering per month (manufacturing follow-up -> delivery). The tick driver scales it by chip supply (0.7 + 0.3 x chip_supply_index).",
+    },
+    {
+        "id": "satisfaction_feedback_gain",
+        "unit": "fraction per satisfaction point",
+        "distribution": {"type": "fixed", "value": 1.0},
+        "evidence_ref": "assumption:pending-calibration (no measured satisfaction-to-RFQ elasticity exists; placeholder gain — a 0.10 satisfaction gap above/below the 0.75 neutral level moves the RFQ rates and prospect inflow by 10% relative)",
+        "description": "Satisfaction feedback gain: each point of delivery satisfaction above the 0.75 neutral level lifts the lead-to-RFQ rate, the RFQ win rate, and prospect inflow by this fraction (relative), and drags them by the same fraction below neutral.",
+    },
+    # Funnel ATTRITION (Track 4): the monthly share of each pipeline
+    # stock that leaves the funnel WITHOUT converting (prospects go cold,
+    # leads die, RFQs are lost to competitors / no-decision, contracts
+    # are cancelled before kickoff, projects are cancelled before
+    # delivery). Without attrition the funnel would be lossless and the
+    # overall conversion would drift to 1.0 — every prospect would
+    # eventually deliver, which is not a funnel. With these defaults the
+    # end-to-end yield tends to the product of the stage yields
+    # rate/(rate+attrition) ≈ 0.41. Fixed placeholders, assumption-labeled.
+    {
+        "id": "funnel_prospect_attrition",
+        "unit": "rate/month",
+        "distribution": {"type": "fixed", "value": 0.10},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 prospect-churn series exists; placeholder attrition for the customer-development stage)",
+        "description": "Monthly share of open prospects that go cold without becoming leads.",
+    },
+    {
+        "id": "funnel_lead_attrition",
+        "unit": "rate/month",
+        "distribution": {"type": "fixed", "value": 0.10},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 lead-decay series exists; placeholder attrition for the lead stage)",
+        "description": "Monthly share of qualified leads that die without issuing an RFQ.",
+    },
+    {
+        "id": "funnel_rfq_attrition",
+        "unit": "rate/month",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 RFQ-loss series exists; placeholder attrition for lost / no-decision RFQs)",
+        "description": "Monthly share of open RFQs lost to competitors or no-decision without becoming contracts.",
+    },
+    {
+        "id": "funnel_contract_attrition",
+        "unit": "rate/month",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 contract-cancellation series exists; placeholder attrition for the contract stage)",
+        "description": "Monthly share of won contracts cancelled before project kickoff.",
+    },
+    {
+        "id": "funnel_project_attrition",
+        "unit": "rate/month",
+        "distribution": {"type": "fixed", "value": 0.02},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 project-cancellation series exists; placeholder attrition for the project stage)",
+        "description": "Monthly share of active projects cancelled before delivery.",
+    },
+    # Funnel pipeline stocks + satisfaction as fixed state-matching
+    # variables (lever handles, = pack defaults): the initial pipeline is
+    # a per-run binding, exactly like production_volume.
+    {
+        "id": "funnel_prospects",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 40.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder pipeline stock; bind the real CRM pipeline per run)",
+        "description": "Open prospect accounts in customer development at run start.",
+    },
+    {
+        "id": "funnel_leads",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 12.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder pipeline stock; bind the real CRM pipeline per run)",
+        "description": "Qualified leads in the funnel at run start.",
+    },
+    {
+        "id": "funnel_rfqs",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 4.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder pipeline stock; bind the real CRM pipeline per run)",
+        "description": "Open RFQs at run start.",
+    },
+    {
+        "id": "funnel_contracts",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 2.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder pipeline stock; bind the real CRM pipeline per run)",
+        "description": "Won contracts awaiting project kickoff at run start.",
+    },
+    {
+        "id": "funnel_projects",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 6.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder pipeline stock; bind the real CRM pipeline per run)",
+        "description": "Active projects at run start.",
+    },
+    {
+        "id": "funnel_deliveries_total",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 12.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder cumulative count, consistent with the 0.10 overall-conversion default; bind real delivery history per run)",
+        "description": "Cumulative deliveries completed before the run.",
+    },
+    {
+        "id": "funnel_prospects_total",
+        "unit": "accounts",
+        "distribution": {"type": "fixed", "value": 120.0},
+        "evidence_ref": "assumption:pending-calibration (placeholder cumulative count, consistent with the 0.10 overall-conversion default; bind real prospecting history per run)",
+        "description": "Cumulative prospects ever prospected before the run.",
+    },
+    {
+        "id": "delivery_satisfaction",
+        "unit": "score 0-1",
+        "distribution": {"type": "fixed", "value": 0.75},
+        "evidence_ref": "assumption:pending-calibration (no public Tier-1 delivery-satisfaction series exists; 0.75 is the neutral level of the feedback loop, not a measured score)",
+        "description": "Delivery satisfaction score at run start (0-1). Also the feedback-loop input: the tick-1 RFQ rates read this value, so an initial_state override of satisfaction moves the funnel from tick 1.",
     },
     # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
     # (Sprint 2 design pin) and this template held exactly 30, so the
@@ -702,6 +873,465 @@ TEMPLATE_FORMULAS: list[dict] = [
             ],
         },
         "description": "Tick driver (Ho 2026-11-16 generation dimension): the representative successor-generation share ramps 5 points per tick, capped at 1.0. The 5-point rate is an assumption parameter (literal in Phase 1). Per-nameplate schedules (Phase 2) live in the split structure and drive S-layer aggregation; this global index remains the coarse engine-level representative for trajectory display.",
+    },
+    # --- B2B funnel + satisfaction feedback drivers (Track 4) ---
+    # Order matters (drivers chain within a tick): RATES first (from the
+    # sampled bases + the PREVIOUS tick's satisfaction — the satisfaction
+    # driver runs later in this list, so the RFQ rates read last tick's
+    # score: the feedback lag is one tick by construction), then FLOW
+    # intermediates (funnel_new_*, not state fields — the engine applies
+    # only driver outputs that name a state field, but later drivers in
+    # the same tick still see them), then STOCKS (self-referential, so
+    # rule effects on a stock persist instead of being overwritten),
+    # then SATISFACTION, then the OVERALL conversion identity.
+    {
+        "output": "funnel_prospect_to_lead_rate",
+        "tick_driver": True,
+        "expression": {"ref": "funnel_prospect_to_lead_base"},
+        "description": "Tick driver (Track 4): prospect-to-lead rate is the sampled base rate. Top of funnel; no satisfaction link — prospecting quality, not reputation.",
+    },
+    {
+        "output": "funnel_lead_to_rfq_rate",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                0.95,
+                {
+                    "op": "max",
+                    "args": [
+                        0,
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_lead_to_rfq_base"},
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        1,
+                                        {
+                                            "op": "multiply",
+                                            "args": [
+                                                {"ref": "satisfaction_feedback_gain"},
+                                                {
+                                                    "op": "subtract",
+                                                    "args": [
+                                                        {"ref": "delivery_satisfaction"},
+                                                        0.75,
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4, FEEDBACK LOOP): lead-to-RFQ rate = base x (1 + gain x (satisfaction - 0.75)), clamped to [0, 0.95]. The satisfaction read is the PREVIOUS tick's score (this driver runs before the satisfaction driver), so a delivery delight/disappointment moves next month's RFQ inflow, not the same month's.",
+    },
+    {
+        "output": "funnel_rfq_win_rate",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                0.95,
+                {
+                    "op": "max",
+                    "args": [
+                        0,
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_rfq_win_base"},
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        1,
+                                        {
+                                            "op": "multiply",
+                                            "args": [
+                                                {"ref": "satisfaction_feedback_gain"},
+                                                {
+                                                    "op": "subtract",
+                                                    "args": [
+                                                        {"ref": "delivery_satisfaction"},
+                                                        0.75,
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4, FEEDBACK LOOP): RFQ win rate = base x (1 + gain x (satisfaction - 0.75)), clamped to [0, 0.95]. Same one-tick feedback lag as the lead-to-RFQ rate: satisfied customers re-buy and refer, dissatisfied ones do not.",
+    },
+    {
+        "output": "funnel_contract_to_project_rate",
+        "tick_driver": True,
+        "expression": {"ref": "funnel_contract_to_project_base"},
+        "description": "Tick driver (Track 4): contract-to-project rate is the sampled base rate (demand management + product matching + project kickoff).",
+    },
+    {
+        "output": "funnel_project_to_delivery_rate",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                0.99,
+                {
+                    "op": "max",
+                    "args": [
+                        0,
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_project_to_delivery_base"},
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        0.7,
+                                        {
+                                            "op": "multiply",
+                                            "args": [0.3, {"ref": "chip_supply_index"}],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): project-to-delivery rate = base x (0.7 + 0.3 x chip_supply_index), clamped to [0, 0.99]. Manufacturing follow-up is chip-constrained (C2 link 6); at normal supply (1.0) the rate is the base. This rate also sets the satisfaction target below, so a supply squeeze drags satisfaction next tick.",
+    },
+    {
+        "output": "funnel_new_prospects",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "prospect_inflow_monthly"},
+                {
+                    "op": "add",
+                    "args": [
+                        1,
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "satisfaction_feedback_gain"},
+                                {
+                                    "op": "subtract",
+                                    "args": [{"ref": "delivery_satisfaction"}, 0.75],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4, FEEDBACK LOOP, intermediate — not a state field): new prospects this month = inflow x (1 + gain x (satisfaction - 0.75)). Referral/reputation channel: high satisfaction brings more prospects next month. Reads the previous tick's satisfaction, like the RFQ rates.",
+    },
+    {
+        "output": "funnel_new_leads",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "funnel_prospects"}, {"ref": "funnel_prospect_to_lead_rate"}],
+        },
+        "description": "Tick driver (Track 4, intermediate): new qualified leads this month = open prospects x the same-tick prospect-to-lead rate.",
+    },
+    {
+        "output": "funnel_new_rfqs",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "funnel_leads"}, {"ref": "funnel_lead_to_rfq_rate"}],
+        },
+        "description": "Tick driver (Track 4, intermediate): new RFQs this month = qualified leads x the same-tick lead-to-RFQ rate.",
+    },
+    {
+        "output": "funnel_new_contracts",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "funnel_rfqs"}, {"ref": "funnel_rfq_win_rate"}],
+        },
+        "description": "Tick driver (Track 4, intermediate): new contracts this month = open RFQs x the same-tick win rate.",
+    },
+    {
+        "output": "funnel_new_projects",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "funnel_contracts"}, {"ref": "funnel_contract_to_project_rate"}],
+        },
+        "description": "Tick driver (Track 4, intermediate): new projects this month = won contracts x the same-tick contract-to-project rate.",
+    },
+    {
+        "output": "funnel_new_deliveries",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "funnel_projects"}, {"ref": "funnel_project_to_delivery_rate"}],
+        },
+        "description": "Tick driver (Track 4, intermediate): deliveries this month = active projects x the same-tick project-to-delivery rate.",
+    },
+    {
+        "output": "funnel_prospects",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "subtract",
+                    "args": [
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        {"ref": "funnel_prospects"},
+                                        {"ref": "funnel_new_prospects"},
+                                    ],
+                                },
+                                {"ref": "funnel_new_leads"},
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_prospects"},
+                                {"ref": "funnel_prospect_attrition"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): open prospects = previous + new prospects - new leads - attrition (prospects going cold), floored at 0. Self-referential, so rule effects on the stock (e.g. a prospecting push) persist.",
+    },
+    {
+        "output": "funnel_leads",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "subtract",
+                    "args": [
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [{"ref": "funnel_leads"}, {"ref": "funnel_new_leads"}],
+                                },
+                                {"ref": "funnel_new_rfqs"},
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [{"ref": "funnel_leads"}, {"ref": "funnel_lead_attrition"}],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): qualified leads = previous + new leads - new RFQs - attrition (leads dying), floored at 0.",
+    },
+    {
+        "output": "funnel_rfqs",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "subtract",
+                    "args": [
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [{"ref": "funnel_rfqs"}, {"ref": "funnel_new_rfqs"}],
+                                },
+                                {"ref": "funnel_new_contracts"},
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [{"ref": "funnel_rfqs"}, {"ref": "funnel_rfq_attrition"}],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): open RFQs = previous + new RFQs - new contracts - attrition (RFQs lost to competitors / no-decision), floored at 0. Self-referential, so the auto.rfq_momentum rule effect (+1 RFQ) persists into the flow.",
+    },
+    {
+        "output": "funnel_contracts",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "subtract",
+                    "args": [
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        {"ref": "funnel_contracts"},
+                                        {"ref": "funnel_new_contracts"},
+                                    ],
+                                },
+                                {"ref": "funnel_new_projects"},
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_contracts"},
+                                {"ref": "funnel_contract_attrition"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): won contracts awaiting kickoff = previous + new contracts - new projects - attrition (contracts cancelled), floored at 0.",
+    },
+    {
+        "output": "funnel_projects",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "subtract",
+                    "args": [
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {
+                                    "op": "add",
+                                    "args": [
+                                        {"ref": "funnel_projects"},
+                                        {"ref": "funnel_new_projects"},
+                                    ],
+                                },
+                                {"ref": "funnel_new_deliveries"},
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "funnel_projects"},
+                                {"ref": "funnel_project_attrition"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): active projects = previous + new projects - deliveries - attrition (projects cancelled), floored at 0.",
+    },
+    {
+        "output": "funnel_deliveries_total",
+        "tick_driver": True,
+        "expression": {
+            "op": "add",
+            "args": [{"ref": "funnel_deliveries_total"}, {"ref": "funnel_new_deliveries"}],
+        },
+        "description": "Tick driver (Track 4): cumulative deliveries = previous + this month's deliveries. Monotonic by construction; the numerator of the overall conversion rate.",
+    },
+    {
+        "output": "funnel_prospects_total",
+        "tick_driver": True,
+        "expression": {
+            "op": "add",
+            "args": [{"ref": "funnel_prospects_total"}, {"ref": "funnel_new_prospects"}],
+        },
+        "description": "Tick driver (Track 4): cumulative prospects = previous + this month's new prospects. Monotonic by construction; the denominator of the overall conversion rate.",
+    },
+    {
+        "output": "delivery_satisfaction",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                1,
+                {
+                    "op": "max",
+                    "args": [
+                        0,
+                        {
+                            "op": "add",
+                            "args": [
+                                {"ref": "delivery_satisfaction"},
+                                {
+                                    "op": "multiply",
+                                    "args": [
+                                        0.2,
+                                        {
+                                            "op": "subtract",
+                                            "args": [
+                                                {
+                                                    "op": "add",
+                                                    "args": [
+                                                        0.4,
+                                                        {
+                                                            "op": "multiply",
+                                                            "args": [
+                                                                0.6,
+                                                                {
+                                                                    "ref": "funnel_project_to_delivery_rate"
+                                                                },
+                                                            ],
+                                                        },
+                                                    ],
+                                                },
+                                                {"ref": "delivery_satisfaction"},
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (Track 4): satisfaction moves 20% of the way toward its delivery-performance target (0.4 + 0.6 x project-to-delivery rate), clamped to [0, 1]. The 20% adjustment speed and the 0.4/0.6 target weights are assumption parameters (literals). Because the RFQ-rate drivers run BEFORE this driver, a satisfaction change moves next tick's RFQ rates — the one-tick feedback lag. A rule effect on satisfaction (e.g. a delivery complaint) decays toward the target instead of being overwritten outright.",
+    },
+    {
+        "output": "funnel_overall_conversion",
+        "tick_driver": True,
+        "expression": {
+            "op": "divide",
+            "args": [
+                {"ref": "funnel_deliveries_total"},
+                {"op": "max", "args": [{"ref": "funnel_prospects_total"}, 1]},
+            ],
+        },
+        "description": "Tick driver (Track 4): overall funnel conversion = cumulative deliveries / cumulative prospects (denominator guarded by max(..., 1)). An identity, not a parameter — it is the funnel's end-to-end yield, recomputed every tick from the two cumulative stocks.",
     },
 ]
 

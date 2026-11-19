@@ -111,12 +111,8 @@ class AutomotiveDomainPack(DomainPack):
             StateFieldSpec(
                 "ice_production_volume", "Monthly ICE production volume, 10k vehicles.", 149.94
             ),
-            StateFieldSpec(
-                "nev_retail_volume", "Monthly NEV retail volume, 10k vehicles.", 94.79
-            ),
-            StateFieldSpec(
-                "ice_retail_volume", "Monthly ICE retail volume, 10k vehicles.", 103.11
-            ),
+            StateFieldSpec("nev_retail_volume", "Monthly NEV retail volume, 10k vehicles.", 94.79),
+            StateFieldSpec("ice_retail_volume", "Monthly ICE retail volume, 10k vehicles.", 103.11),
             # Synthesis C1: 1.0 = 2025, anchored to CNY 43,377 per-capita disposable income.
             StateFieldSpec("income_index", "Disposable-income level, 1.0 = 2025.", 1.0),
             # Synthesis C1/B4: ASSUMPTION PARAMETER (no unified public series).
@@ -170,6 +166,61 @@ class AutomotiveDomainPack(DomainPack):
             StateFieldSpec("replacement_demand", "Replacement-demand level, 1.0 = baseline.", 1.0),
             # Synthesis C1: retained ONLY for Monte Carlo metric continuity.
             StateFieldSpec("cash", "Available operating cash.", 100.0),
+            # B2B funnel (Track 4, one-click): the 8-stage Tier-1 sales
+            # chain — customer development -> lead funnel -> RFQ/contract
+            # -> demand/product matching/project management -> manufacturing
+            # follow-up -> delivery satisfaction — as modeled pipeline
+            # STOCKS (counts), not manual overrides. Stocks flow into each
+            # other at the modeled conversion rates below; the rates are
+            # tick-driver outputs (template_spec.py), so a run with the
+            # built-in template computes the whole funnel end to end.
+            # Stock defaults are round placeholder pipeline levels
+            # (assumption:pending-calibration — bind the real CRM pipeline
+            # per run); the cumulative totals are consistent with the
+            # overall conversion default (12 / 120 = 0.10).
+            StateFieldSpec(
+                "funnel_prospects", "Open prospect accounts in customer development.", 40.0
+            ),
+            StateFieldSpec("funnel_leads", "Qualified leads in the funnel.", 12.0),
+            StateFieldSpec("funnel_rfqs", "Open RFQs (requests for quotation).", 4.0),
+            StateFieldSpec("funnel_contracts", "Won contracts awaiting project kickoff.", 2.0),
+            StateFieldSpec(
+                "funnel_projects",
+                "Active projects (demand + product matching + project mgmt + manufacturing).",
+                6.0,
+            ),
+            StateFieldSpec("funnel_deliveries_total", "Cumulative deliveries completed.", 12.0),
+            StateFieldSpec(
+                "funnel_prospects_total", "Cumulative prospects ever prospected.", 120.0
+            ),
+            # B2B funnel conversion RATES (Track 4): modeled quantities,
+            # recomputed every tick by the template's tick drivers from
+            # the sampled base rates + the satisfaction feedback (see
+            # template_spec.py). 0-1; the overall rate is cumulative
+            # deliveries / cumulative prospects.
+            StateFieldSpec(
+                "funnel_prospect_to_lead_rate", "Prospect-to-lead conversion rate.", 0.25
+            ),
+            StateFieldSpec("funnel_lead_to_rfq_rate", "Lead-to-RFQ conversion rate.", 0.30),
+            StateFieldSpec("funnel_rfq_win_rate", "RFQ win rate.", 0.25),
+            StateFieldSpec(
+                "funnel_contract_to_project_rate", "Contract-to-project conversion rate.", 0.90
+            ),
+            StateFieldSpec(
+                "funnel_project_to_delivery_rate", "Project-to-delivery rate per month.", 0.92
+            ),
+            StateFieldSpec(
+                "funnel_overall_conversion",
+                "Overall funnel conversion (cumulative deliveries / cumulative prospects).",
+                0.10,
+            ),
+            # Delivery SATISFACTION (Track 4): 0-1 score, driven each tick
+            # toward a delivery-performance target by its tick driver.
+            # The feedback loop: this score (previous tick's value) lifts
+            # or drags the lead-to-RFQ rate, the RFQ win rate, and prospect
+            # inflow — satisfaction feeds the NEXT RFQ, modeled, not
+            # overridden by hand.
+            StateFieldSpec("delivery_satisfaction", "Delivery satisfaction score, 0-1.", 0.75),
             # Ho 2026-11-16 generation/lifecycle dimension (NOT in synthesis
             # C1): coarse Phase 1 representation. 0 = outgoing generation
             # fully, 1 = successor fully ramped. Assumption parameter; the
@@ -193,6 +244,12 @@ class AutomotiveDomainPack(DomainPack):
             ActionSpec("shift_mix_nev", "Shift mix toward NEV nameplates."),
             ActionSpec("shift_product_mix", "Shift the electronics product/solution mix."),
             ActionSpec("expand_channel", "Expand channel / export coverage."),
+            ActionSpec("qualify_leads", "Improve lead qualification in customer development."),
+            ActionSpec("accelerate_rfq_response", "Respond to RFQs faster to lift the win rate."),
+            ActionSpec(
+                "improve_delivery_quality",
+                "Improve on-time delivery and quality to lift satisfaction.",
+            ),
             ActionSpec("hold_and_monitor", "Hold position while collecting more evidence."),
         ]
 
@@ -210,6 +267,10 @@ class AutomotiveDomainPack(DomainPack):
                 "generation_changeover", "A nameplate generation changed over (phase-out / ramp)."
             ),
             EventTypeSpec("dealer_inventory_alert", "Dealer inventory crossed the warning line."),
+            EventTypeSpec(
+                "delivery_satisfaction_feedback",
+                "Delivery satisfaction moved the next RFQ rate (satisfaction feedback loop).",
+            ),
         ]
 
     @property

@@ -101,7 +101,7 @@ def test_yaml_scale_by_malformed_fails_loudly(tmp_path: Path, bad_value: str) ->
 
 def test_automotive_rules_file_shape() -> None:
     rules = RuleRegistry(RULES_ROOT).get_rules("automotive")
-    assert len(rules) == 13
+    assert len(rules) == 15
     ids = {rule.rule_id for rule in rules}
     assert ids == {
         "auto.chip_shortage",
@@ -117,6 +117,8 @@ def test_automotive_rules_file_shape() -> None:
         "auto.material_cost_shock",
         "auto.rate_cut",
         "auto.nev_momentum",
+        "auto.delivery_satisfaction_slip",
+        "auto.rfq_momentum",
     }
     # Keyword-only triggers: no rule relies on conditions the engine
     # never evaluates against state.
