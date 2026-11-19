@@ -50,6 +50,7 @@
   },
   "variable_set": {
     "assumption_data": {},
+    "correlations": [],
     "formulas": [
       {
         "description": "获客成本换算为千元",
