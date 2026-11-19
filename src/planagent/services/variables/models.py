@@ -28,8 +28,10 @@ class DistributionType(str, Enum):
     """Supported variable distributions.
 
     Matches the distribution vocabulary of the SimplifySimulation reference.
-    Correlation between variables is explicitly NOT supported (the reference
-    rejects it, and Sprint 2 keeps that limit honestly).
+    Correlation between variables is supported via
+    :class:`VariableCorrelation` on the set (Gaussian copula in the
+    sampler); the reference's rejection of correlation is not carried
+    over — see ``services/variables/correlation.py``.
     """
 
     FIXED = "fixed"
@@ -160,6 +162,39 @@ class VariableDistribution(BaseModel):
         return _require_finite_number(value)
 
 
+class VariableCorrelation(BaseModel):
+    """One pairwise correlation between two sampled variables.
+
+    ``correlation`` is the target Pearson correlation in [-1, 1] between
+    ``variable_a`` and ``variable_b``. The sampler realises it as a
+    Gaussian copula, so the achieved Pearson correlation is approximately
+    (not exactly) this value: exact for normal marginals, slightly
+    attenuated for bounded/skewed marginals and for Bernoulli marginals.
+    The pair is unordered — (a, b, rho) and (b, a, rho) are the same
+    pair and may not both appear. All pairs together must form a
+    positive-semidefinite matrix (enforced by the validator); a
+    ``fixed`` variable has zero variance and cannot be correlated.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    variable_a: str = Field(min_length=1, max_length=120)
+    variable_b: str = Field(min_length=1, max_length=120)
+    correlation: float
+
+    @field_validator("variable_a", "variable_b", mode="before")
+    @classmethod
+    def _strip_strings(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("correlation", mode="before")
+    @classmethod
+    def _validate_finite(cls, value: object) -> float:
+        return _require_finite_number(value)
+
+
 class VariableDefinition(BaseModel):
     """One variable in a variable table.
 
@@ -227,6 +262,7 @@ class VariableSet(BaseModel):
     name: str = Field(default="", max_length=200)
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
+    correlations: list[VariableCorrelation] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
     assumption_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -360,6 +396,7 @@ class VariableTemplate(BaseModel):
     policies: dict[str, MetricPolicySpec] = Field(default_factory=dict)
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
+    correlations: list[VariableCorrelation] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
     assumption_data: dict[str, Any] = Field(default_factory=dict)
     is_builtin: bool = False
@@ -390,6 +427,7 @@ class VariableTemplateCreate(BaseModel):
     policies: dict[str, MetricPolicySpec] = Field(default_factory=dict)
     variables: list[VariableDefinition] = Field(default_factory=list)
     formulas: list[FormulaDefinition] = Field(default_factory=list)
+    correlations: list[VariableCorrelation] = Field(default_factory=list)
     internal: dict[str, str] = Field(default_factory=dict)
     assumption_data: dict[str, Any] = Field(default_factory=dict)
 
@@ -422,6 +460,7 @@ class VariableTemplateUpdate(BaseModel):
     policies: dict[str, MetricPolicySpec] | None = None
     variables: list[VariableDefinition] | None = None
     formulas: list[FormulaDefinition] | None = None
+    correlations: list[VariableCorrelation] | None = None
     internal: dict[str, str] | None = None
     assumption_data: dict[str, Any] | None = None
 

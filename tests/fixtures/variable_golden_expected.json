@@ -44,6 +44,7 @@
   },
   "variable_set": {
     "assumption_data": {},
+    "correlations": [],
     "formulas": [],
     "internal": {
       "决策者风格": "偏稳健,重视可验证的客户承诺甚于市场故事",

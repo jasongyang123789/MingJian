@@ -20,11 +20,13 @@ when a run carries both a decomposition tree and variable bindings.
 
 from __future__ import annotations
 
+from .correlation import build_correlation_matrix, is_positive_semidefinite
 from .formulas import TICK_REFERENCE, validate_formulas
 from .models import (
     MAX_VARIABLES,
     DistributionType,
     VariableCheckRecord,
+    VariableCorrelation,
     VariableDefinition,
     VariableSet,
     VariableTemplate,
@@ -118,6 +120,99 @@ def _distribution_issues(variable: VariableDefinition) -> list[VariableValidatio
                     "invalid_probability",
                     "Bernoulli distribution requires 0 <= p <= 1.",
                     variable_id,
+                )
+            )
+    return issues
+
+
+def validate_correlations(
+    variables: list[VariableDefinition],
+    correlations: list[VariableCorrelation],
+) -> list[VariableValidationIssue]:
+    """Validate a correlation spec against its variable set.
+
+    Every pair must name two distinct variables that exist in the set,
+    carry -1 <= rho <= 1, appear at most once (unordered), and involve
+    no ``fixed`` variable (zero variance — correlation is undefined).
+    The pairs together must form a positive-semidefinite matrix: an
+    inconsistent spec (e.g. three variables pairwise +0.9, +0.9, -0.9)
+    is rejected here, at the gate, rather than failing inside the
+    sampler. An empty spec is valid and means independent sampling.
+    """
+
+    issues: list[VariableValidationIssue] = []
+    by_id = {variable.id: variable for variable in variables}
+    seen_pairs: set[frozenset[str]] = set()
+    usable_pairs: list[tuple[str, str, float]] = []
+    for spec in correlations:
+        pair = frozenset((spec.variable_a, spec.variable_b))
+        if spec.variable_a == spec.variable_b:
+            issues.append(
+                _issue(
+                    "correlation_self_pair",
+                    f"Correlation pair {spec.variable_a!r} names the same variable twice.",
+                    spec.variable_a,
+                )
+            )
+            continue
+        if pair in seen_pairs:
+            issues.append(
+                _issue(
+                    "correlation_duplicate_pair",
+                    f"Correlation pair {spec.variable_a!r} / {spec.variable_b!r} "
+                    "appears more than once.",
+                    spec.variable_a,
+                )
+            )
+            continue
+        seen_pairs.add(pair)
+        missing = [var_id for var_id in (spec.variable_a, spec.variable_b) if var_id not in by_id]
+        if missing:
+            issues.append(
+                _issue(
+                    "correlation_unknown_variable",
+                    f"Correlation pair names unknown variable(s): {', '.join(missing)}.",
+                    spec.variable_a,
+                )
+            )
+            continue
+        if not -1.0 <= spec.correlation <= 1.0:
+            issues.append(
+                _issue(
+                    "correlation_out_of_range",
+                    f"Correlation for {spec.variable_a!r} / {spec.variable_b!r} "
+                    f"must be in [-1, 1]; got {spec.correlation!r}.",
+                    spec.variable_a,
+                )
+            )
+            continue
+        fixed = [
+            var_id
+            for var_id in (spec.variable_a, spec.variable_b)
+            if by_id[var_id].distribution.type is DistributionType.FIXED
+        ]
+        if fixed:
+            issues.append(
+                _issue(
+                    "correlation_with_fixed",
+                    f"Correlation pair involves fixed variable(s): {', '.join(fixed)} "
+                    "(a fixed variable has zero variance, so correlation is undefined).",
+                    spec.variable_a,
+                )
+            )
+            continue
+        usable_pairs.append((spec.variable_a, spec.variable_b, spec.correlation))
+
+    if usable_pairs and not issues:
+        involved = sorted({var_id for pair in usable_pairs for var_id in pair[:2]})
+        matrix = build_correlation_matrix(involved, usable_pairs)
+        if not is_positive_semidefinite(matrix):
+            issues.append(
+                _issue(
+                    "correlation_matrix_not_positive_semidefinite",
+                    "The correlation pairs do not form a valid (positive "
+                    "semidefinite) correlation matrix; the pairwise values "
+                    "are mutually inconsistent.",
                 )
             )
     return issues
@@ -227,6 +322,21 @@ def validate_variable_set(variable_set: VariableSet) -> VariableValidationResult
     issues.extend(formula_issues)
     checks.extend(formula_checks)
 
+    # Correlation spec (Phase 2, Track 3): pairs over the sampled set,
+    # validated with the same gate discipline. No correlations means no
+    # extra issues and no extra check record, so sets without a spec
+    # serialize exactly as before.
+    correlation_issues = validate_correlations(variables, variable_set.correlations)
+    issues.extend(correlation_issues)
+    if variable_set.correlations:
+        checks.append(
+            VariableCheckRecord(
+                check="correlations",
+                status="fail" if correlation_issues else "pass",
+                detail=f"{len(variable_set.correlations)} pair(s)",
+            )
+        )
+
     return VariableValidationResult(
         is_valid=not issues,
         variable_count=len(variables),
@@ -310,7 +420,10 @@ def validate_template(template: VariableTemplate) -> VariableValidationResult:
     if template.variables:
         set_result = validate_variable_set(
             VariableSet(
-                name=template.name, variables=template.variables, internal=template.internal
+                name=template.name,
+                variables=template.variables,
+                internal=template.internal,
+                correlations=template.correlations,
             )
         )
         # The set validator cannot flag empty_set here (variables is non-empty);
@@ -319,6 +432,19 @@ def validate_template(template: VariableTemplate) -> VariableValidationResult:
         # once, below, against the template's own variables.
         issues.extend(set_result.issues)
         checks.extend(set_result.checks)
+    elif template.correlations:
+        # No variables means no set validation ran above, so a spec on a
+        # variable-less template would otherwise never be checked: every
+        # pair names an unknown variable here.
+        correlation_issues = validate_correlations([], template.correlations)
+        issues.extend(correlation_issues)
+        checks.append(
+            VariableCheckRecord(
+                check="correlations",
+                status="fail" if correlation_issues else "pass",
+                detail=f"{len(template.correlations)} pair(s)",
+            )
+        )
 
     # Formula graph (Sprint 4): validated against the template's variables
     # even when the template carries no variables (literal-only formulas).
@@ -395,10 +521,25 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
         else:
             formula_positions[formula.output] = len(merged_formulas)
             merged_formulas.append(formula)
+    # Correlations merge with the same discipline: the override wins per
+    # unordered pair, base order is preserved, new pairs append.
+    merged_correlations = list(base.correlations)
+    correlation_positions = {
+        frozenset((spec.variable_a, spec.variable_b)): index
+        for index, spec in enumerate(merged_correlations)
+    }
+    for spec in override.correlations:
+        key = frozenset((spec.variable_a, spec.variable_b))
+        if key in correlation_positions:
+            merged_correlations[correlation_positions[key]] = spec
+        else:
+            correlation_positions[key] = len(merged_correlations)
+            merged_correlations.append(spec)
     return VariableSet(
         name=override.name or base.name,
         variables=merged,
         formulas=merged_formulas,
+        correlations=merged_correlations,
         internal={**base.internal, **override.internal},
         assumption_data={**base.assumption_data, **override.assumption_data},
     )
