@@ -91,6 +91,7 @@ class SimulationBranchRunner:
                 fork_step=request.fork_step,
                 variable_set=request.variable_set,
                 assumptions=request.assumptions,
+                resample_variables=request.resample_variables,
             ),
         )
         try:

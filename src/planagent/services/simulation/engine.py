@@ -541,7 +541,9 @@ class SimulationEngineMixin:
         # seed. Sprint 4: evaluate the formula graph over the sampled
         # values (post-lever). Sampled and derived values whose id matches
         # a state field override that field's initial value; the explicit
-        # initial_state overlay below keeps precedence over both. Runs
+        # initial_state overlay below keeps precedence over both — except
+        # on an arm-resampling branch child (see below), where the sampled
+        # values win back precedence for the fields they cover. Runs
         # without bindings sample nothing and behave exactly as before.
         sampled_values, derived_values, applied_values = resolve_run_values(
             run.configuration, run.seed, set(initial_state)
@@ -550,6 +552,26 @@ class SimulationEngineMixin:
         initial_state.update(
             {key: float(value) for key, value in run.configuration.get("initial_state", {}).items()}
         )
+        # Arm resampling (fix/arm-resample): a scenario-branch child
+        # created with resample_variables re-draws its non-pinned
+        # variables from their own distributions, deterministically
+        # from the run seed, and the re-drawn values take precedence
+        # over the inherited fork-snapshot initial state — for exactly
+        # the state fields the sampled/derived values cover. Without
+        # this, the overlay above discards every re-draw (the fork
+        # snapshot is identical for all Monte Carlo trials of the
+        # child) and the arm ensemble collapses to a degenerate point
+        # estimate whenever every remaining driver variable is pinned
+        # FIXED. Pinned overrides are unaffected: a FIXED variable
+        # samples at exactly its pinned value, so it still lands here
+        # verbatim. Every other forked state field keeps the snapshot
+        # value. Default off (no ``scenario`` fragment, or the flag
+        # absent/false): existing runs behave exactly as before. The
+        # flag travels with the configuration copy, so Monte Carlo
+        # trials and replays of a resampling child resample too.
+        scenario_fragment = run.configuration.get("scenario")
+        if isinstance(scenario_fragment, dict) and scenario_fragment.get("resample_variables"):
+            initial_state.update(applied_values)
         # Phase 1: the per-tick variable scope. Sampled + initial derived
         # values are fixed for the run; tick drivers evaluate against
         # this scope overlaid with the current state, and variable-scaled
