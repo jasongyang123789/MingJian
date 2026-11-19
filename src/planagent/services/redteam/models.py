@@ -1,11 +1,15 @@
-"""Shared finding + snapshot models for the red-team layer (Phase 4, Track 8).
+"""Snapshot + request/result models for the red-team layer (Phase 4, Track 8).
 
-The :class:`RedTeamFinding` shape is SHARED with Track 10 (completeness
-check) by design: both layers emit exactly this shape, with the
+The :class:`RedTeamFinding` shape is OWNED by
+:mod:`planagent.services.completeness.findings` (Phase 4, Track 10) and
+re-exported here: both layers emit exactly one shape, with the
 ``source`` field naming which layer produced the finding, so the two
 layers can never produce duplicated or contradictory outputs — a
 finding is identified by (kind, target) and the merge in
 :mod:`planagent.services.redteam.orchestration` dedupes on it.
+(Converged on the Track 10 merge: Track 8's Literal-based copy is
+deleted; the enums are str-Enums from the owner module. No test pins
+the deleted max_length constraints.)
 
 A red-team finding is a CHALLENGE to the frozen case, not a fact about
 the world: it names what is missing or weakly justified, cites the
@@ -19,23 +23,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from planagent.services.completeness.findings import (
+    BoundaryClass,
+    FindingKind,
+    FindingSeverity,
+    FindingSource,
+    RedTeamFinding,
+)
 from planagent.services.mece.models import DecompositionTree
-
-FindingKind = Literal[
-    "missing_driver",
-    "weak_assumption",
-    "unjustified_discount",
-    "missing_link",
-    "overconfident_parameter",
-]
-FindingSeverity = Literal["high", "medium", "low"]
-FindingSource = Literal["red_team_llm", "red_team_fixture", "completeness_check"]
-# Diagnostic §6 boundary classes (shared with Track 10): a gap is a
-# fixable defect when decision-time public evidence could have encoded
-# it into a distribution; an acceptable limit when only post-decision
-# data could have known it; unclassified ONLY when the evidence is
-# insufficient to judge — and then boundary_basis must say why.
-BoundaryClass = Literal["fixable_defect", "acceptable_limit", "unclassified"]
 
 
 def _strip_text(value: object) -> object:
@@ -49,29 +44,6 @@ class _StripMixin(BaseModel):
     @classmethod
     def _strip_strings(cls, value: object) -> object:
         return _strip_text(value)
-
-
-class RedTeamFinding(BaseModel):
-    """One structured challenge to the frozen case.
-
-    ``id`` is stable: deterministic findings carry
-    ``rt-<kind>-<slug(target)>``; LLM findings carry
-    ``rt-llm-<sha1(kind|target|summary)[:10]>`` so the same LLM output
-    re-run over the same snapshot yields the same id.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str = Field(min_length=1, max_length=120)
-    kind: FindingKind
-    target: str = Field(min_length=1, max_length=200)
-    severity: FindingSeverity
-    summary: str = Field(min_length=1, max_length=1000)
-    evidence: list[str] = Field(default_factory=list, max_length=10)
-    suggested_fix: str = Field(min_length=1, max_length=2000)
-    source: FindingSource
-    boundary_class: BoundaryClass
-    boundary_basis: str = Field(min_length=1, max_length=1000)
 
 
 class RedTeamVariable(_StripMixin):
