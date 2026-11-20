@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import type {
@@ -10,10 +10,12 @@ import type {
 import {
   ExpectationCatalogTable,
   PromptList,
-  SalesLayerTable,
+  SalesLayerDetailChart,
+  SalesLayerPerTickChart,
+  SalesLayerView,
   TrajectoryChart,
 } from './AutomotiveViews'
-import { oemSummaries } from './automotiveUtils'
+import { detailSegments, detailSeriesByTick, oemSummaries } from './automotiveUtils'
 
 const TRAJECTORY: AutomotiveTrajectoryRead = {
   run_id: 'run-1',
@@ -166,9 +168,9 @@ describe('TrajectoryChart', () => {
   })
 })
 
-describe('SalesLayerTable', () => {
+describe('SalesLayerView', () => {
   it('renders totals, per-tick rows, and product rows from the backend summary', () => {
-    render(<SalesLayerTable layer={LAYER} />)
+    render(<SalesLayerView layer={LAYER} />)
     expect(screen.getByText('337600')).toBeTruthy()
     expect(screen.getByText('218800')).toBeTruthy()
     expect(screen.getByText('280.1')).toBeTruthy()
@@ -177,9 +179,70 @@ describe('SalesLayerTable', () => {
     expect(screen.getByText(/Volume spine/)).toBeTruthy()
   })
 
+  it('charts the per-tick totals with all four series and a dual-axis note', () => {
+    render(<SalesLayerPerTickChart layer={LAYER} />)
+    expect(screen.getByRole('img', { name: 'S 层逐 tick 总量图' })).toBeTruthy()
+    expect(screen.getByText('产量（主轴）')).toBeTruthy()
+    expect(screen.getAllByText('件数').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('容量').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('自有销售').length).toBeGreaterThan(0)
+    expect(screen.getByText(/左轴：产量/)).toBeTruthy()
+  })
+
+  it('omits the own-sales line and says so when own sales are un-attributed', () => {
+    render(
+      <SalesLayerPerTickChart
+        layer={{
+          ...LAYER,
+          summary: { ...LAYER.summary, total_own_sales: null },
+          rows: LAYER.rows.map((row) => ({ ...row, own_sales: null })),
+          per_tick: LAYER.per_tick.map((tick) => ({ ...tick, own_sales: null })),
+        }}
+      />,
+    )
+    expect(screen.getByText(/自有销售未归属，图中不含自有销售线/)).toBeTruthy()
+  })
+
+  it('charts the detail rows as OEM × product stacks with a measure toggle', () => {
+    render(<SalesLayerDetailChart layer={LAYER} />)
+    expect(screen.getByRole('img', { name: 'S 层明细堆叠图（容量）' })).toBeTruthy()
+    expect(screen.getByText('faw-vw · P01')).toBeTruthy()
+    expect(screen.getByText('faw-vw · P02')).toBeTruthy()
+    const unitsButton = screen.getByRole('button', { name: '件数' })
+    expect(unitsButton.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(unitsButton)
+    expect(unitsButton.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('img', { name: 'S 层明细堆叠图（件数）' })).toBeTruthy()
+    const ownSalesButton = screen.getByRole('button', { name: '自有销售' })
+    fireEvent.click(ownSalesButton)
+    expect(screen.getByRole('img', { name: 'S 层明细堆叠图（自有销售）' })).toBeTruthy()
+  })
+
+  it('explains the own-sales stack is unavailable when every row is null', () => {
+    render(
+      <SalesLayerDetailChart
+        layer={{
+          ...LAYER,
+          rows: LAYER.rows.map((row) => ({ ...row, own_sales: null })),
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '自有销售' }))
+    expect(screen.getByText(/无法绘出自有销售堆叠/)).toBeTruthy()
+  })
+
+  it('keeps the exact-value tables with the charts', () => {
+    render(<SalesLayerView layer={LAYER} />)
+    expect(screen.getByText(/精确数值（与图表同源/)).toBeTruthy()
+    // 117600 / 58800 each appear in BOTH exact-value tables (per-tick
+    // totals and the detail rows): the fold-out keeps every number.
+    expect(screen.getAllByText('117600').length).toBe(2)
+    expect(screen.getAllByText('58800').length).toBe(2)
+  })
+
   it('explains unavailable own-sales attribution instead of showing zero', () => {
     render(
-      <SalesLayerTable
+      <SalesLayerView
         layer={{
           ...LAYER,
           own_sales_basis: 'unavailable',
@@ -195,8 +258,40 @@ describe('SalesLayerTable', () => {
   })
 
   it('discloses skipped unpriced slots', () => {
-    render(<SalesLayerTable layer={{ ...LAYER, skipped_unpriced_slots: ['tick 1: faw-vw.sagitar.P01@ho'] }} />)
+    render(<SalesLayerView layer={{ ...LAYER, skipped_unpriced_slots: ['tick 1: faw-vw.sagitar.P01@ho'] }} />)
     expect(screen.getByText(/跳过了 1 个无价槽位/)).toBeTruthy()
+  })
+})
+
+describe('detailSegments / detailSeriesByTick', () => {
+  it('lists segments in first-appearance order', () => {
+    expect(detailSegments(LAYER.rows)).toEqual(['faw-vw · P01', 'faw-vw · P02'])
+    expect(detailSegments([])).toEqual([])
+  })
+
+  it('pivots rows per tick and sums duplicate tick × OEM × product rows', () => {
+    const series = detailSeriesByTick(
+      [
+        { tick: 1, oem_id: 'faw-vw', product_id: 'P01', units: 100, capacity_value: 120000, own_sales: 60000 },
+        { tick: 1, oem_id: 'faw-vw', product_id: 'P01', units: 5, capacity_value: 6000, own_sales: null },
+        { tick: 2, oem_id: 'faw-vw', product_id: 'P01', units: 98, capacity_value: 117600, own_sales: 58800 },
+      ],
+      'capacity_value',
+    )
+    expect(series).toEqual([
+      { tick: 1, 'faw-vw · P01': 126000 },
+      { tick: 2, 'faw-vw · P01': 117600 },
+    ])
+    expect(
+      detailSeriesByTick(
+        [
+          { tick: 1, oem_id: 'faw-vw', product_id: 'P01', units: 100, capacity_value: 120000, own_sales: 60000 },
+          { tick: 1, oem_id: 'faw-vw', product_id: 'P01', units: 5, capacity_value: 6000, own_sales: null },
+        ],
+        'own_sales',
+      ),
+    ).toEqual([{ tick: 1, 'faw-vw · P01': 60000 }])
+    expect(detailSeriesByTick([], 'units')).toEqual([])
   })
 })
 

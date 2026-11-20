@@ -15,7 +15,7 @@ import type { PromptReportRead, SalesLayerRead } from '../api/engineTypes'
 import {
   ExpectationCatalogTable,
   PromptList,
-  SalesLayerTable,
+  SalesLayerView,
   TrajectoryChart,
 } from '../components/cockpit/AutomotiveViews'
 import { oemSummaries } from '../components/cockpit/automotiveUtils'
@@ -288,7 +288,7 @@ function StructureBody({
               ' 待开拓客户的自有销售恒为 0。'}
           </p>
           {layerError && <ErrorBanner message={layerError} />}
-          {layer && <SalesLayerTable layer={layer} />}
+          {layer && <SalesLayerView layer={layer} />}
         </div>
       </div>
 
