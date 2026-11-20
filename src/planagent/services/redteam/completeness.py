@@ -25,10 +25,14 @@ Checks, in evaluation order:
 2. Unlinked-driver check: any variable whose name matches a catalog
    driver but which no formula references.
 3. ``unjustified_discount``: a growth variable whose own evidence
-   cites a recent realized rate more than 2x its mode AND carries no
-   justification note (recovery year, one-off, low base, explicit
-   conservatism). Honest discounting — the desay cases discount
-   deliberately and say why — never fires.
+   cites a recent realized GROWTH rate more than 2x its mode AND carries
+   no justification note (recovery year, one-off, low base, explicit
+   conservatism, margin/price pressure, or a stated scope difference).
+   Like-for-like only: a percentage is compared with the mode ONLY when
+   the word next to it says it is a growth rate — a revenue share
+   ("86.95% of revenue") or a margin level ("25.78% in 2017") is not a
+   growth rate and never enters the comparison. Honest discounting —
+   the desay cases discount deliberately and say why — never fires.
 4. ``overconfident_parameter``: a triangular so tight its spread is
    under 10% of its mode.
 5. ``weak_assumption``: a variable with no evidence and no notes.
@@ -76,9 +80,90 @@ _JUSTIFICATION_KEYWORDS = (
     "unsustainable",
     "均值回归",
     "mean reversion",
+    # A4 (2026-11-20): the audit's second false positive — profit_growth
+    # DID state its reason ("margin pressure"), but the table did not
+    # contain it, so the reason was invisible to the check.
+    "margin pressure",
+    "毛利压力",
+    "margin compression",
+    "price pressure",
+    "价格压力",
+    "降价压力",
+    "cost pressure",
+    "成本压力",
+    # A stated scope difference is a justification too: the cited rate
+    # covers a quantity this variable deliberately excludes.
+    "adoption effect",
+    "采用效应",
+    "无采用",
+    "不含采用",
+    "未含采用",
+)
+
+# Scope-exclusion reasons that need word proximity, not a bare
+# substring: "absent intelligent-driving adoption" says the cited
+# segment rate INCLUDES adoption this variable EXCLUDES — the plain
+# substring "absent adoption" never occurs in that sentence.
+_JUSTIFICATION_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("absent adoption", re.compile(r"absent[^.;]{0,40}adoption", re.IGNORECASE)),
+    ("excluding adoption", re.compile(r"excluding[^.;]{0,40}adoption", re.IGNORECASE)),
+    ("without adoption", re.compile(r"without[^.;]{0,40}adoption", re.IGNORECASE)),
 )
 
 _PERCENT_RE = re.compile(r"([+-]?\d+(?:\.\d+)?)\s*%")
+
+# A4 (2026-11-20): like-for-like anchors for the discount check. The old
+# rule compared EVERY percentage in the evidence with the mode, which
+# read a revenue share ("86.95% of revenue") and a 2017 margin level
+# ("25.78%") as growth rates. A percentage now counts as a cited growth
+# rate only when the anchor CLOSEST to it is a growth word — or the
+# number carries an explicit +/- sign, which marks a change, not a
+# level. When the closest anchor is a share/level word, or there is no
+# anchor nearby at all, the quantity is not a growth rate (or is
+# unknown) and is never compared with the mode.
+_GROWTH_ANCHORS = (
+    "grow",
+    "grew",
+    "growing",
+    "growth",
+    "cagr",
+    "rose",
+    "risen",
+    "increase",
+    "increased",
+    "increasing",
+    "surged",
+    "jumped",
+    "climbed",
+    "增长",
+    "增速",
+    "同比",
+    "增幅",
+    "上升",
+    "上涨",
+    "提升",
+)
+_LEVEL_ANCHORS = (
+    "of revenue",
+    "of sales",
+    "of total",
+    "of the market",
+    "share",
+    "margin",
+    "penetration",
+    "level",
+    "down from",
+    "up from",
+    "from",
+    "占比",
+    "份额",
+    "毛利",
+    "渗透率",
+    "水平",
+)
+# Anchors further away than this (chars) do not classify a percentage:
+# the word that quantifies a number is the one next to it.
+_ANCHOR_WINDOW = 60
 
 
 @dataclass(frozen=True)
@@ -222,6 +307,82 @@ def _normalize(text: str) -> str:
 def _mentions(text: str, keywords: tuple[str, ...]) -> list[str]:
     haystack = _normalize(text)
     return [kw for kw in keywords if kw.lower() in haystack]
+
+
+def _nearest_anchor_distance(
+    window: str, num_start: int, num_end: int, anchor: str
+) -> int | None:
+    """Gap in chars between `anchor` and the number at [num_start, num_end)
+    inside `window`, or None when the anchor does not occur there. ASCII
+    word anchors match on word boundaries, so "from" never matches
+    "platform"; Chinese anchors match as substrings."""
+    if anchor.isascii() and anchor.replace(" ", "").isalpha():
+        pattern = re.compile(r"\b" + re.escape(anchor) + r"\b", re.IGNORECASE)
+    else:
+        pattern = re.compile(re.escape(anchor))
+    best: int | None = None
+    for match in pattern.finditer(window):
+        if match.end() <= num_start:
+            dist = num_start - match.end()
+        elif match.start() >= num_end:
+            dist = match.start() - num_end
+        else:
+            dist = 0
+        if best is None or dist < best:
+            best = dist
+    return best
+
+
+def _cited_growth_rates(text: str) -> list[float]:
+    """Percentages in `text` that cite a growth rate — like-for-like with
+    the variable's mode, as magnitudes (fractions, e.g. 0.335).
+
+    Each percentage is classified by the anchor CLOSEST to it within
+    ``_ANCHOR_WINDOW`` chars: a growth word (or an explicit +/- sign,
+    which marks a change) makes it a cited growth rate; a share/level
+    word next to it ("of revenue", "margin", "占比", "down from", ...)
+    means the number is a share or a level, not a rate. With no anchor
+    nearby the quantity is unknown and is ignored — the old rule
+    compared every percentage, which is what turned a revenue share
+    (86.95%) and a 2017 margin level (25.78%) into "recent growth".
+    Ties go to the level reading: the check fails toward no flag."""
+    text = _normalize(text)
+    cited: list[float] = []
+    for match in _PERCENT_RE.finditer(text):
+        start, end = match.start(1), match.end()
+        window_start = max(0, start - _ANCHOR_WINDOW)
+        window_end = min(len(text), end + _ANCHOR_WINDOW)
+        window = text[window_start:window_end]
+        num_start, num_end = start - window_start, end - window_start
+        growth_dist: int | None = None
+        if match.group(1)[0] in "+-":
+            growth_dist = 1  # a sign marks a change, not a level
+        for anchor in _GROWTH_ANCHORS:
+            dist = _nearest_anchor_distance(window, num_start, num_end, anchor)
+            if dist is not None and (growth_dist is None or dist < growth_dist):
+                growth_dist = dist
+        level_dist: int | None = None
+        for anchor in _LEVEL_ANCHORS:
+            dist = _nearest_anchor_distance(window, num_start, num_end, anchor)
+            if dist is not None and (level_dist is None or dist < level_dist):
+                level_dist = dist
+        if growth_dist is None:
+            continue  # unknown quantity: do not compare
+        if level_dist is not None and level_dist <= growth_dist:
+            continue  # a share/level anchor is at least as close
+        cited.append(abs(float(match.group(1))) / 100.0)
+    return cited
+
+
+def _has_justification(text: str) -> list[str]:
+    """Stated reasons for a discount: keyword hits plus the
+    scope-exclusion patterns (e.g. "absent ... adoption")."""
+    found = _mentions(text, _JUSTIFICATION_KEYWORDS)
+    normalized = _normalize(text)
+    for label, pattern in _JUSTIFICATION_PATTERNS:
+        if pattern.search(normalized):
+            found.append(label)
+    return found
 
 
 def _slug(text: str) -> str:
@@ -381,11 +542,15 @@ def run_completeness_checks(snapshot: CaseSnapshot) -> list[RedTeamFinding]:
         name_lower = variable.name.lower()
 
         # 3. Unjustified discount: own evidence cites a recent realized
-        # rate far above the mode, with no justification note.
+        # GROWTH rate far above the mode, with no justification note.
+        # Only like-for-like percentages are compared: _cited_growth_rates
+        # drops shares/levels ("86.95% of revenue", "25.78% in 2017") and
+        # percentages with no growth anchor nearby, so the mode is never
+        # judged against a number that is not a growth rate.
         if "growth" in name_lower and variable.mode is not None and variable.mode > 0:
-            cited = [abs(float(match.group(1))) for match in _PERCENT_RE.finditer(own_text)]
-            if cited and max(cited) / 100.0 > _DISCOUNT_RATIO * variable.mode:
-                justification = _mentions(own_text, _JUSTIFICATION_KEYWORDS)
+            cited = _cited_growth_rates(own_text)
+            if cited and max(cited) > _DISCOUNT_RATIO * variable.mode:
+                justification = _has_justification(own_text)
                 if not justification:
                     findings.append(
                         RedTeamFinding(
@@ -396,21 +561,25 @@ def run_completeness_checks(snapshot: CaseSnapshot) -> list[RedTeamFinding]:
                             summary=(
                                 f"Discounted growth: {variable.name} mode "
                                 f"{variable.mode:.2%} sits far below the recent "
-                                f"realized rate cited in its own evidence "
-                                f"({max(cited):.2f}%), with no stated reason for the discount."
+                                f"realized growth rate cited in its own evidence "
+                                f"({max(cited):.2%}), with no stated reason for the discount."
                             ),
                             evidence=[
                                 (
-                                    f"Evidence cites {max(cited):.2f}% recent growth; variable mode is "
-                                    f"{variable.mode:.2%} (ratio {max(cited) / 100.0 / variable.mode:.1f}x)."
+                                    f"Evidence cites {max(cited):.2%} recent growth; variable mode is "
+                                    f"{variable.mode:.2%} (ratio {max(cited) / variable.mode:.1f}x)."
                                 )
                             ],
                             suggested_fix=(
                                 "Either record the explicit reason for the discount "
-                                "(recovery year, one-off, low base, conservatism) as a "
-                                "labeled assumption on the variable, or raise the mode "
-                                "toward the cited rate and let the distribution — not a "
-                                "silent discount — carry the uncertainty."
+                                "(recovery year, one-off, low base, conservatism, "
+                                "margin/price pressure, or that the cited rate covers "
+                                "a different quantity — e.g. a segment rate that "
+                                "includes adoption effects, or a share/margin level) "
+                                "as a labeled assumption on the variable, or raise "
+                                "the mode toward the cited rate and let the "
+                                "distribution — not a silent discount — carry the "
+                                "uncertainty."
                             ),
                             source="completeness_check",
                             boundary_class="fixable_defect",
