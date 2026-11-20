@@ -113,9 +113,14 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # 76 -> 78.
     # 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(TEMPLATE_VARIABLES) == 79
-    assert len(TEMPLATE_FORMULAS) == 46
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
+    # A2 rebase (2026-11-26): +3 variables (template_revenue /
+    # accounts_receivable / price_cut_factor) and +4 formulas, all
+    # tick drivers (price_cut_factor, accounts_receivable_next,
+    # cash, accounts_receivable) — 79 -> 82 variables,
+    # 46 -> 50 formulas, 43 -> 47 tick drivers.
+    assert len(TEMPLATE_VARIABLES) == 82
+    assert len(TEMPLATE_FORMULAS) == 50
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 47
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -135,8 +140,10 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
     # 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(template.variables) == 79
-    assert len(template.formulas) == 46
+    # A2 rebase (2026-11-26): 79 -> 82 variables, 46 -> 50 formulas
+    # (+3 variables / +4 drivers, see the count comment above).
+    assert len(template.variables) == 82
+    assert len(template.formulas) == 50
 
 
 def test_nev_chain_planning_path_values() -> None:
@@ -549,11 +556,28 @@ def test_profit_chain_merge_order_profit_reads_same_tick_revenue() -> None:
     pack = domain_pack_registry.get("automotive")
     state = {field.name: float(field.default) for field in pack.state_fields}
     state["revenue"] = 1000.0
+    # A2 annual-cut channel is live through to profit now: the
+    # tier1_gross_margin tick driver subtracts (annual_cut_rate/12)
+    # x (1 - margin) plus margin_material_sensitivity x
+    # (material_cost_index - price_index). The cut is read from STATE
+    # (state wins over the sampled scope in evaluate_tick_drivers),
+    # so pinning the sampled value would NOT neutralise it — the
+    # pack default cut (0.04) would still squeeze the margin to
+    # 0.2475, net margin to 0.0988 and profit to 108.68. This test
+    # pins merge ORDER, not the cut, so neutralise the channel here
+    # at the state level. Pinning the cut to 0.0 zeroes both terms
+    # at once: price_cut_factor stays 1.0 (asserted below), so
+    # price_index stays 1.0 = material_cost_index and the spread
+    # term is zero too. tier1_pass_through and the pinned legs are
+    # untouched.
+    state["annual_cut_rate"] = 0.0
     out1 = evaluate_tick_drivers(drivers, scope, state, 1)
     # Same-tick: revenue grows to 1100 first, profit is 1100 x 0.10 —
     # not 1000 x 0.10 (the one-tick-lag value).
     assert out1["revenue"] == pytest.approx(1100.0)
     assert out1["profit"] == pytest.approx(110.0)
+    # The cut is neutralised, so the cumulative factor never moves.
+    assert out1["price_cut_factor"] == pytest.approx(1.0)
 
 
 # --- API end-to-end ------------------------------------------------------

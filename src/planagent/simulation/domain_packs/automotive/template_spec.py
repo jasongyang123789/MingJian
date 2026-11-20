@@ -569,6 +569,13 @@ TEMPLATE_VARIABLES: list[dict] = [
         "description": "Transaction price level, 1.0 = 2025 average.",
     },
     {
+        "id": "price_cut_factor",
+        "unit": "factor (1.0 = no cut yet)",
+        "distribution": {"type": "fixed", "value": 1.0},
+        "evidence_ref": "audit A2, 2026-11-20 (definitional seed: 1.0 = no cut yet; the tick driver compounds it monthly at (1 - annual_cut_rate/12))",
+        "description": "Cumulative annual-cut factor on price, 1.0 = no cut yet. Seeds the tick driver (audit A2): the driver compounds it monthly and the price driver applies it to its cost-implied target, so the OEM year-down enters price as a persistent level drag. A tick-driver output naming this sampled variable is intentional (validation exempts it): the sampled value seeds the initial state and the driver evolves it per tick, state winning on collisions.",
+    },
+    {
         "id": "price_cut_expectation",
         "unit": "rate",
         "distribution": {"type": "fixed", "value": 0.45},
@@ -672,7 +679,7 @@ TEMPLATE_VARIABLES: list[dict] = [
         "id": "margin_material_sensitivity",
         "unit": "margin points per index point",
         "distribution": {"type": "fixed", "value": ADOPTED_VALUES["margin_material_sensitivity"]},
-        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; v3 NOT ESTIMABLE — wrong-sign episode: Desay margins fell 20% -> 19.1% (2023-25) while lithium collapsed, i.e. unpassed pressure was negative; the margin driver lacks the annual-cut channel, see transmission.CALIBRATION_REPORT)",
+        "evidence_ref": "assumption:pending-calibration (synthesis C5: no public cost-to-margin transmission estimate exists; v3 NOT ESTIMABLE — wrong-sign episode: Desay margins fell 20% -> 19.1% (2023-25) while lithium collapsed, i.e. unpassed pressure was negative; audit A2 (2026-11-20) ADDED the annual-cut channel to the margin driver — direct term (cut/12) x (1 - margin) plus the price-gap term; see transmission.CALIBRATION_REPORT)",
         "description": "Tier-1 margin points lost per tick per point of unpassed material-cost pressure (material_cost_index minus the current price index). Price passthrough mitigates the squeeze.",
     },
     # --- B2B funnel + satisfaction feedback (Track 4, one-click) ---
@@ -935,6 +942,48 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "simulated: LABELED ASSUMPTION — no decision-time evidence exists for the Tier-1-to-company margin pass-through (research files searched 2026-11-20; the audit found no series on this relationship). 0.5 is the insufficient-reason midpoint between 0 (no pass-through) and 1 (full pass-through), NOT an estimate. Ho-authorized simulation (2026-11-16), replaceable; bounds kappa=0/1 in margin-profit-transmission-2026-11-20/REPORT.md §4.4.",
         "description": "Share of a Tier-1 gross-margin deviation from its mode that flows into the company's gross margin each tick (fixed 0.5, labeled simulation — no decision-time evidence; see the gross_margin driver).",
     },
+    # Audit A2 (2026-11-20): `template_revenue` and
+    # `accounts_receivable` are pack STATE fields that the new
+    # conduction drivers must read, but the formula validator only
+    # knows sampled variable ids (plus earlier driver outputs and
+    # self-references) — a bare state field is an unknown ref. They
+    # are therefore ALSO template variables (fixed at the generic-scale
+    # defaults, so no RNG draw is consumed and every existing draw is
+    # unchanged). At evaluation the state overlays the sampled value,
+    # so the drivers read the live state.
+    # NAMING (draw-order hazard, found 2026-11-20 by the Desay
+    # re-run): the sales-base variable is deliberately NOT called
+    # `revenue`. Merge replaces a case variable IN PLACE at the
+    # template position of the same id — so a template variable named
+    # `revenue` pulls a case's draw-consuming `revenue` forward from
+    # the end of the merged list to the template position, rotating
+    # the draw order of the case's variables (7 sampled values moved
+    # in the first A2 run: revenue/market_share/base_growth/
+    # disruptor_*/share_coupling). A case binds its own unit
+    # convention by overriding `accounts_receivable` (fixed, no draw
+    # — safe to collide) and by overriding the trio to read live
+    # `revenue` when it moves revenue (the Desay harness does).
+    # `template_revenue` collides with NO case variable id, so the
+    # merged draw order is exactly the e047f50 order; the pin test
+    # `test_merged_draw_order_matches_e047f50` guards this.
+    # The template trio reads the FIXED generic sales base (100.0):
+    # generic runs never move revenue, so it is exact there; a case
+    # that moves revenue MUST override the trio (see the driver
+    # descriptions below).
+    {
+        "id": "template_revenue",
+        "unit": "abstract units (same scale as cash)",
+        "distribution": {"type": "fixed", "value": 100.0},
+        "evidence_ref": "assumption:pending-calibration (generic-scale level matching the pack default; a case binds its own unit convention, e.g. RMB m per tick in the Desay backtest, by overriding the receivables trio to read live revenue)",
+        "description": "Generic sales base for the receivables trio, same abstract units as cash. Fixed generic level (100.0); the receivables driver reads it as the sales base. Deliberately NOT named `revenue`: that id belongs to cases (see the naming note above).",
+    },
+    {
+        "id": "accounts_receivable",
+        "unit": "abstract units (same scale as revenue)",
+        "distribution": {"type": "fixed", "value": 600.0},
+        "evidence_ref": "assumption:pending-calibration (generic-scale opening = template_revenue 100.0 x mode payment terms 6 months; a case that binds revenue in other units MUST bind this opening too)",
+        "description": "Receivables stock at run start, same units as revenue. The tick drivers re-derive it as template_revenue x payment terms; the cash driver absorbs the change.",
+    },
     # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
     # (Sprint 2 design pin) and this template held exactly 30, so the
     # income growth rate and the penetration drift stayed formula
@@ -1094,6 +1143,21 @@ TEMPLATE_FORMULAS: list[dict] = [
         "description": "Tick driver (C2 link 11): pull-forward stock decays 2% per tick. The 2% rate is an assumption parameter (C5: no initial value, calibrate on 2026 actuals); literal in Phase 1, promote to a variable when calibrated.",
     },
     {
+        "output": "price_cut_factor",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "price_cut_factor"},
+                {
+                    "op": "subtract",
+                    "args": [1, {"op": "divide", "args": [{"ref": "annual_cut_rate"}, 12]}],
+                },
+            ],
+        },
+        "description": "Tick driver (audit A2, 2026-11-20): the cumulative annual-cut factor compounds monthly at (1 - annual_cut_rate/12), so after 12 ticks it is ~(1 - annual_cut_rate) — the OEM year-down as a persistent level drag on price, not a one-off shock. The price driver below applies it to its cost-implied target; the margin driver prices the same cut through the (material - price) gap plus its direct term. The factor is observable in state, so the cut's price path is auditable tick by tick. Runs before the price driver so the same-tick target already includes this tick's cut.",
+    },
+    {
         "output": "price_index",
         "tick_driver": True,
         "expression": {
@@ -1108,19 +1172,25 @@ TEMPLATE_FORMULAS: list[dict] = [
                             "op": "subtract",
                             "args": [
                                 {
-                                    "op": "add",
+                                    "op": "multiply",
                                     "args": [
-                                        1,
                                         {
-                                            "op": "multiply",
+                                            "op": "add",
                                             "args": [
-                                                {"ref": "material_passthrough"},
+                                                1,
                                                 {
-                                                    "op": "subtract",
-                                                    "args": [{"ref": "material_cost_index"}, 1],
+                                                    "op": "multiply",
+                                                    "args": [
+                                                        {"ref": "material_passthrough"},
+                                                        {
+                                                            "op": "subtract",
+                                                            "args": [{"ref": "material_cost_index"}, 1],
+                                                        },
+                                                    ],
                                                 },
                                             ],
                                         },
+                                        {"ref": "price_cut_factor"},
                                     ],
                                 },
                                 {"ref": "price_index"},
@@ -1130,7 +1200,7 @@ TEMPLATE_FORMULAS: list[dict] = [
                 },
             ],
         },
-        "description": "Tick driver (C2 link 7, Phase 2): partial adjustment toward the material-implied price level 1 + passthrough x (material - 1). The 0.5 adjustment speed is an assumption parameter (literal, Phase 2); at the baseline (material = 1) the driver is a no-op. Rule effects on price are preserved in the level but mean-revert toward the cost-implied target.",
+        "description": "Tick driver (C2 link 7, Phase 2; audit A2, 2026-11-20): partial adjustment toward the material-implied price level (1 + passthrough x (material - 1)) x price_cut_factor — the OEM annual cut now enters price as a persistent level drag through the cumulative factor (same-tick value: the factor driver runs first). The 0.5 adjustment speed is an assumption parameter (literal, Phase 2); at the baseline (material = 1, cut = 0) the driver is a no-op. Rule effects on price are preserved in the level but mean-revert toward the cost-implied target.",
     },
     {
         "output": "income_index",
@@ -1425,18 +1495,33 @@ TEMPLATE_FORMULAS: list[dict] = [
             "args": [
                 {"ref": "tier1_gross_margin"},
                 {
-                    "op": "multiply",
+                    "op": "add",
                     "args": [
-                        {"ref": "margin_material_sensitivity"},
                         {
-                            "op": "subtract",
-                            "args": [{"ref": "material_cost_index"}, {"ref": "price_index"}],
+                            "op": "multiply",
+                            "args": [
+                                {"op": "divide", "args": [{"ref": "annual_cut_rate"}, 12]},
+                                {
+                                    "op": "subtract",
+                                    "args": [1, {"ref": "tier1_gross_margin"}],
+                                },
+                            ],
+                        },
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "margin_material_sensitivity"},
+                                {
+                                    "op": "subtract",
+                                    "args": [{"ref": "material_cost_index"}, {"ref": "price_index"}],
+                                },
+                            ],
                         },
                     ],
                 },
             ],
         },
-        "description": "Tick driver (C2 link 8, Phase 2): the Tier-1 margin is squeezed by UNPASSED material-cost pressure — the gap between the material cost index and the current (same-tick) price level. Price passthrough mitigates the squeeze; at the baseline (material = price = 1) the driver is a no-op. Coarse dynamics: no floor, horizons are 6-12 ticks.",
+        "description": "Tick driver (C2 link 8, Phase 2; audit A2, 2026-11-20): the Tier-1 margin is squeezed by (a) the OEM annual cut directly — (cut/12) x (1 - margin) per month, the exact margin-rate arithmetic of a price cut with unchanged costs (revenue falls cut x revenue, COGS fixed: new margin = (margin - cut)/(1 - cut), so the monthly change is ~-cut x (1 - margin)/12); plus (b) UNPASSED material-cost pressure — the gap between the material cost index and the current (same-tick) price level. The cut also opens gap (b) because price falls below material, so the two terms overlap by ~9% at mode values (same direction, same cause); the overlap is second-order and documented, not netted out — the 0.02 sensitivity is itself a placeholder. At the baseline (material = price = 1, cut = 0) the driver is a no-op. Coarse dynamics: no floor, horizons are 6-12 ticks.",
     },
     {
         "output": "generation_transition_index",
@@ -2120,6 +2205,57 @@ TEMPLATE_FORMULAS: list[dict] = [
             ],
         },
         "description": "Tick driver (profit-chain pack): profit = same-tick revenue x net_margin — inherits the NEV term, the backlog term and revenue growth in full; replaces the decoupled profit_growth driver. Evaluates AFTER the (case) revenue driver via the revenue-passthrough merge anchor, so it reads same-tick revenue exactly as the Track B harness did.",
+    },
+    # --- Audit A2 (2026-11-20): payment-terms -> receivables -> cash ---
+    # Order is load-bearing (drivers chain within a tick): the NEXT level
+    # is computed first as a within-tick intermediate (not a state field);
+    # the CASH driver then absorbs (next - current receivables) BEFORE the
+    # receivables driver writes the new level — so cash + receivables
+    # conserve the sales flow exactly each tick. The cash driver reads
+    # `accounts_receivable` as the CURRENT state (the state overlays the
+    # sampled opening at evaluation; the id is a template variable, so
+    # validation knows it). Monthly ticks: receivables = monthly
+    # template_revenue x terms in months. The sales base is the FIXED
+    # generic `template_revenue` (100.0): generic runs never move
+    # revenue, so the trio is exact there. A case that moves revenue
+    # MUST override the trio to read live `revenue` (the Desay harness
+    # does); a YEARLY-tick case must also divide by 12 — see the B6
+    # tick-unit note in the gap-audit report.
+    # Tick-1 note: the opening (600.0 = generic template_revenue 100 x
+    # mode terms 6) is trued up to the SAMPLED terms on tick 1 — a
+    # one-time, bounded cash step of template_revenue x (sampled terms
+    # - 6), not a growing error; a case that binds revenue binds the
+    # opening too, so the step is the growth-driven increment, not a
+    # re-basing.
+    {
+        "output": "accounts_receivable_next",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "template_revenue"}, {"ref": "payment_terms_months"}],
+        },
+        "description": "Tick driver (audit A2): next-tick receivables level = template_revenue x payment terms (monthly ticks: monthly generic sales base x months of terms = the DSO stock). Within-tick intermediate, not a state field — the cash driver reads it before the receivables driver writes it. A case that moves revenue overrides this trio to read live revenue.",
+    },
+    {
+        "output": "cash",
+        "tick_driver": True,
+        "expression": {
+            "op": "subtract",
+            "args": [
+                {"ref": "cash"},
+                {
+                    "op": "subtract",
+                    "args": [{"ref": "accounts_receivable_next"}, {"ref": "accounts_receivable"}],
+                },
+            ],
+        },
+        "description": "Tick driver (audit A2): cash absorbs the change in receivables — cash falls when receivables rise (longer terms or higher revenue tie up more cash) and recovers when they fall. Cash + receivables conserve the sales flow each tick. Owns the single cash-driver slot: any other cash flow (e.g. the R&D expense path's outflow) must be folded into THIS driver at merge time, never a second cash driver — see TRACK-A2.md section 3 for the exact combined formula.",
+    },
+    {
+        "output": "accounts_receivable",
+        "tick_driver": True,
+        "expression": {"ref": "accounts_receivable_next"},
+        "description": "Tick driver (audit A2): receivables stock is re-derived each tick as template_revenue x payment terms (monthly ticks). Runs after the cash driver so cash sees the pre-tick stock for its delta.",
     },
 ]
 

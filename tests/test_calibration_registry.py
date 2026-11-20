@@ -66,14 +66,21 @@ def test_registry_status_counts():
     # is the frozen tick-0 book the delivery schedule delivers
     # fractions of; its evidence_ref labels it assumption:
     # pending-calibration (the stock itself was never disclosed).
+    # 2026-11-20: audit A2 merged (fix/audit-a2-terms) added 2
+    # simulated template entries (template/template_revenue, fixed
+    # 100.0; template/accounts_receivable, fixed 600.0): simulated
+    # 65 -> 67, total 75 -> 77. Both evidence_refs label them
+    # assumption:pending-calibration (generic-scale sales base /
+    # opening DSO stock). price_cut_factor adds no registry entry
+    # (definitional seed, 1.0 = no cut yet).
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 65
+    assert counts["simulated"] == 67
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 75
+    assert sum(counts.values()) == 77
 
 
 def test_registry_transmission_values_are_live():

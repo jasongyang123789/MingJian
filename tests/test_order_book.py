@@ -476,8 +476,14 @@ def test_order_book_variables_match_spec() -> None:
     # 2026-11-25 adjustment: 78 -> 79 variables (backlog_delivery_fast,
     # fixed 0.0; no new formula — the blend lives inside the
     # delivery-fraction formula).
-    assert len(TEMPLATE_VARIABLES) == 79
-    assert len(TEMPLATE_FORMULAS) == 46
+    # A2 rebase (2026-11-26): 79 -> 82 variables, 46 -> 50 formulas
+    # (audit-A2 +3/+4: template_revenue / accounts_receivable /
+    # price_cut_factor variables + accounts_receivable /
+    # accounts_receivable_next / cash / price_cut_factor drivers;
+    # counts verified by AST on the merged template_spec.py —
+    # 82 unique variable ids, 50 unique formula outputs).
+    assert len(TEMPLATE_VARIABLES) == 82
+    assert len(TEMPLATE_FORMULAS) == 50
     expected = {
         "order_backlog": ("fixed", 0.0),
         "order_backlog_opening": ("fixed", 0.0),
@@ -508,8 +514,10 @@ def test_order_book_variables_match_spec() -> None:
     # (delivery-fraction anchor).
     # 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(template.variables) == 79
-    assert len(template.formulas) == 46
+    # A2 rebase (2026-11-26): 79 -> 82 variables, 46 -> 50 formulas;
+    # state fields 52 -> 54 (+ price_cut_factor / accounts_receivable).
+    assert len(template.variables) == 82
+    assert len(template.formulas) == 50
     # The template carries the backlog-update driver (finite-book
     # depletion) right after the revenue passthrough, and it is the
     # ONLY backlog-update driver in the template.
@@ -525,7 +533,7 @@ def test_order_book_variables_match_spec() -> None:
         [f["output"] for f in TEMPLATE_FORMULAS].index("revenue")
     )
     fields = {f.name: float(f.default) for f in domain_pack_registry.get("automotive").state_fields}
-    assert len(fields) == 52
+    assert len(fields) == 54  # D2C 52 + A2 2 (price_cut_factor / accounts_receivable); merged pack.py has 54 unique StateFieldSpec entries
     assert fields["order_backlog"] == 0.0
     assert fields["order_intake"] == 0.0
     assert fields["backlog_delivery_fraction"] == 0.0

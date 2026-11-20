@@ -2,8 +2,8 @@
 (Phase 1 automotive pack).
 
 Covers pack registration and state fields/defaults, the action/event/
-actor surface, the built-in template synthesis (52 variables, 36
-formulas, 33 drivers, assumption data), corporate-template invariance,
+actor surface, the built-in template synthesis (82 variables, 50
+formulas, 47 drivers, assumption data), corporate-template invariance,
 assumption-data merging, and ``resolve_assumption_data`` precedence.
 """
 
@@ -45,8 +45,10 @@ def test_pack_registered_and_state_fields() -> None:
     # can score them) + 3 order-book fields (order_backlog /
     # order_intake + backlog_delivery_fraction, D2C 2026-11-25)
     # + 1 Track C1 ADAS penetration
-    # field (adas_penetration, MIIT combined-assist 2025: 0.649).
-    assert len(fields) == 52
+    # field (adas_penetration, MIIT combined-assist 2025: 0.649)
+    # + 2 audit-A2 conduction fields
+    # (price_cut_factor / accounts_receivable).
+    assert len(fields) == 54
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -59,6 +61,10 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["policy_tax_rate"] == 0.05
     assert fields["tier1_gross_margin"] == 0.25
     assert fields["adas_penetration"] == 0.649
+    # Audit A2 defaults: no cut yet; receivables open at generic revenue
+    # 100.0 x mode terms 6 months, so a generic-scale run opens flat.
+    assert fields["price_cut_factor"] == 1.0
+    assert fields["accounts_receivable"] == 600.0
     # Dual-track splits sum exactly to their spine totals.
     assert fields["nev_production_volume"] == 137.86
     assert fields["ice_production_volume"] == 149.94
@@ -130,30 +136,25 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas,
-    # 33 -> 40 tick drivers — C1 ADAS chain (+6/+1/+1) plus R&D margin
-    # promotion (+8/+6/+6) plus transmission (+1/+0/+0), exact union,
-    # no overlap (the six R&D chain drivers append at the end, in
-    # chain order: adoption default -> revenue passthrough anchor ->
-    # gross_margin -> rd_intensity -> net_margin -> profit; the
-    # transmission is a term inside the gross_margin driver, not a
-    # new formula). Track A rebase (2026-11-23): +1 formula / +1 tick
-    # driver — the order-intake decay merge anchor, first in the
-    # chain (43 -> 44, 40 -> 41). Step 1 rebase (2026-11-24): the
-    # order_backlog finite-book-depletion merge anchor is an eighth
-    # chain driver (44 -> 45 formulas, 41 -> 42 tick drivers). D2C
-    # rebase (2026-11-25): the backlog_delivery_fraction merge anchor
-    # is a ninth chain driver (45 -> 46 formulas, 42 -> 43 tick
     # drivers), sitting between the intake-decay anchor and the
     # adoption default. 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast, the schedule-profile selector; no new
     # formula — the blend lives inside backlog_delivery_fraction).
-    assert len(TEMPLATE_VARIABLES) == 79
-    assert len(TEMPLATE_FORMULAS) == 46
+    # Audit-A2 rebase (2026-11-26): 79 -> 82 variables, 46 -> 50
+    # formulas, 43 -> 47 tick drivers — price_cut_factor (+1/+1/+1,
+    # before the price driver) plus the receivables/cash trio
+    # (accounts_receivable_next / cash / accounts_receivable, +2/+3/+3:
+    # template_revenue is the third variable, a fixed generic level
+    # with no state field).
+    assert len(TEMPLATE_VARIABLES) == 82
+    assert len(TEMPLATE_FORMULAS) == 50
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 43
+    assert len(drivers) == 47
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
+        # Audit A2: the cumulative cut factor runs before the price
+        # driver so the same-tick target already includes this tick's cut.
+        "price_cut_factor",
         "price_index",
         "income_index",
         "sales_volume_retail",
@@ -202,13 +203,18 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "rd_intensity",
         "net_margin",
         "profit",
+        # Audit A2 receivables/cash trio, in chain order: next level ->
+        # cash absorbs the change -> receivables stock is written.
+        "accounts_receivable_next",
+        "cash",
+        "accounts_receivable",
     ]
     # Every variable carries a unit and an evidence reference.
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 34 of 79 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 45 formula parameters are the 9
+    # 36 of 82 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 46 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -229,7 +235,12 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # net_margin driver outputs, not further variables, and profit is
     # the pack's profit state field, reused), plus the Tier-1
     # transmission coefficient (tier1_pass_through, fixed, not
-    # sampled — it is a formula parameter, not a state field).
+    # sampled — it is a formula parameter, not a state field),
+    # plus the 3 audit-A2 level variables (accounts_receivable and
+    # price_cut_factor match pack state fields, so they bind;
+    # template_revenue is the fixed generic sales base with NO state
+    # field — it is listed in `unbound` below, deliberately named so
+    # it collides with no case variable id).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -278,6 +289,11 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "rd_adoption",
         "other_share",
         "tier1_pass_through",
+        # Audit A2: `template_revenue` is a fixed generic level with NO
+        # matching state field (the live field is `revenue`; the proxy
+        # is deliberately named so it collides with no case variable —
+        # see test_merged_draw_order_matches_e047f50).
+        "template_revenue",
     }
 
 
@@ -285,16 +301,11 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
-    # (C1 +6/+1, R&D +8/+6, transmission +1/+0, Track A intake
-    # anchor +0/+1; the revenue-passthrough merge anchor is one of
-    # the seven chain formulas; see the template docstring).
-    # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas
-    # (order_backlog_opening + downturn_brake; the delivery-fraction
-    # merge anchor). 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(template.variables) == 79
-    assert len(template.formulas) == 46
+    # Audit-A2 rebase (2026-11-26): 79 -> 82 variables, 46 -> 50
+    # formulas (price_cut_factor + the receivables/cash trio).
+    assert len(template.variables) == 82
+    assert len(template.formulas) == 50
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.

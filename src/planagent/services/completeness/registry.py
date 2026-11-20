@@ -512,21 +512,32 @@ AUTOMOTIVE_DRIVER_REGISTRY: list[DriverRegistryEntry] = [
         severity="medium",
         boundary_class=BoundaryClass.FIXABLE_DEFECT,
         boundary_basis="§6 fixable defect: OEM annual-cut ranges and payment terms are industry-known and Ho-authorized as simulated averages, encodable at decision time.",
-        drives=["tier1_gross_margin", "revenue"],
+        drives=["price_index", "tier1_gross_margin", "revenue", "accounts_receivable", "cash"],
         model_elements=[
             "annual_cut_rate",
             "payment_terms_months",
             "tier1_gross_margin",
         ],
-        link_outputs=["tier1_gross_margin"],
+        link_outputs=[
+            "price_cut_factor",
+            "price_index",
+            "tier1_gross_margin",
+            "accounts_receivable",
+            "cash",
+        ],
         evidence=[
             "OEM annual price-cut 3-5% conventional, 10%+ stressed (synthesis B5)",
             "Payment terms 6 months common under the n+3+6 structure (synthesis B5)",
         ],
         suggested_fix=(
-            "Add `annual_cut_rate`, `payment_terms_months`, and "
-            "`tier1_gross_margin` as variables (simulated industry averages, "
-            "Ho-authorized 2026-11-16, replaceable with internal actuals)."
+            "Conduction is wired (audit A2, 2026-11-20): the annual cut "
+            "compounds into `price_cut_factor` and drags the `price_index` "
+            "target, squeezes `tier1_gross_margin` directly, and payment "
+            "terms set `accounts_receivable` (revenue x terms) with the "
+            "change absorbed by `cash`. Variables stay the Ho-authorized "
+            "2026-11-16 simulated industry averages, replaceable with "
+            "internal actuals; the stressed 10%+ cut regime stays a "
+            "scenario lever."
         ),
     ),
     DriverRegistryEntry(
