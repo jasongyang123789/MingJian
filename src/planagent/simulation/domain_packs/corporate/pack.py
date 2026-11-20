@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from planagent.simulation.domain_packs import DomainPack, registry
 from planagent.simulation.specs import (
     ActionSpec,
@@ -7,6 +9,12 @@ from planagent.simulation.specs import (
     EntityTypeSpec,
     EventTypeSpec,
     StateFieldSpec,
+)
+
+from .template_spec import (
+    CORPORATE_TEMPLATE_ASSUMPTION_DATA,
+    CORPORATE_TEMPLATE_FORMULAS,
+    CORPORATE_TEMPLATE_VARIABLES,
 )
 
 
@@ -135,6 +143,19 @@ class CorporateDomainPack(DomainPack):
                 },
             ),
         ]
+
+    def template_variables(self) -> list[dict]:
+        # Profit-chain pack (2026-11-20): the corporate template was
+        # empty before (0 variables / 0 formulas); it now carries the
+        # profit transmission chain (same four margin variables as the
+        # automotive template). See template_spec.py.
+        return deepcopy(CORPORATE_TEMPLATE_VARIABLES)
+
+    def template_formulas(self) -> list[dict]:
+        return deepcopy(CORPORATE_TEMPLATE_FORMULAS)
+
+    def template_assumption_data(self) -> dict:
+        return deepcopy(CORPORATE_TEMPLATE_ASSUMPTION_DATA)
 
 
 registry.register(CorporateDomainPack())
