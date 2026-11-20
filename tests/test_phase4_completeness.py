@@ -55,8 +55,17 @@ DESAY_2020_VARIABLE_IDS = [
     "revenue_growth",
     "revenue_coupling",
     "profit",
-    "profit_growth",
-    "profit_coupling",
+    # Profit-chain pack (2026-11-20): the dead profit_growth /
+    # profit_coupling variables are DELETED (the pack chain replaces
+    # them) and the four margin variables take their place — this is
+    # the new case variable table, synced from the pack rerun harness.
+    # drivers_missing is UNCHANGED at 16: no registry entry's
+    # model_elements names profit_growth, profit_coupling, or any
+    # margin_* id, so the count is identical before and after.
+    "margin_base",
+    "margin_longrun",
+    "margin_reversion",
+    "margin_adoption",
 ]
 DESAY_2020_KEY_VARIABLES = ["market_share", "revenue", "profit"]
 

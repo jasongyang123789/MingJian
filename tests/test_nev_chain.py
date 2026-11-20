@@ -20,6 +20,7 @@ in-memory-bus pattern from the Phase 2 automotive API tests.
 from __future__ import annotations
 
 import math
+import random
 from pathlib import Path
 
 import pytest
@@ -28,10 +29,19 @@ from fastapi.testclient import TestClient
 from planagent.config import reset_settings_cache
 from planagent.db import reset_database_cache
 from planagent.main import create_app
-from planagent.services.variables.formulas import evaluate_tick_drivers
-from planagent.services.variables.models import FormulaDefinition, VariableSet
+from planagent.services.distributions import sample_variable_set
+from planagent.services.variables.formulas import (
+    evaluate_formulas,
+    evaluate_tick_drivers,
+)
+from planagent.services.variables.models import (
+    FormulaDefinition,
+    VariableDefinition,
+    VariableSet,
+)
 from planagent.services.variables.presets import builtin_template
 from planagent.services.variables.validator import merge_variable_sets
+from planagent.simulation.domain_packs import registry as domain_pack_registry
 from planagent.simulation.domain_packs.automotive.template_spec import (
     TEMPLATE_FORMULAS,
     TEMPLATE_VARIABLES,
@@ -74,9 +84,14 @@ def _logistic(x: float, ceiling: float) -> float:
 
 def test_nev_chain_variables_match_diagnostic_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 33
+    # Profit-chain pack (2026-11-20): +4 margin variables / +4 formulas
+    # (disruptor_adoption default, revenue passthrough anchor,
+    # net_margin, profit) — the passthrough is the fourth formula, not
+    # in the original +3 spec: see the template docstring's
+    # merge-order note. Tick drivers 33 -> 37 (all four are drivers).
+    assert len(TEMPLATE_VARIABLES) == 65
+    assert len(TEMPLATE_FORMULAS) == 40
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 37
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -91,8 +106,10 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    # Profit-chain pack (2026-11-20): 61 -> 65 variables, 36 -> 40
+    # formulas (see the count comment above).
+    assert len(template.variables) == 65
+    assert len(template.formulas) == 40
 
 
 def test_nev_chain_planning_path_values() -> None:
@@ -159,6 +176,150 @@ def test_nev_chain_merge_replaces_drift_driver() -> None:
     drift = [f for f in template.formulas if f.output == "nev_penetration"]
     assert len(drift) == 1
     assert drift[0].tick_driver is True
+
+
+def test_profit_chain_drivers_are_linear_and_clamped() -> None:
+    """Profit-chain pack: the template's net_margin driver is LINEAR
+    (each tick closes 25% of the ORIGINAL gap — tick 4 closes 75%,
+    leaving 25%), clamped to [0.02, 0.25], and profit is same-tick
+    revenue x net_margin. This pins the M1 correction (TRACK-B §2's
+    "(0.75)^3 ≈ 42%" was a documentation error) at the formula level.
+    """
+    template = builtin_template("automotive")
+    by_output = {f.output: f for f in template.formulas}
+    for output in ("disruptor_adoption", "revenue", "net_margin", "profit"):
+        assert output in by_output, output
+        assert by_output[output].tick_driver is True, output
+    # The adoption default is the bare number 0.0.
+    assert by_output["disruptor_adoption"].expression == 0.0
+    # The revenue driver is the identity passthrough (self-reference).
+    assert by_output["revenue"].expression == {"ref": "revenue"}
+    drivers = [by_output[o] for o in ("disruptor_adoption", "revenue", "net_margin", "profit")]
+    # Base 0.10 -> longrun 0.06, zero adoption (the template default):
+    # linear path 0.10 / 0.09 / 0.08 / 0.07 / 0.06 (tick 5 closes 100%).
+    scope = {
+        "margin_base": 0.10,
+        "margin_longrun": 0.06,
+        "margin_reversion": 0.25,
+        "margin_adoption": 0.01,
+    }
+    state = {"revenue": 1000.0}
+    expected_margins = [0.10, 0.09, 0.08, 0.07, 0.06]
+    for tick, expected in enumerate(expected_margins, start=1):
+        out = evaluate_tick_drivers(drivers, scope, state, tick)
+        assert out["disruptor_adoption"] == 0.0
+        assert out["net_margin"] == pytest.approx(expected), tick
+        assert out["profit"] == pytest.approx(round(1000.0 * expected, 4)), tick
+        assert out["revenue"] == 1000.0
+    # Adoption term: with adoption fixed at 0.5 the margin lifts by
+    # 0.01 x 0.5 = 0.005 at every tick.
+    adoption_driver = FormulaDefinition.model_validate(
+        {
+            "output": "disruptor_adoption",
+            "tick_driver": True,
+            "expression": 0.5,
+            "description": "test: fixed adoption",
+        }
+    )
+    drivers_with_adoption = [adoption_driver, *drivers[1:]]
+    out = evaluate_tick_drivers(drivers_with_adoption, scope, state, 2)
+    assert out["net_margin"] == pytest.approx(0.095)
+    # Clamp rails: a base above the rail and a base below it.
+    for base, expected in ((0.30, 0.25), (0.005, 0.02)):
+        out = evaluate_tick_drivers(
+            drivers,
+            {**scope, "margin_base": base, "margin_adoption": 0.0},
+            state,
+            1,
+        )
+        assert out["net_margin"] == pytest.approx(expected), base
+
+
+def test_profit_chain_merge_order_profit_reads_same_tick_revenue() -> None:
+    """Profit-chain pack: a case revenue driver replaces the template's
+    revenue passthrough IN PLACE, so it evaluates BEFORE net_margin /
+    profit and profit reads SAME-TICK revenue — the Track B semantics.
+    Without the passthrough anchor, the template profit driver would
+    sit before the appended case revenue driver and read pre-tick
+    revenue (one-tick lag). This test pins the merge order that
+    prevents the lag.
+    """
+    template = builtin_template("automotive")
+    base = VariableSet(
+        name=template.name,
+        variables=list(template.variables),
+        formulas=list(template.formulas),
+        internal=dict(template.internal),
+        assumption_data=dict(template.assumption_data),
+    )
+    case_revenue = {
+        "output": "revenue",
+        "tick_driver": True,
+        "description": "case revenue grows 10% per tick",
+        "expression": {
+            "op": "multiply",
+            "args": [{"ref": "revenue"}, 1.10],
+        },
+    }
+    case = VariableSet(
+        name="case",
+        variables=[
+            VariableDefinition.model_validate(
+                {
+                    "id": "margin_base",
+                    "unit": "rate",
+                    "distribution": {"type": "fixed", "value": 0.10},
+                    "evidence_ref": "test",
+                }
+            ),
+            VariableDefinition.model_validate(
+                {
+                    "id": "margin_longrun",
+                    "unit": "rate",
+                    "distribution": {"type": "fixed", "value": 0.10},
+                    "evidence_ref": "test",
+                }
+            ),
+        ],
+        formulas=[FormulaDefinition.model_validate(case_revenue)],
+    )
+    merged = merge_variable_sets(base, case)
+    outputs = [f.output for f in merged.formulas if f.tick_driver]
+    # The case revenue driver sits at the passthrough's template
+    # position — before net_margin and profit — not appended at the end.
+    assert outputs.index("revenue") < outputs.index("net_margin")
+    assert outputs.index("net_margin") < outputs.index("profit")
+    assert len([o for o in outputs if o == "revenue"]) == 1
+    drivers = [f for f in merged.formulas if f.tick_driver]
+    # Full scope + state: the merged driver list is the whole template
+    # graph, so every other driver needs its variables/fields present
+    # (sampled template values + INITIAL derived values + pack state
+    # defaults, margin pinned). The initial formulas (demand growth
+    # rate, tax level factor, pull-forward stock) are part of the
+    # tick-driver scope in the engine (variable_scope = sampled +
+    # derived), so they belong here too.
+    sampled = sample_variable_set(
+        VariableSet(variables=list(template.variables)), random.Random(7)
+    )
+    derived = evaluate_formulas(
+        [f for f in template.formulas if not f.tick_driver], sampled
+    )
+    scope = {
+        **sampled,
+        **derived,
+        "margin_base": 0.10,
+        "margin_longrun": 0.10,
+        "margin_reversion": 0.25,
+        "margin_adoption": 0.0,
+    }
+    pack = domain_pack_registry.get("automotive")
+    state = {field.name: float(field.default) for field in pack.state_fields}
+    state["revenue"] = 1000.0
+    out1 = evaluate_tick_drivers(drivers, scope, state, 1)
+    # Same-tick: revenue grows to 1100 first, profit is 1100 x 0.10 —
+    # not 1000 x 0.10 (the one-tick-lag value).
+    assert out1["revenue"] == pytest.approx(1100.0)
+    assert out1["profit"] == pytest.approx(110.0)
 
 
 # --- API end-to-end ------------------------------------------------------
