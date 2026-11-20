@@ -162,7 +162,7 @@ def _branch(client: TestClient, parent_id: str, cash: float) -> dict:
 
 
 def _expected_rule_picks(anchor_id: str, summaries: dict) -> dict:
-    """Apply the documented v2 rules to summaries read back via API.
+    """Apply the documented v3 rules to summaries read back via API.
 
     ``summaries`` maps run id -> {"baseline": {...}, "strategy":
     {...}, "es": {"baseline": value, "strategy": value, "alpha": a}
@@ -192,10 +192,20 @@ def _expected_rule_picks(anchor_id: str, summaries: dict) -> dict:
         return (-candidate["p50"], candidate["p_loss"], candidate["run_id"], candidate["arm"])
 
     def robust_key(candidate: dict) -> tuple:
+        # Mirror of the v3 rule: relative expected shortfall
+        # (ES / P50) at 0.01 resolution; a non-positive P50 loses
+        # the tail tie-break.
+        es = candidate["es"]
+        if es is None:
+            rel = 0.0
+        elif candidate["p50"] > 0:
+            rel = round(es / candidate["p50"], 2)
+        else:
+            rel = float("-inf")
         return (
             candidate["p_loss"],
             0 if candidate["es"] is not None else 1,
-            -candidate["es"] if candidate["es"] is not None else 0.0,
+            -rel,
             -candidate["p50"],
             candidate["run_id"],
             candidate["arm"],
@@ -256,7 +266,7 @@ def test_derive_writes_mappings_from_family(monkeypatch, tmp_path: Path) -> None
         response = _derive(client, parent["id"])
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["rules_version"] == "derivation-rules-v2"
+        assert body["rules_version"] == "derivation-rules-v3"
         assert body["derivation_hash"].startswith("sha256:")
         assert body["family_size"] == 3
         assert body["candidates_considered"] == 6
@@ -281,7 +291,7 @@ def test_derive_writes_mappings_from_family(monkeypatch, tmp_path: Path) -> None
             assert mapping["arm"] == outcome["arm"]
             assert mapping["origin"] == "derived"
             assert mapping["rule_id"] == outcome["rule_id"]
-            assert mapping["rules_version"] == "derivation-rules-v2"
+            assert mapping["rules_version"] == "derivation-rules-v3"
             assert mapping["rule_record"]["derivation_hash"] == body["derivation_hash"]
             assert mapping["user_edited"] is False
         # Second derive: byte-identical derivation, same mapping rows.
@@ -304,7 +314,7 @@ def test_derive_refuses_without_ensemble_and_writes_nothing(monkeypatch, tmp_pat
 
 
 def test_derive_anchor_only_family_reports_direction_rules_none(monkeypatch, tmp_path: Path) -> None:
-    """v2: with no sub-run ensemble, the direction rules are none.
+    """v3: with no sub-run ensemble, the direction rules are none.
 
     The anchor is excluded from direction selection, so an
     anchor-only family produces just the Baseline mapping; the
@@ -318,7 +328,7 @@ def test_derive_anchor_only_family_reports_direction_rules_none(monkeypatch, tmp
         response = _derive(client, run["id"])
         assert response.status_code == 200, response.text
         body = response.json()
-        assert body["rules_version"] == "derivation-rules-v2"
+        assert body["rules_version"] == "derivation-rules-v3"
         assert body["family_size"] == 1
         assert body["candidates_considered"] == 2
         by_rule = {o["rule_id"]: o for o in body["outcomes"]}

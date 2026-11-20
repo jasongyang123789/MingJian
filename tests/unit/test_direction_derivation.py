@@ -45,9 +45,9 @@ def _candidate(
 
 
 def test_derive_rules_version_pinned() -> None:
-    assert DERIVATION_RULES_VERSION == "derivation-rules-v2"
+    assert DERIVATION_RULES_VERSION == "derivation-rules-v3"
     result = derive_directions(RUN_A, [])
-    assert result.rules_version == "derivation-rules-v2"
+    assert result.rules_version == "derivation-rules-v3"
 
 
 def test_derive_highest_p50_tie_breaks_by_loss_then_run_then_arm() -> None:
@@ -147,7 +147,7 @@ def test_derive_most_robust_prefers_shortfall_then_p50() -> None:
         # Anchor outranks everything on P50 but is excluded from
         # both direction rules.
         _candidate(RUN_A, "baseline", 99.0, 0.0),
-        _candidate(RUN_B, "baseline", 50.0, 0.1, expected_shortfall=-5.0, alpha=0.05),
+        _candidate(RUN_B, "baseline", 50.0, 0.1, expected_shortfall=-15.0, alpha=0.05),
         _candidate(RUN_B, "strategy", 10.0, 0.1, expected_shortfall=-2.0, alpha=0.05),
     ]
     result = derive_directions(RUN_A, candidates)
@@ -158,9 +158,15 @@ def test_derive_most_robust_prefers_shortfall_then_p50() -> None:
     assert robust.rule_id == "most_robust"
     assert robust.status == "produced"
     # Both direction candidates share p_loss 0.1: a stored shortfall
-    # beats none, and the higher shortfall value (-2.0, the less-bad
-    # tail) beats -5.0 — so most_robust picks the strategy arm even
-    # though its P50 is lower.
+    # beats none, and the higher RELATIVE shortfall wins — the
+    # strategy arm's tail (-2.0 on a P50 of 10, -20%) is less bad
+    # than the baseline arm's (-15.0 on a P50 of 50, -30%) — so
+    # most_robust picks the strategy arm even though its P50 is
+    # lower. (Under the v2 absolute-shortfall comparison this case
+    # was written with -5.0; the numbers were re-based for v3 so the
+    # test still pins the same intent: the shortfall tie-break beats
+    # P50. An absolute comparison would rank -5.0 above -2.0 and
+    # pick the baseline arm — the level contamination v3 removes.)
     assert robust.source_run_id == RUN_B
     assert robust.arm == "strategy"
     assert robust.direction_name == "Most robust"
@@ -181,6 +187,122 @@ def test_derive_most_robust_falls_back_to_p50_without_shortfall() -> None:
     # tie between run-a and run-b on P50, with no shortfall stored.
     assert robust.source_run_id == RUN_B
     assert robust.expected_shortfall is None
+
+
+# ---------------------------------------------------------------------------
+# most_robust forks from highest_p50 (fix/knownfix-most-robust, v3)
+#
+# Under v2 the shortfall tie-break compared ABSOLUTE tail means, so
+# whenever p_loss tied it re-selected the highest P50: arms that
+# differ mainly by a multiplicative growth level are near-scale
+# copies (in the four e047f50 backtest cases ES/P50 is near-constant
+# within a case), and absolute ES is monotone in P50. V3 compares
+# the RELATIVE shortfall (ES/P50), so a high-median arm with a
+# relatively fat tail can lose to a lower-median arm with a
+# relatively tight tail. These tests lock that fork.
+# ---------------------------------------------------------------------------
+
+
+def test_derive_most_robust_forks_from_highest_p50_on_relative_tail() -> None:
+    # The contamination case, with realistic revenue-like levels:
+    # the aggressive arm has the higher median (100) AND the higher
+    # absolute tail mean (80), so v2 most_robust duplicated
+    # highest_p50 on it; but its tail is relatively worse (80% of
+    # its own median) than the moderate arm's (54 on 60, 90%).
+    candidates = [
+        _candidate(RUN_A, "baseline", 999.0, 0.0),
+        _candidate(RUN_B, "baseline", 100.0, 0.1, expected_shortfall=80.0, alpha=0.05),
+        _candidate("run-c", "baseline", 60.0, 0.1, expected_shortfall=54.0, alpha=0.05),
+    ]
+    result = derive_directions(RUN_A, candidates)
+    highest = result.outcomes[0]
+    assert highest.status == "produced"
+    assert highest.source_run_id == RUN_B
+    assert highest.arm == "baseline"
+    assert highest.p50 == 100.0
+    robust = result.outcomes[1]
+    assert robust.rule_id == "most_robust"
+    assert robust.status == "produced"
+    assert robust.source_run_id == "run-c"
+    assert robust.arm == "baseline"
+    assert robust.p50 == 60.0
+    assert robust.expected_shortfall == 54.0
+    # The fork is a real second direction, not a duplicate.
+    assert [d.name for d in result.directions] == [
+        "Highest P50",
+        "Most robust",
+        "Baseline",
+    ]
+
+
+def test_derive_most_robust_scale_copies_do_not_spuriously_fork() -> None:
+    # Two arms that are exact scale copies have the same relative
+    # tail (43/50 == 86/100), so robustness cannot distinguish
+    # them; the tie-break falls through to P50 and agrees with
+    # highest_p50. The v3 rule is scale-free: pure level scaling
+    # must not manufacture a fork.
+    candidates = [
+        _candidate(RUN_A, "baseline", 999.0, 0.0),
+        _candidate(RUN_B, "baseline", 50.0, 0.1, expected_shortfall=43.0, alpha=0.05),
+        _candidate("run-c", "baseline", 100.0, 0.1, expected_shortfall=86.0, alpha=0.05),
+    ]
+    result = derive_directions(RUN_A, candidates)
+    assert result.outcomes[0].source_run_id == "run-c"
+    robust = result.outcomes[1]
+    assert robust.status == "duplicate"
+    assert robust.duplicate_of_rule == "highest_p50"
+    assert robust.source_run_id == "run-c"
+
+
+def test_derive_most_robust_nonpositive_p50_loses_tail_tiebreak() -> None:
+    # A non-positive median has no meaningful relative tail: even a
+    # huge absolute shortfall must not win the tie-break through the
+    # back door of level. The positive-median arm with the best
+    # relative tail wins — and a higher-median arm with a worse
+    # relative tail takes highest_p50, so the robust pick is a real
+    # produced direction, not a duplicate. (As first written this
+    # test had only the two arms, so run-c won highest_p50 as well
+    # and most_robust correctly reported "duplicate"; the
+    # "produced" expectation only holds with a distinct
+    # highest_p50 arm present.)
+    candidates = [
+        _candidate(RUN_A, "baseline", 999.0, 0.0),
+        _candidate(RUN_B, "baseline", -5.0, 0.1, expected_shortfall=100.0, alpha=0.05),
+        _candidate("run-c", "baseline", 50.0, 0.1, expected_shortfall=10.0, alpha=0.05),
+        _candidate("run-d", "baseline", 80.0, 0.1, expected_shortfall=8.0, alpha=0.05),
+    ]
+    result = derive_directions(RUN_A, candidates)
+    highest = result.outcomes[0]
+    assert highest.status == "produced"
+    assert highest.source_run_id == "run-d"
+    robust = result.outcomes[1]
+    assert robust.status == "produced"
+    assert robust.source_run_id == "run-c"
+    assert robust.arm == "baseline"
+
+
+def test_derive_most_robust_huawei_scale_copies_tie_at_001_resolution() -> None:
+    # Regression with the REAL Huawei 2000 revenue candidates
+    # (e047f50 re-run, raw-classic/huawei): the three arms are exact
+    # scale copies — CV 0.066, p10/P50 0.909, ES/P50 0.857305 for
+    # all three, agreeing to 4e-7. Their relative shortfalls are
+    # therefore a tie at 0.01 resolution, and the tie-break falls
+    # through to P50: most_robust duplicates highest_p50 (B). An
+    # unrounded relative comparison forks to A on 4e-7 of noise;
+    # that fork is a measurement artifact, not robustness, and v3
+    # must not produce it.
+    candidates = [
+        _candidate(RUN_A, "baseline", 99999.0, 0.0),
+        _candidate("run-d", "baseline", 347.0906, 0.0, expected_shortfall=297.5626, alpha=0.05),
+        _candidate(RUN_B, "baseline", 1339.6083, 0.0, expected_shortfall=1148.4527, alpha=0.05),
+        _candidate("run-c", "baseline", 620.4425, 0.0, expected_shortfall=531.9085, alpha=0.05),
+    ]
+    result = derive_directions(RUN_A, candidates)
+    assert result.outcomes[0].source_run_id == RUN_B
+    robust = result.outcomes[1]
+    assert robust.status == "duplicate"
+    assert robust.duplicate_of_rule == "highest_p50"
+    assert robust.source_run_id == RUN_B
 
 
 def test_derive_baseline_control_selects_anchor_baseline() -> None:

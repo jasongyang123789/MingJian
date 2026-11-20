@@ -25,7 +25,7 @@ and the anchor's ensemble systematically outranks every arm, so
 ``highest_p50`` kept recommending "stay undecided". The anchor
 stays visible as the ``baseline_control`` reference instead.
 
-Rules, in evaluation order (``derivation-rules-v2``):
+Rules, in evaluation order (``derivation-rules-v3``):
 
 1. ``highest_p50`` — the candidate direction (any run except the
    anchor) with the highest P50.
@@ -34,8 +34,12 @@ Rules, in evaluation order (``derivation-rules-v2``):
 2. ``most_robust`` — the candidate direction (any run except the
    anchor) with the lowest loss
    probability. Tie-breaks, in order: a stored lower-tail expected
-   shortfall beats none; higher expected-shortfall value wins (the
-   tail mean is less bad); highest P50; lowest run id; lowest arm.
+   shortfall beats none; higher RELATIVE expected shortfall wins
+   (the tail mean as a fraction of the candidate's own P50,
+   compared at 0.01 resolution — see ``_relative_shortfall`` for
+   why the ratio, not the absolute value, is compared, and why
+   sub-1pp differences are treated as ties); highest P50; lowest
+   run id; lowest arm.
    Only lower-tail expected shortfall counts: the loss-probability
    primary already assumes lower-is-worse (loss = below the
    threshold), and upper-tail shortfall answers a different
@@ -76,7 +80,7 @@ from planagent.services.narratives.models import (
     DirectionDefinition,
 )
 
-DERIVATION_RULES_VERSION = "derivation-rules-v2"
+DERIVATION_RULES_VERSION = "derivation-rules-v3"
 
 RuleId = Literal["highest_p50", "most_robust", "baseline_control"]
 ArmName = Literal["baseline", "strategy"]
@@ -131,11 +135,46 @@ def _highest_p50_key(candidate: DerivationCandidate) -> tuple[float, float, str,
     return (-candidate.p50, candidate.p_loss, candidate.run_id, candidate.arm)
 
 
+def _relative_shortfall(candidate: DerivationCandidate) -> float:
+    """Lower-tail expected shortfall as a fraction of the P50.
+
+    The stored shortfall is a tail mean in metric units (revenue,
+    share, ...). Comparing it absolutely makes the tie-break a
+    level comparison: arms that differ mainly by a multiplicative
+    growth level are near-scale copies of one shape (in the four
+    e047f50 backtest cases the revenue CV is near-constant within a
+    case, so ES ≈ k·P50 with k ≈ 0.86–0.94), and absolute ES then
+    re-selects the highest P50 whenever ``p_loss`` ties — which is
+    why ``most_robust`` never forked from ``highest_p50`` there.
+    The ratio measures how bad the tail is relative to what the arm
+    itself promises, so a high-median arm with a relatively fat
+    tail can lose to a lower-median arm with a relatively tight
+    tail.
+
+    The ratio is compared at 0.01 resolution (rounded to two
+    decimals): at trials=20, alpha=0.05 the stored tail mean is a
+    SINGLE trial, so sub-1pp differences are measurement noise, not
+    robustness — the Huawei 2000 arms are exact scale copies whose
+    relative shortfalls agree to 4e-7, and an unrounded comparison
+    would fork on that noise. A non-positive P50 has no meaningful
+    ratio and loses the tie-break (``-inf``); real revenue/share
+    medians are positive. Known limitation of bucketing: two ratios
+    straddling a .xx5 boundary can land in different buckets on a
+    <1pp true difference; the comparison stays deterministic
+    (same inputs, same buckets), and the verdicts it changes are
+    sub-1pp by construction.
+    """
+
+    if candidate.expected_shortfall is None:
+        return 0.0
+    if candidate.p50 > 0:
+        return round(candidate.expected_shortfall / candidate.p50, 2)
+    return float("-inf")
+
+
 def _most_robust_key(candidate: DerivationCandidate) -> tuple[float, int, float, float, str, str]:
     has_shortfall = 0 if candidate.expected_shortfall is not None else 1
-    shortfall_key = (
-        -candidate.expected_shortfall if candidate.expected_shortfall is not None else 0.0
-    )
+    shortfall_key = -_relative_shortfall(candidate)
     return (
         candidate.p_loss,
         has_shortfall,
@@ -149,7 +188,7 @@ def _most_robust_key(candidate: DerivationCandidate) -> tuple[float, int, float,
 def derive_directions(
     anchor_run_id: str, candidates: list[DerivationCandidate]
 ) -> DerivationResult:
-    """Apply the v2 rules to a candidate set, in fixed rule order.
+    """Apply the v3 rules to a candidate set, in fixed rule order.
 
     ``highest_p50`` and ``most_robust`` select only among
     candidates whose run is not the anchor: the anchor is the
