@@ -1,12 +1,21 @@
-// Automotive cockpit views (Phase 2): trajectory chart, S-layer
-// table, co-occurrence prompt list, and the expectation catalog.
-// Fixed chart sizes throughout (no ResponsiveContainer), matching the
-// distribution charts: deterministic rendering in jsdom and identical
-// on every load. All values are stored backend values, never
-// recomputed here; the S-layer totals are the backend's own summary.
+// Automotive cockpit views (Phase 2; S-layer charts added 2026-11-20):
+// trajectory chart, S-layer charts (per-tick totals + per-tick ×
+// OEM × product detail stacks), co-occurrence prompt list, and the
+// expectation catalog. Fixed chart sizes throughout (no
+// ResponsiveContainer), matching the distribution charts: deterministic
+// rendering in jsdom and identical on every load. All values are stored
+// backend values, never recomputed here; the S-layer totals are the
+// backend's own summary. The two original S-layer tables survive
+// verbatim inside a collapsed "精确数值" fold-out, so the charts are
+// the presentation and the tables are the precision appendix — every
+// field the tables carried is still in the DOM.
 
+import { useState } from 'react'
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -22,6 +31,8 @@ import type {
   PromptReportRead,
   SalesLayerRead,
 } from '../../api/engineTypes'
+import { detailSegments, detailSeriesByTick } from './automotiveUtils'
+import type { DetailMeasure } from './automotiveUtils'
 import { formatNumber, formatShare } from './format'
 
 const CHART_WIDTH = 720
@@ -102,7 +113,192 @@ export function TrajectoryChart({ trajectory }: { trajectory: AutomotiveTrajecto
   )
 }
 
-export function SalesLayerTable({ layer }: { layer: SalesLayerRead }) {
+const DETAIL_MEASURES: Array<{ key: DetailMeasure; label: string }> = [
+  { key: 'capacity_value', label: '容量' },
+  { key: 'units', label: '件数' },
+  { key: 'own_sales', label: '自有销售' },
+]
+
+const SEGMENT_COLORS = [
+  '#60a5fa',
+  '#34d399',
+  '#fbbf24',
+  '#f472b6',
+  '#a78bfa',
+  '#22d3ee',
+  '#fb923c',
+  '#a3e635',
+]
+
+/** Per-tick totals as four lines over tick (the old per-tick table's
+ * four numeric columns). Two axes because the measures live on two
+ * scales: left = 产量（万辆/月）+ 件数, right = 容量 + 自有销售
+ * （金额）. A null own_sales breaks its line (recharts gap), never a
+ * silent zero — matching the table's '—'. */
+export function SalesLayerPerTickChart({ layer }: { layer: SalesLayerRead }) {
+  const hasOwnSales = layer.per_tick.some((tick) => tick.own_sales !== null)
+  if (layer.per_tick.length === 0) {
+    return <p className="text-sm text-slate-400">暂无逐 tick 数据。</p>
+  }
+  return (
+    <div className="space-y-2">
+      <div role="img" aria-label="S 层逐 tick 总量图">
+        <ComposedChart
+          width={CHART_WIDTH}
+          height={CHART_HEIGHT}
+          data={layer.per_tick}
+          margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
+        >
+          <CartesianGrid stroke={GRID_STROKE} />
+          <XAxis
+            dataKey="tick"
+            tick={AXIS_TICK}
+            label={{ value: 'tick（月）', fill: '#94a3b8', fontSize: 12 }}
+          />
+          <YAxis
+            yAxisId="volume"
+            tick={AXIS_TICK}
+            width={64}
+            label={{ value: '量', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
+          />
+          <YAxis yAxisId="value" orientation="right" tick={AXIS_TICK} width={72} />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
+            labelStyle={{ color: '#e2e8f0' }}
+            formatter={(value, name) => [formatNumber(Number(value)), String(name)]}
+            labelFormatter={(label) => `Tick ${label}`}
+          />
+          <Legend />
+          <Line
+            yAxisId="volume"
+            type="monotone"
+            dataKey="production_volume"
+            name="产量（主轴）"
+            stroke="#60a5fa"
+            dot={false}
+            strokeWidth={2}
+          />
+          <Line
+            yAxisId="volume"
+            type="monotone"
+            dataKey="units"
+            name="件数"
+            stroke="#34d399"
+            dot={false}
+            strokeWidth={2}
+          />
+          <Line
+            yAxisId="value"
+            type="monotone"
+            dataKey="capacity_value"
+            name="容量"
+            stroke="#fbbf24"
+            dot={false}
+            strokeWidth={2}
+          />
+          {hasOwnSales && (
+            <Line
+              yAxisId="value"
+              type="monotone"
+              dataKey="own_sales"
+              name="自有销售"
+              stroke="#f472b6"
+              dot={false}
+              strokeWidth={2}
+            />
+          )}
+        </ComposedChart>
+      </div>
+      <p className="text-xs text-slate-400">
+        左轴：产量（万辆/月）与件数；右轴：容量与自有销售（金额）。悬停查看每 tick 精确数值。
+        {hasOwnSales ? '' : ' 自有销售未归属，图中不含自有销售线。'}
+      </p>
+    </div>
+  )
+}
+
+/** Detail rows as one stacked bar per tick, segments = OEM × 产品
+ * (the old detail table's tick × OEM × product rows, pivoted). The
+ * measure toggle switches which of the table's three numeric columns
+ * the stack shows — 容量 / 件数 / 自有销售 — so every row's every
+ * number is charted. A null own_sales counts as 0 in the stack; the
+ * exact-value table below keeps the literal null as '—'. */
+export function SalesLayerDetailChart({ layer }: { layer: SalesLayerRead }) {
+  const [measure, setMeasure] = useState<DetailMeasure>('capacity_value')
+  const segments = detailSegments(layer.rows)
+  const measureLabel = DETAIL_MEASURES.find((entry) => entry.key === measure)?.label ?? '容量'
+  const ownSalesAllNull = measure === 'own_sales' && layer.rows.every((row) => row.own_sales === null)
+  if (layer.rows.length === 0) {
+    return <p className="text-sm text-slate-400">暂无明细行。</p>
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2" role="group" aria-label="明细度量">
+        {DETAIL_MEASURES.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            aria-pressed={measure === entry.key}
+            onClick={() => setMeasure(entry.key)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              measure === entry.key
+                ? 'border-blue-500/50 bg-blue-500/20 text-blue-200'
+                : 'border-slate-700/50 bg-slate-800/40 text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      {ownSalesAllNull ? (
+        <p className="text-sm text-slate-400">
+          自有销售未归属：明细行全部无自有销售值，无法绘出自有销售堆叠。切换容量或件数查看明细。
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <div role="img" aria-label={`S 层明细堆叠图（${measureLabel}）`}>
+            <BarChart
+              width={CHART_WIDTH}
+              height={CHART_HEIGHT}
+              data={detailSeriesByTick(layer.rows, measure)}
+              margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
+            >
+              <CartesianGrid stroke={GRID_STROKE} />
+              <XAxis
+                dataKey="tick"
+                tick={AXIS_TICK}
+                label={{ value: 'tick（月）', fill: '#94a3b8', fontSize: 12 }}
+              />
+              <YAxis tick={AXIS_TICK} width={72} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: 8 }}
+                labelStyle={{ color: '#e2e8f0' }}
+                formatter={(value, name) => [formatNumber(Number(value)), String(name)]}
+                labelFormatter={(label) => `Tick ${label}`}
+              />
+              <Legend />
+              {segments.map((segment, index) => (
+                <Bar
+                  key={segment}
+                  dataKey={segment}
+                  name={segment}
+                  stackId="detail"
+                  fill={SEGMENT_COLORS[index % SEGMENT_COLORS.length]}
+                />
+              ))}
+            </BarChart>
+          </div>
+          <p className="text-xs text-slate-400">
+            每段 = 该 tick 下同一 OEM × 产品的行合计（同 tick 同 OEM 同产品有多行时求和，见下方精确数值表）；
+            整条柱高 = 该 tick 明细合计。悬停查看每段精确数值。
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function SalesLayerView({ layer }: { layer: SalesLayerRead }) {
   const { summary } = layer
   return (
     <div className="space-y-4">
@@ -136,56 +332,74 @@ export function SalesLayerTable({ layer }: { layer: SalesLayerRead }) {
           {layer.skipped_unpriced_slots.join('；')}
         </p>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-700/50 text-xs text-slate-400">
-              <th className="py-2 pr-4 font-medium">Tick</th>
-              <th className="py-2 pr-4 font-medium">产量（主轴）</th>
-              <th className="py-2 pr-4 font-medium">容量</th>
-              <th className="py-2 pr-4 font-medium">件数</th>
-              <th className="py-2 font-medium">自有销售</th>
-            </tr>
-          </thead>
-          <tbody>
-            {layer.per_tick.map((tick) => (
-              <tr key={tick.tick} className="border-b border-slate-800/50 text-slate-200">
-                <td className="py-1.5 pr-4">{tick.tick}</td>
-                <td className="py-1.5 pr-4">{formatNumber(tick.production_volume)}</td>
-                <td className="py-1.5 pr-4">{formatNumber(tick.capacity_value)}</td>
-                <td className="py-1.5 pr-4">{formatNumber(tick.units)}</td>
-                <td className="py-1.5">{tick.own_sales === null ? '—' : formatNumber(tick.own_sales)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">逐 tick 总量</h4>
+        <SalesLayerPerTickChart layer={layer} />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-700/50 text-xs text-slate-400">
-              <th className="py-2 pr-4 font-medium">Tick</th>
-              <th className="py-2 pr-4 font-medium">OEM</th>
-              <th className="py-2 pr-4 font-medium">产品</th>
-              <th className="py-2 pr-4 font-medium">件数</th>
-              <th className="py-2 pr-4 font-medium">容量</th>
-              <th className="py-2 font-medium">自有销售</th>
-            </tr>
-          </thead>
-          <tbody>
-            {layer.rows.map((row, index) => (
-              <tr key={`${row.tick}-${row.oem_id}-${row.product_id}-${index}`} className="border-b border-slate-800/50 text-slate-200">
-                <td className="py-1.5 pr-4">{row.tick}</td>
-                <td className="py-1.5 pr-4">{row.oem_id}</td>
-                <td className="py-1.5 pr-4">{row.product_id}</td>
-                <td className="py-1.5 pr-4">{formatNumber(row.units)}</td>
-                <td className="py-1.5 pr-4">{formatNumber(row.capacity_value)}</td>
-                <td className="py-1.5">{row.own_sales === null ? '—' : formatNumber(row.own_sales)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">逐 tick × OEM × 产品明细</h4>
+        <SalesLayerDetailChart layer={layer} />
       </div>
+      <details className="text-sm text-slate-400">
+        <summary className="cursor-pointer text-slate-300">
+          精确数值（与图表同源：逐 tick 总量表 + 明细表）
+        </summary>
+        <div className="mt-3 space-y-4">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-700/50 text-xs text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Tick</th>
+                  <th className="py-2 pr-4 font-medium">产量（主轴）</th>
+                  <th className="py-2 pr-4 font-medium">容量</th>
+                  <th className="py-2 pr-4 font-medium">件数</th>
+                  <th className="py-2 font-medium">自有销售</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layer.per_tick.map((tick) => (
+                  <tr key={tick.tick} className="border-b border-slate-800/50 text-slate-200">
+                    <td className="py-1.5 pr-4">{tick.tick}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(tick.production_volume)}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(tick.capacity_value)}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(tick.units)}</td>
+                    <td className="py-1.5">{tick.own_sales === null ? '—' : formatNumber(tick.own_sales)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-700/50 text-xs text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Tick</th>
+                  <th className="py-2 pr-4 font-medium">OEM</th>
+                  <th className="py-2 pr-4 font-medium">产品</th>
+                  <th className="py-2 pr-4 font-medium">件数</th>
+                  <th className="py-2 pr-4 font-medium">容量</th>
+                  <th className="py-2 font-medium">自有销售</th>
+                </tr>
+              </thead>
+              <tbody>
+                {layer.rows.map((row, index) => (
+                  <tr
+                    key={`${row.tick}-${row.oem_id}-${row.product_id}-${index}`}
+                    className="border-b border-slate-800/50 text-slate-200"
+                  >
+                    <td className="py-1.5 pr-4">{row.tick}</td>
+                    <td className="py-1.5 pr-4">{row.oem_id}</td>
+                    <td className="py-1.5 pr-4">{row.product_id}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(row.units)}</td>
+                    <td className="py-1.5 pr-4">{formatNumber(row.capacity_value)}</td>
+                    <td className="py-1.5">{row.own_sales === null ? '—' : formatNumber(row.own_sales)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
       <details className="text-sm text-slate-400">
         <summary className="cursor-pointer text-slate-300">计算假设（{layer.assumptions.length} 条）</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
