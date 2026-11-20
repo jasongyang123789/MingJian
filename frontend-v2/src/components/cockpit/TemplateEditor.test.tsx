@@ -98,7 +98,16 @@ describe('TemplateForm', () => {
     const operatorOptions = [...(screen.getByLabelText('运算符') as HTMLSelectElement).options].map(
       (option) => option.value,
     )
-    expect(operatorOptions).toEqual(['add', 'subtract', 'multiply', 'divide', 'min', 'max'])
+    expect(operatorOptions).toEqual([
+      'add',
+      'subtract',
+      'multiply',
+      'divide',
+      'min',
+      'max',
+      'pow',
+      'logistic',
+    ])
   })
 
   it('limits ref options to sampled variables plus earlier formulas', () => {
