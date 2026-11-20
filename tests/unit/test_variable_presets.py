@@ -42,7 +42,17 @@ def test_builtin_preset_matches_pack_defaults_and_policies(domain_id: str) -> No
     assert template.id == builtin_template_id(domain_id) == f"builtin:{domain_id}"
     assert template.domain_id == domain_id
     assert template.is_builtin is True
-    assert template.variables == []
+    # Profit-chain pack (2026-11-20): the corporate template now carries
+    # the 4 margin variables; the military template is still empty.
+    if domain_id == "corporate":
+        assert [v.id for v in template.variables] == [
+            "margin_base",
+            "margin_longrun",
+            "margin_reversion",
+            "margin_adoption",
+        ]
+    else:
+        assert template.variables == []
     assert template.internal == {}
 
     expected_defaults = {field.name: float(field.default) for field in pack.state_fields}
