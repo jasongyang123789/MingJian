@@ -49,9 +49,6 @@ from tests.test_seminar_synthesis_service import (
     verdict_b,
 )
 
-NOW = datetime(2026, 11, 16, 12, 0, 0, tzinfo=UTC)
-
-
 def _no_floor_request(**kwargs) -> SeminarCreateRequest:
     request = make_request(**kwargs)
     return request.model_copy(
@@ -63,7 +60,15 @@ async def _seed_events(
     seminar_id: str,
     specs: list[tuple[int, float, str]],
 ) -> None:
-    """Insert audit rows with explicit seq/age/kind (white-box seeding)."""
+    """Insert audit rows with explicit seq/age/kind (white-box seeding).
+
+    Ages anchor to real now: a fixed anchor goes stale and the
+    older-than-days purge (cutoff from real utc_now()) starts
+    deleting "0-day" events once the anchor ages past the cutoff
+    (2026-11-22 time-bomb: the old fixed anchor was 2026-11-16,
+    six days before the 5-day cutoff caught up with it).
+    """
+    base = datetime.now(UTC)
     async with get_database().session() as session:
         for seq, age_days, kind in specs:
             session.add(
@@ -77,7 +82,7 @@ async def _seed_events(
                     detail={},
                     round_no=None,
                     stage_call_id=None,
-                    created_at=NOW - timedelta(days=age_days),
+                    created_at=base - timedelta(days=age_days),
                 )
             )
         await session.commit()

@@ -47,17 +47,20 @@ def test_registry_no_duplicate_ids():
 
 
 def test_registry_status_counts():
-    # Inventory as recorded 2026-11-20 (61 entries: 33 curated + 28
+    # Inventory as recorded 2026-11-22 (65 entries: 33 curated + 32
     # template-derived). If the template gains a labeled assumption,
     # this fails loudly on purpose — update the inventory deliberately.
+    # 2026-11-22: C1 ADAS chain added 4 simulated template entries
+    # (template/adas_ceiling, adas_rate, adas_midpoint, adas_coupling):
+    # simulated 51 -> 55, total 61 -> 65.
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 51
+    assert counts["simulated"] == 55
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 61
+    assert sum(counts.values()) == 65
 
 
 def test_registry_transmission_values_are_live():
