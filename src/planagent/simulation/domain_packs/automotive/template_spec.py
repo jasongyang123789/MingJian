@@ -68,6 +68,34 @@ NEV transmission chain (Track 7, 2026-11-19; diagnostic build spec
   mechanism here (diagnostic §5.1c: real but secondary; its
   reasonable core is covered by the NEV-chain coupling).
 
+ADAS penetration chain (Track C1, 2026-11-20; gap audit §3 C1):
+
+- Parameters: the four template variables ``adas_ceiling`` /
+  ``adas_rate`` / ``adas_midpoint`` / ``adas_coupling`` (distributions
+  exactly per the C1 spec in TRACK-C1.md) + the pack's
+  ``adas_penetration`` STATE field, reused — the same pattern as the
+  NEV chain. A case attaches the chain with a logistic tick driver
+  whose output ``adas_penetration`` replaces this template's drift
+  driver per-output at merge, a revenue tick driver that gains
+  exactly one additive term (``+ adas_coupling * adas_penetration``),
+  and a share tick driver that gains exactly one additive term
+  (``+ adas_share_coupling * adas_penetration`` — case-level only,
+  like ``share_coupling``). No interaction term.
+- Division of labor with ``disruptor_adoption`` /
+  ``revenue_coupling`` (the design precondition, TRACK-C1.md §1):
+  adoption is BREADTH (any smart function, L0-L2 combined),
+  adas_penetration is GRADE (L2 within new cars); the couplings price
+  different hardware (average smart content vs the incremental L2
+  premium stack), so the two channels do not double-count. The
+  coupling's mode is set by analogy to ``nev_coupling``, never from
+  the intelligent-driving segment's revenue share.
+- Planning-path check (2020 case, modes): adas_penetration(1..5) =
+  0.129 / 0.215 / 0.325 / 0.435 / 0.521 — tick 1 sits on the 12%
+  anchor, not below it. The chain changes the LEVEL, not the shape,
+  same as the NEV chain; it does not close the desay-2020 residual
+  gap (the post-hoc fitted coupling would be several times the
+  0.40 max).
+
 Formula graph (evaluation order matters — drivers chain within a tick):
 
 - ``demand_growth_rate`` (initial): monthly growth from confidence
@@ -271,6 +299,82 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
         "evidence_ref": "estimate: LABELED ASSUMPTION — no 2020 source quantifies the supplier-revenue elasticity to NEV penetration; mode 0.25 matches revenue_coupling's optimistic mode (diagnostic-2020/evidence-2020.md §3(b))",
         "description": "Revenue-growth uplift per unit of NEV penetration: the revenue tick driver gains + nev_coupling * nev_penetration. The post-hoc fitted values that would reach the desay-2020 actuals (2.08 year-5 / 9.69 year-3 on the planning path) are 5-24x this distribution's max and were indefensible at 2020-12-31 — they must never be used as parameters.",
+    },
+    # --- ADAS penetration chain (Track C1, 2026-11-20) ---
+    # Gap-audit C1 (gap-audit-2026-11-20/REPORT.md §3): the model had
+    # no ADAS penetration chain — `adas_penetration` existed only in
+    # the red-team check directory, not in the auto pack or the
+    # Track 10 registry — while the diagnostic names the
+    # intelligent-driving segment the real growth engine (7.12亿 in
+    # 2020 -> 97.00亿 in 2025, 13.6x, DIAGNOSTIC-2020.md §5.1c).
+    # Division of labor with the existing channels (the design
+    # precondition — see TRACK-C1.md §1; the chain is built on this
+    # division, not beside it):
+    # - `disruptor_adoption` is BREADTH: the share of new cars
+    #   carrying ANY smart-cockpit/ADAS function (L0-L2 combined,
+    #   ~34% in 2020). `revenue_coupling` prices the average content
+    #   uplift of a smart car vs a traditional car.
+    # - `adas_penetration` is GRADE: WITHIN new cars, the share
+    #   fitted with L2 (12% in 2020, Canalys Q4-2020). `adas_coupling`
+    #   prices ONLY the incremental L2 premium stack (cameras + radar
+    #   + domain-controller IPU) over L0/L1 content.
+    # - No double count by construction: a car in adoption but not
+    #   in L2 contributes only via revenue_coupling; a car in both
+    #   contributes via both, but the two coefficients price
+    #   DIFFERENT hardware. The guard is the coupling's basis:
+    #   adas_coupling's mode is set by analogy to nev_coupling, NOT
+    #   from the intelligent-driving segment's 10.48% revenue share —
+    #   that share includes L0/L1 content already priced by
+    #   revenue_coupling, and deriving the coupling from it would
+    #   count the same content twice.
+    # The six variables mirror the NEV chain exactly: the penetration
+    # itself is the pack's `adas_penetration` STATE field (reused, not
+    # a duplicate intermediate) + a monthly drift driver (generic
+    # runs) that a case-level logistic replaces per-output at merge +
+    # four chain parameters. The share channel is case-level only
+    # (`adas_share_coupling`, like `share_coupling`): the template
+    # carries no share coupling for any chain.
+    {
+        "id": "adas_penetration",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.649},
+        "evidence_ref": "MIIT via 中国证券报 2026-10-22 (2026 World Intelligent Connected Vehicle Conference): passenger-car combined driving-assist fitment 64.9% in 2025, from 16.2% in 2020 — same MIIT series at both ends. Template-caliber 2025 value; the source publication is 2026-10, so this is NOT a decision-time input: backtest cases bind their own decision-time starting level (2020: ~12% L2) and logistic path.",
+        "description": "L2 / combined driving-assist fitment share of new-car sales (MIIT combined-assist caliber). Drifts monthly via the penetration driver (Track C1); a case-level logistic replaces the drift driver per-output at merge, exactly like the NEV chain.",
+    },
+    {
+        "id": "adas_penetration_monthly_drift",
+        "unit": "rate points/month",
+        "distribution": {"type": "fixed", "value": 0.0081},
+        "evidence_ref": "MIIT combined driving-assist fitment 16.2% (2020) -> 64.9% (2025): endpoint-average drift (0.649-0.162)/60 = 0.0081/mo — two endpoints only, NOT a fitted trend (no quarterly L2 series was available to fit). Template-caliber; case-level backtests replace this drift driver with the ADAS logistic per-output at merge.",
+        "description": "Monthly ADAS penetration drift applied by the penetration tick driver, capped at 1.0. Endpoint-average drift, not a fitted trend; a case-level logistic replaces it in backtests.",
+    },
+    {
+        "id": "adas_ceiling",
+        "unit": "share (0-1)",
+        "distribution": {"type": "triangular", "min": 0.50, "mode": 0.65, "max": 0.80},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — long-run L2 saturation; mode 0.65 sits below the disruptor ceiling 0.85 because L2 is a GRADE within smart features, not the breadth: every L2 car is a smart car, not every smart car is L2. No 2020 source states an L2 saturation level.",
+        "description": "Long-run saturation level K of L2 penetration for the chain's logistic path. Mode 0.65: L2 eventually in most new cars, with L0/L1 persisting at the low end; max 0.80 admits near-universal L2, min 0.50 admits the grade stalling at half the fleet.",
+    },
+    {
+        "id": "adas_rate",
+        "unit": "per-year",
+        "distribution": {"type": "triangular", "min": 0.50, "mode": 0.70, "max": 1.00},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — logistic steepness, same order as nev_rate 0.70: grade switching (electronics) is faster than powertrain switching but bounded by model-year cycles, like the disruptor rate",
+        "description": "Steepness r of the L2 penetration logistic. Mode 0.70 matches the NEV chain's rate; same order as the disruptor rate but for the grade curve, not the breadth curve.",
+    },
+    {
+        "id": "adas_midpoint",
+        "unit": "years (tick)",
+        "distribution": {"type": "triangular", "min": 2.0, "mode": 3.0, "max": 4.0},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — L2 passes K/2 ~3 years out (2023), tracking the disruptor midpoint (2020 case: 3.0): the grade curve follows the broad adoption curve's timing. Support: L2 fitment ~12% in 2020 with the NEV L2 premium 25.3% vs ICE 14.3% (industry alliance, 2021) — the grade leads where NEV scales.",
+        "description": "Tick at which L2 penetration passes K/2. Mode 3.0 is the same as the 2020 disruptor midpoint by design: the grade curve tracks the broad adoption curve's timing, and the two curves are kept deliberately distinct (different ceilings, different couplings) so their effects do not double-count.",
+    },
+    {
+        "id": "adas_coupling",
+        "unit": "per-unit-penetration",
+        "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — uplift per unit of L2 penetration: the INCREMENTAL L2 premium stack only (cameras + radar + domain-controller IPU over L0/L1 content), NOT the intelligent-driving segment's 10.48% revenue share — that share includes L0/L1 content already priced by revenue_coupling, and deriving the coupling from it would double-count. Mode 0.25 matches nev_coupling's mode (evidence-2020.md §3(b)). Post-hoc fitted values are several times the max 0.40; never use them.",
+        "description": "Revenue-growth uplift per unit of L2 penetration: the revenue tick driver gains + adas_coupling * adas_penetration. GRADE effect only — the L2 premium stack over L0/L1 — never the whole intelligent-driving segment. The post-hoc fitted values that would reach the desay-2020 actuals are several times this distribution's max and were indefensible at 2020-12-31.",
     },
     # --- Order-book (backlog) mechanism (Track 11, 2026-11-19) ---
     # Track 7 report §7 build spec (diagnostic-2020 §5.3 shape problem):
@@ -934,6 +1038,21 @@ TEMPLATE_FORMULAS: list[dict] = [
             ],
         },
         "description": "Tick driver (Phase 2 dual track): NEV penetration drifts nev_penetration_monthly_drift per month (0.0068/mo, calibrated v3: OLS trend on CAAM 2023-2025), capped at 1.0. The drift is a calibrated value (promoted from a Phase 2 literal when the cap was raised to 100); the split drivers below read the same-tick value.",
+    },
+    {
+        "output": "adas_penetration",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                {
+                    "op": "add",
+                    "args": [{"ref": "adas_penetration"}, {"ref": "adas_penetration_monthly_drift"}],
+                },
+                1,
+            ],
+        },
+        "description": "Tick driver (Track C1 ADAS chain): ADAS penetration drifts adas_penetration_monthly_drift per month (0.0081/mo, endpoint average on MIIT combined driving-assist fitment 16.2% in 2020 -> 64.9% in 2025), capped at 1.0. The drift is an endpoint average, NOT a fitted trend (no quarterly L2 series was available). A case-level logistic replaces this driver per-output at merge, exactly like the NEV chain; generic runs keep the drift driver. No template formula reads adas_penetration — only a case that supplies the ADAS coupling terms moves revenue or share through it.",
     },
     {
         "output": "nev_retail_volume",

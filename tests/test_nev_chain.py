@@ -74,9 +74,9 @@ def _logistic(x: float, ceiling: float) -> float:
 
 def test_nev_chain_variables_match_diagnostic_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 33
+    assert len(TEMPLATE_VARIABLES) == 67
+    assert len(TEMPLATE_FORMULAS) == 37
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 34
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -91,8 +91,8 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    assert len(template.variables) == 67
+    assert len(template.formulas) == 37
 
 
 def test_nev_chain_planning_path_values() -> None:

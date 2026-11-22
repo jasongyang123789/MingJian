@@ -129,10 +129,10 @@ def full_automotive_case() -> CompletenessCase:
 # ---------------------------------------------------------------------------
 
 
-def test_registry_has_sixteen_entries_with_unique_ids() -> None:
+def test_registry_has_seventeen_entries_with_unique_ids() -> None:
     ids = [e.id for e in AUTOMOTIVE_DRIVER_REGISTRY]
-    assert len(ids) == 16
-    assert len(set(ids)) == 16
+    assert len(ids) == 17
+    assert len(set(ids)) == 17
 
 
 def test_registry_entries_are_complete_and_valid() -> None:
@@ -160,6 +160,8 @@ def test_registry_covers_the_packs_transmission_links() -> None:
     link_variables = {
         "nev_penetration",
         "nev_penetration_monthly_drift",
+        "adas_penetration",
+        "adas_penetration_monthly_drift",
         "income_index",
         "income_growth_rate_annual",
         "lpr_proxy",
@@ -272,9 +274,9 @@ def test_finding_shape_matches_the_shared_contract() -> None:
 def test_desay_2020_flags_nev_chain_as_top_risk() -> None:
     report = run_completeness_check(desay_2020_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 16
+    assert report.drivers_checked == 17
     assert report.drivers_present == 0
-    assert report.drivers_missing == 16
+    assert report.drivers_missing == 17
 
     top = report.top_finding
     assert top is not None
@@ -314,6 +316,7 @@ def test_desay_2020_coverage_lists_revenue_drivers_missing() -> None:
     report = run_completeness_check(desay_2020_case())
     revenue = report.coverage["revenue"]
     assert "nev_penetration" in revenue.missing
+    assert "adas_penetration" in revenue.missing
     assert "domain_controller_substitution" in revenue.missing
     assert revenue.present == []
 
@@ -410,8 +413,8 @@ def test_no_residual_input_means_no_residual_finding() -> None:
 def test_full_automotive_template_flags_nothing() -> None:
     report = run_completeness_check(full_automotive_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 16
-    assert report.drivers_present == 16
+    assert report.drivers_checked == 17
+    assert report.drivers_present == 17
     assert report.drivers_missing == 0
     assert report.findings == []
     assert report.top_finding is None
@@ -572,7 +575,7 @@ def test_api_check_desay_2020_flags_nev_top(monkeypatch, tmp_path: Path) -> None
     assert body["top_finding"]["severity"] == "high"
     assert body["top_finding"]["summary"].startswith(META_CHECK_PREFIX)
     assert body["top_finding"]["source"] == "completeness_check"
-    assert body["drivers_missing"] == 16
+    assert body["drivers_missing"] == 17
 
 
 def test_api_check_desay_2020_with_residual_shows_both_verdicts(
@@ -616,7 +619,7 @@ def test_api_drivers_lists_automotive_registry(monkeypatch, tmp_path: Path) -> N
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["registry"] == "automotive"
-    assert len(body["drivers"]) == 16
+    assert len(body["drivers"]) == 17
     assert body["drivers"][0]["id"] == "nev_penetration"
     assert body["drivers"][0]["boundary_class"] == "fixable_defect"
     assert "§6" in body["drivers"][0]["boundary_basis"]

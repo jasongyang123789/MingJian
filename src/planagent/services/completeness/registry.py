@@ -134,6 +134,51 @@ AUTOMOTIVE_DRIVER_REGISTRY: list[DriverRegistryEntry] = [
         ),
     ),
     DriverRegistryEntry(
+        id="adas_penetration",
+        name="ADAS / L2 penetration chain",
+        description=(
+            "L2 / combined driving-assist fitment share of new-car sales "
+            "and its diffusion, carrying the intelligent-driving "
+            "grade effect into supplier revenue and share. The grade "
+            "channel (L2 within new cars) is distinct from the broad "
+            "adoption channel (any smart function): the two price "
+            "different hardware, so the chain must be built on that "
+            "division of labor (TRACK-C1.md §1), not as a second "
+            "adoption curve."
+        ),
+        weight=0.85,
+        severity="medium",
+        boundary_class=BoundaryClass.FIXABLE_DEFECT,
+        boundary_basis="§6 fixable defect: 2020-12-31 public evidence — L2 fitment ~12% (Canalys Q4-2020; decision-time-knowable range 11-16%), NEV L2 premium 25.3% vs ICE 14.3%, intelligent-driving revenue +94.78% in 2020 off RMB 712m (10.48% of revenue) — could be encoded into a distribution.",
+        drives=["revenue", "market_share"],
+        model_elements=[
+            "adas_penetration",
+            "adas_penetration_monthly_drift",
+            "adas_ceiling",
+            "adas_rate",
+            "adas_midpoint",
+            "adas_coupling",
+        ],
+        link_outputs=[
+            "adas_penetration",
+        ],
+        evidence=[
+            "L2 share of new-car sales, China, Q4 2020: 12% (Canalys, published 2021-03-25/26; decision-time-knowable range 11-16% per diagnostic-2020/evidence-2020.md §1.4)",
+            "MIIT combined driving-assist fitment 16.2% (2020) -> 64.9% (2025) (diagnostic-2020/evidence-2020.md §2.5)",
+            "Desay intelligent-driving revenue 7.12亿 (2020) -> 97.00亿 (2025), 13.6x (DIAGNOSTIC-2020.md §5.1c: the real growth engine)",
+        ],
+        suggested_fix=(
+            "Add `adas_penetration` (+ `adas_ceiling` / `adas_rate` / "
+            "`adas_midpoint` / `adas_coupling`) as variables with a "
+            "logistic tick driver, and gain exactly one additive term "
+            "in the revenue driver (`+ adas_coupling * adas_penetration`) "
+            "and one in the share driver — or bind the automotive "
+            "template's ADAS chain. Keep the division of labor with "
+            "`disruptor_adoption` / `revenue_coupling`: grade (L2 "
+            "premium stack) vs breadth (average smart content)."
+        ),
+    ),
+    DriverRegistryEntry(
         id="domain_controller_substitution",
         name="domain-controller substitution",
         description=(

@@ -345,8 +345,8 @@ def _proportional_intake_driver() -> dict:
 
 def test_order_book_variables_match_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
+    assert len(TEMPLATE_VARIABLES) == 67
+    assert len(TEMPLATE_FORMULAS) == 37
     expected = {
         "order_backlog": ("fixed", 0.0),
         "order_intake": ("fixed", 0.0),
@@ -365,10 +365,10 @@ def test_order_book_variables_match_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    assert len(template.variables) == 67
+    assert len(template.formulas) == 37
     fields = {f.name: float(f.default) for f in domain_pack_registry.get("automotive").state_fields}
-    assert len(fields) == 50
+    assert len(fields) == 51
     assert fields["order_backlog"] == 0.0
     assert fields["order_intake"] == 0.0
 

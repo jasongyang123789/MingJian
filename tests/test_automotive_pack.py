@@ -43,8 +43,9 @@ def test_pack_registered_and_state_fields() -> None:
     # + 3 Track 7 supplier magnitude fields (market_share /
     # revenue / profit, mirroring the corporate pack so cases
     # can score them) + 2 Track 11 order-book fields
-    # (order_backlog / order_intake).
-    assert len(fields) == 50
+    # (order_backlog / order_intake) + 1 Track C1 ADAS penetration
+    # field (adas_penetration, MIIT combined-assist 2025: 0.649).
+    assert len(fields) == 51
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -56,6 +57,7 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["dms_mandate"] == 0.0
     assert fields["policy_tax_rate"] == 0.05
     assert fields["tier1_gross_margin"] == 0.191
+    assert fields["adas_penetration"] == 0.649
     # Dual-track splits sum exactly to their spine totals.
     assert fields["nev_production_volume"] == 137.86
     assert fields["ice_production_volume"] == 149.94
@@ -127,10 +129,10 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
+    assert len(TEMPLATE_VARIABLES) == 67
+    assert len(TEMPLATE_FORMULAS) == 37
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 33
+    assert len(drivers) == 34
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -139,6 +141,7 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "dealer_inventory_coef",
         "production_volume",
         "nev_penetration",
+        "adas_penetration",
         "nev_retail_volume",
         "ice_retail_volume",
         "nev_production_volume",
@@ -172,8 +175,8 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 33 of 61 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 28 formula parameters are the 9
+    # 34 of 67 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 33 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -181,7 +184,11 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # variable), plus the 3 Track 11 order-book parameters
     # (order_intake_rate / backlog_conversion / order_decay — the
     # backlog stock itself is the pack's order_backlog state field,
-    # bound, not a parameter).
+    # bound, not a parameter), plus the 5 Track C1 ADAS-chain
+    # variables (adas_ceiling / adas_rate / adas_midpoint /
+    # adas_coupling / adas_penetration_monthly_drift — the penetration
+    # is the pack's adas_penetration state field, reused, not a sixth
+    # variable).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -210,6 +217,11 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "nev_rate",
         "nev_midpoint",
         "nev_coupling",
+        "adas_ceiling",
+        "adas_rate",
+        "adas_midpoint",
+        "adas_coupling",
+        "adas_penetration_monthly_drift",
         "order_intake_rate",
         "backlog_conversion",
         "order_decay",
@@ -220,8 +232,8 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    assert len(template.variables) == 67
+    assert len(template.formulas) == 37
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
