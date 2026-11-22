@@ -101,6 +101,23 @@ class AutomotiveDomainPack(DomainPack):
             ),
             # Synthesis C1/B1: CAAM total-volume caliber, 2025.
             StateFieldSpec("nev_penetration", "NEV share of total vehicle sales.", 0.479),
+            # Track C1 (2026-11-20, ADAS penetration chain): L2 /
+            # combined driving-assist fitment share of new-car sales.
+            # 2025 caliber 0.649 (MIIT combined driving-assist
+            # fitment 64.9% in 2025, published 2026-10 — same
+            # MIIT series as the 16.2% 2020 figure; NOT a
+            # decision-time input — backtest cases bind their own
+            # decision-time starting level and logistic path, which
+            # replaces the template's drift driver per-output at
+            # merge, exactly like the NEV chain). Generic runs keep
+            # the drift driver; only a case that supplies the ADAS
+            # logistic + the revenue/share coupling terms moves
+            # revenue or share through it.
+            StateFieldSpec(
+                "adas_penetration",
+                "L2 / combined driving-assist fitment share of new-car sales.",
+                0.649,
+            ),
             # Phase 2 dual track: NEV/ICE splits of the production spine
             # and retail. Initial values are the spine x 0.479, rounded
             # so each pair sums exactly to its spine total; tick

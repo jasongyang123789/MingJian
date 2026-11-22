@@ -1,10 +1,11 @@
 # Causal-chain pattern: driver variable + link formulas
 
 - Date: 2026-11-19 (Track 7, Phase 4; Track 11 adds §5, the order-book
-  worked example, 2026-11-19)
-- Status: pattern + two worked examples (NEV transmission chain, level
-  term; order-book mechanism, shape term). The shape fix is now BUILT
-  (Track 11), not just designed.
+  worked example, 2026-11-19; Track C1 adds §6, the ADAS penetration
+  chain, 2026-11-20)
+- Status: pattern + three worked examples (NEV transmission chain, level
+  term; order-book mechanism, shape term; ADAS penetration chain, grade
+  term). The shape fix is now BUILT (Track 11), not just designed.
 - Authority: desay-backtest-2026-11-19/diagnostic-2020/DIAGNOSTIC-2020.md
   §5.2 + new-parameter.md §2 (the NEV-chain build spec); the Desay
   re-run harness under
@@ -207,3 +208,53 @@ decaying intake flow keeps replenishing the stock (the stock only
 drains via conversion). The intake-rate assumption therefore needs
 real calibration data (the internal order book) before the mechanism
 is used for planning — see the Track 11 report §"Limits".
+
+## 6. Worked example 3: the ADAS penetration chain — the grade term
+
+Build spec: gap audit §3 C1 (gap-audit-2026-11-20/REPORT.md); full
+design, division of labor, and labeled assumptions in
+research/strategy-engine/audit-fixes-2026-11-20/TRACK-C1.md.
+Template variables (`template_spec.py`):
+
+| Variable | Distribution | Decision-time anchor |
+|---|---|---|
+| `adas_penetration` | fixed 0.649 | MIIT combined driving-assist fitment 64.9% in 2025 (published 2026-10); template-caliber, not a decision-time input |
+| `adas_penetration_monthly_drift` | fixed 0.0081 | Endpoint average (0.649−0.162)/60 on MIIT 16.2% (2020) → 64.9% (2025); NOT a fitted trend |
+| `adas_ceiling` | triangular(0.50, 0.65, 0.80) | Labeled assumption; mode 0.65 below the disruptor ceiling 0.85 — L2 is a grade within smart features |
+| `adas_rate` | triangular(0.50, 0.70, 1.00) | Labeled assumption; same order as `nev_rate` 0.70 |
+| `adas_midpoint` | triangular(2.0, 3.0, 4.0) | Labeled assumption; mode 3.0 tracks the 2020 disruptor midpoint |
+| `adas_coupling` | triangular(0.10, 0.25, 0.40) | Labeled assumption; mode 0.25 by analogy to `nev_coupling` — NEVER from the segment's revenue share |
+
+The penetration is the pack's `adas_penetration` STATE field, reused
+rather than duplicated — the same pattern as the NEV chain. A case
+attaches the chain with a logistic tick driver (output
+`adas_penetration`, replacing the template drift driver per-output at
+merge) plus exactly one additive term in the revenue driver
+(`+ adas_coupling * adas_penetration`) and exactly one in the share
+driver (`+ adas_share_coupling * adas_penetration` — case-level only,
+like `share_coupling`). Profit is untouched.
+
+Division of labor (the design precondition — the chain is built on
+it, not beside it): `disruptor_adoption` is BREADTH (any
+smart-cockpit/ADAS function, L0–L2 combined, ~34% in 2020);
+`adas_penetration` is GRADE (L2 within new cars, ~12% in 2020). The
+couplings price different hardware — average smart content vs the
+incremental L2 premium stack (cameras + radar + domain-controller
+IPU) — so the two channels do not double-count. The guard is the
+coupling's basis: its mode is set by analogy, never derived from the
+intelligent-driving segment's 10.48% revenue share, which includes
+L0/L1 content already priced by `revenue_coupling`. The tests pin
+the separability both ways: zeroing the ADAS couplings reproduces
+the pure-adoption path exactly, and zeroing adoption leaves the ADAS
+term carrying revenue on its own.
+
+Planning-path check (2020 case, modes): adas_penetration(1..5) =
+0.1286 / 0.2157 / 0.325 / 0.4343 / 0.5214 — tick 1 sits on the 12%
+anchor. What it does and does not do: it fixes the missing GRADE
+channel (the diagnostic's real growth engine, 13.6×), and it lifts
+the level, not the shape — same as the NEV chain. It does NOT close
+the desay-2020 residual gap: the post-hoc fitted coupling would be
+several times the 0.40 max, and the chain's tick-5 revenue term at
+mode (0.25 × 0.5214 ≈ 0.13) is an order below what the realized
+13.6× segment growth would need. That gap stays an accepted
+prediction limit, not a reason to widen the coupling.
