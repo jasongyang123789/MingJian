@@ -212,9 +212,9 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "tier1_gross_margin",
         "unit": "rate",
-        "distribution": {"type": "triangular", "min": 0.188, "mode": 0.191, "max": 0.20},
-        "evidence_ref": "simulated:industry-average (synthesis B2: Desay SV overall margin trajectory 20%/19.9%/19.1% 2023-25; Ho-authorized simulation 2026-11-16, replace with internal margin)",
-        "description": "Tier-1 gross margin. Simulated from the listed-benchmark trajectory; Ho's own margin is an internal parameter.",
+        "distribution": {"type": "triangular", "min": 0.20, "mode": 0.25, "max": 0.29},
+        "evidence_ref": "desay-evidence:calibration-simulated-generation-2026-11-20 (audited overall gross margin 2015-2020: 26.96/26.95/25.78/24.0/22.75/23.39%; mean 24.97%, sd 1.84pp; moment-matched triangular mean 24.67%, sd 1.84pp, CV 0.075 vs observed 0.074; replaces the 2023-25 post-decision window — hindsight-leak fix)",
+        "description": "Tier-1 gross margin. Moment-matched to the audited 2015-2020 decision-time margin trajectory; Ho's own margin is an internal parameter.",
     },
     # --- Market structure (V) ---
     {
@@ -313,21 +313,21 @@ TEMPLATE_VARIABLES: list[dict] = [
         "id": "order_intake_rate",
         "unit": "annualized new orders / current revenue",
         "distribution": {"type": "triangular", "min": 0.50, "mode": 1.00, "max": 1.50},
-        "evidence_ref": "assumption:pending-calibration — generic range around 1.0x revenue (one year of intake ≈ one year of revenue); a case overrides it from its decision-time order announcements (Desay 2020: ~70亿 annualised orders / 67.99亿 revenue ≈ 1.03, triangular(0.80, 1.00, 1.20))",
+        "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (cross-case envelope — mode 1.00 = the most recent (2020) observed ratio 1.03 rounded; width 0.50-1.50 covers the observed 1.03-1.31 range plus a planning margin; never directly scored — cases override it)",
         "description": "Annualized new orders as a multiple of current revenue. Sets both the intake flow and (via the initial formula) the opening backlog stock. The 2021-2023 realized order path is scoring evidence only, never an input (hindsight firewall).",
     },
     {
         "id": "backlog_conversion",
         "unit": "fraction of backlog converted per tick",
         "distribution": {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
-        "evidence_ref": "estimate: LABELED ASSUMPTION — fraction of the order backlog converted to revenue per tick, calibratable from the historical order-to-revenue lag (design-in to start-of-production ~1-2 years for auto electronics, so ~0.40/yr turns the book over in ~2.5 years); no 2020 source states a conversion rate",
+        "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (lag-implied range check — design-in to start-of-production ~1-2 years (IPU04 2020 cooperation -> 2022 SOP target) implies conversion 0.33-1.00; current (0.30, 0.40, 0.60) implies lags 3.33/2.5/1.67y, i.e. conservative. Upward revision (mode 0.50) held by the 2015 headroom red line.)",
         "description": "Fraction of the pre-tick backlog converted to revenue each tick: the revenue driver gains + backlog_conversion * (order_backlog / revenue), and the same amount leaves the backlog. Mode 0.40.",
     },
     {
         "id": "order_decay",
         "unit": "fraction of the order flow lost per tick",
         "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
-        "evidence_ref": "estimate: LABELED ASSUMPTION — per-tick decay of the new-orders flow (mean-reversion of order growth after a surge year; the flow cannot sustain surge growth without continuous wins). No 2020 source states a decay rate; mode 0.25 is the planning assumption.",
+        "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (fit attempted and failed — only two disclosed new-orders points (2019/2020 ~7.0bn, flat); revenue-growth decay unstable (0.894 / 2.721). Mode 0.25 is the centre of the plausible range; low sensitivity.)",
         "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). The decay is the point of the mechanism: as the surge passes, the backlog term shrinks and per-tick growth falls even while penetration and adoption keep rising.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
@@ -1507,6 +1507,6 @@ TEMPLATE_ASSUMPTION_DATA: dict = {
     },
     "supply_share_simulated": {
         "value": 0.10,
-        "provenance": "simulated:industry-average — Ho-authorized placeholder (2026-11-16); a round neutral value, NOT an estimate. Replace with internal supply-share data when it arrives. Prospects always get 0, never this value.",
+        "provenance": "generated:calibration-simulated-generation-2026-11-20 — Ho-authorized neutral placeholder (2026-11-16), kept by design; a round neutral value, NOT an estimate. Replace with internal supply-share data when it arrives. Prospects always get 0, never this value.",
     },
 }

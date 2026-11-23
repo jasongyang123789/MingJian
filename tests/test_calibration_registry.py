@@ -84,17 +84,17 @@ def test_registry_template_values_match_live_template():
 def test_registry_harness_order_book_values_pinned():
     by_id = {e["id"]: e for e in CURATED_ENTRIES}
     assert by_id["order_intake_rate/desay-2020"]["current"] == {
-        "type": "triangular", "min": 0.80, "mode": 1.00, "max": 1.20}
+        "type": "triangular", "min": 0.80, "mode": 1.00, "max": 1.30}
     assert by_id["order_intake_rate/desay-2015"]["current"] == {
         "type": "triangular", "min": 0.15, "mode": 0.25, "max": 0.40}
     assert by_id["order_backlog_opening/desay-2020"]["current"] == {
-        "type": "fixed", "value": 6799.06}
+        "type": "fixed", "value": 6800}
     assert by_id["order_backlog_opening/desay-2015"]["current"] == {
-        "type": "fixed", "value": 917.06}
+        "type": "fixed", "value": 920}
     assert by_id["order_intake_flow_opening/desay-2020"]["current"] == {
-        "type": "fixed", "value": 6799.06}
+        "type": "fixed", "value": 6800}
     assert by_id["order_intake_flow_opening/desay-2015"]["current"] == {
-        "type": "fixed", "value": 917.06}
+        "type": "fixed", "value": 920}
     assert by_id["backlog_conversion"]["current"] == {
         "type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60}
     assert by_id["order_decay"]["current"] == {
@@ -108,8 +108,8 @@ def test_registry_profit_chain_values_pinned():
     assert by_id["margin_longrun/desay-2020"]["current"] == {
         "type": "fixed", "value": 0.0658}
     assert by_id["margin_longrun/desay-2015"]["current"] == {
-        "type": "fixed", "value": 0.0599}
-    assert by_id["margin_reversion"]["current"] == {"type": "fixed", "value": 0.25}
+        "type": "fixed", "value": 0.0598}
+    assert by_id["margin_reversion"]["current"] == {"type": "fixed", "value": 0.16}
     assert by_id["margin_adoption"]["current"] == {
         "type": "triangular", "min": -0.02, "mode": 0.0, "max": 0.02}
     assert by_id["margin_clamp"]["current"] == {"type": "fixed", "value": [0.02, 0.15]}

@@ -55,7 +55,7 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["generation_transition_index"] == 0.0
     assert fields["dms_mandate"] == 0.0
     assert fields["policy_tax_rate"] == 0.05
-    assert fields["tier1_gross_margin"] == 0.191
+    assert fields["tier1_gross_margin"] == 0.25
     # Dual-track splits sum exactly to their spine totals.
     assert fields["nev_production_volume"] == 137.86
     assert fields["ice_production_volume"] == 149.94
@@ -230,8 +230,12 @@ def test_builtin_automotive_template_validates() -> None:
     assert by_output["sales_volume_retail"].tick_driver is True
     # Simulated values are labeled as simulated, never as evidence.
     by_id = {variable.id: variable for variable in template.variables}
-    for var_id in ("annual_cut_rate", "payment_terms_months", "tier1_gross_margin"):
+    for var_id in ("annual_cut_rate", "payment_terms_months"):
         assert by_id[var_id].evidence_ref.startswith("simulated:industry-average"), var_id
+    # tier1_gross_margin is DESAY-EVIDENCE since calibration-simulated-
+    # generation-2026-11-20 (audited 2015-2020 decision-time margin,
+    # moment-matched) — no longer simulated, so it leaves the loop above.
+    assert by_id["tier1_gross_margin"].evidence_ref.startswith("desay-evidence:"), "tier1_gross_margin"
 
 
 def test_promoted_rate_variables_resolve_in_drivers() -> None:

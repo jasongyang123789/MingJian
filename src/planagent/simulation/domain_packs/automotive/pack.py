@@ -158,10 +158,11 @@ class AutomotiveDomainPack(DomainPack):
             # industry average (Ho-authorized 2026-11-16); Ho internal actuals
             # take priority when they arrive.
             StateFieldSpec("payment_terms_months", "Actual payment-terms length, months.", 6.0),
-            # Synthesis C1/B2: Desay SV 2025 overall margin (listed benchmark).
-            # SIMULATED industry average (Ho-authorized 2026-11-16); Ho's own
-            # margin is an internal parameter.
-            StateFieldSpec("tier1_gross_margin", "Tier-1 gross margin.", 0.191),
+            # Calibration-simulated-generation-2026-11-20: moment-matched to
+            # the audited 2015-2020 decision-time margin trajectory (mean
+            # 24.97%); replaces the 2023-25 post-decision window
+            # (hindsight-leak fix). Ho's own margin is an internal parameter.
+            StateFieldSpec("tier1_gross_margin", "Tier-1 gross margin.", 0.25),
             # Synthesis C1: 1.0 = baseline (anchored to 366M parc, ~8yr average age).
             StateFieldSpec("replacement_demand", "Replacement-demand level, 1.0 = baseline.", 1.0),
             # Synthesis C1: retained ONLY for Monte Carlo metric continuity.

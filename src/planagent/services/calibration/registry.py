@@ -87,13 +87,9 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "order_intake_rate/desay-2020",
         "order_book",
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2020 call)",
-        {"type": "triangular", "min": 0.80, "mode": 1.00, "max": 1.20},
+        {"type": "triangular", "min": 0.80, "mode": 1.00, "max": 1.30},
         STATUS_SIMULATED,
-        "Mode anchored: ~RMB 7.0bn annualised new project orders "
-        "(2020 annual-report summary, announcement 2021-010, "
-        "decision-time internal figure) / FY2020 revenue RMB 6,799.06m "
-        "≈ 1.03 → mode 1.00. Distribution WIDTH has no disclosed data "
-        "behind it — simulation.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): mode 1.00 from ~RMB 7.0bn annualised new orders (2020 annual-report summary, announcement 2021-010) / FY2020 revenue RMB 6,799.06m = 1.03; max 1.30 from 2019 ~RMB 7.0bn / FY2019 revenue RMB 5,337.24m = 1.31; min 0.80 retained (no lower observation).",
         "internal: order_intake_rate (annualised new orders / revenue, "
         "decision year, per case)",
         internal_field="order_intake_rate",
@@ -104,8 +100,7 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2015 call)",
         {"type": "triangular", "min": 0.15, "mode": 0.25, "max": 0.40},
         STATUS_SIMULATED,
-        "No order-surge disclosure at end-2015. The whole distribution "
-        "— including the mode — is a small-book labeled assumption.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): no order-surge disclosure at end-2015 (small-book labeled assumption); width CV-matched (triangular CV 0.193 vs observed cross-year CV 0.170 of the annual intake ratio). Mode 0.25 retained: no evidence to change it, and raising it trips the 2015 headroom red line.",
         "internal: order_intake_rate (2015 decision year)",
         internal_field="order_intake_rate",
     ),
@@ -113,11 +108,9 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "order_backlog_opening/desay-2020",
         "order_book",
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2020 call)",
-        {"type": "fixed", "value": 6799.06},
+        {"type": "fixed", "value": 6800},
         STATUS_SIMULATED,
-        "Opening order stock was NEVER disclosed. Proxy = one year of "
-        "intake at the intake-rate mode (1.00 × 6,799.06). The stock "
-        "proxy, not just its width, is simulated.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): opening order stock was NEVER disclosed. Proxy = one year of intake at the intake-rate mode (1.00 x 6,799.06), rounded to 2 significant figures (6800) to remove false precision.",
         "internal: order_backlog_opening (RMB m, unfulfilled order "
         "stock at the decision date)",
         internal_field="order_backlog_opening",
@@ -126,10 +119,9 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "order_backlog_opening/desay-2015",
         "order_book",
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2015 call)",
-        {"type": "fixed", "value": 917.06},
+        {"type": "fixed", "value": 920},
         STATUS_SIMULATED,
-        "Opening order stock was NEVER disclosed. Proxy = 0.25 × "
-        "3,668.25 (one year of intake at the small-book mode).",
+        "GENERATED (calibration-simulated-generation-2026-11-20): opening order stock was NEVER disclosed. Proxy = 0.25 x 3,668.25 (one year of intake at the small-book mode), rounded to 2 significant figures (920).",
         "internal: order_backlog_opening (RMB m)",
         internal_field="order_backlog_opening",
     ),
@@ -137,10 +129,9 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "order_intake_flow_opening/desay-2020",
         "order_book",
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2020 call)",
-        {"type": "fixed", "value": 6799.06},
+        {"type": "fixed", "value": 6800},
         STATUS_SIMULATED,
-        "Same one-year-of-intake proxy as the opening stock (same "
-        "labeled assumption, applied to the flow).",
+        "GENERATED (calibration-simulated-generation-2026-11-20): opening new-orders flow = one year of intake at the intake-rate mode (1.00 x 6,799.06), rounded to 2 significant figures (6800); same proxy as the stock.",
         "internal: order_intake_flow (RMB m per tick)",
         internal_field="order_intake_flow",
     ),
@@ -148,9 +139,9 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "order_intake_flow_opening/desay-2015",
         "order_book",
         "research harness run_desay_e047f50.py::_orderbook_wiring_variables (2015 call)",
-        {"type": "fixed", "value": 917.06},
+        {"type": "fixed", "value": 920},
         STATUS_SIMULATED,
-        "Same one-year-of-intake proxy as the opening stock.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): opening new-orders flow = 0.25 x 3,668.25, rounded to 2 significant figures (920); same proxy as the stock.",
         "internal: order_intake_flow (RMB m per tick)",
         internal_field="order_intake_flow",
     ),
@@ -160,10 +151,7 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py (generic) + research harness case restatement (identical distribution)",
         {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
         STATUS_SIMULATED,
-        "Mode 0.40 ≈ 2.5-year turnover (design-in to start-of-"
-        "production ~1–2 years for auto electronics, a planning "
-        "assumption). No disclosed order-to-revenue lag series exists "
-        "to calibrate against.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): lag-implied range check — design-in to start-of-production ~1-2 years (IPU04 2020 cooperation -> 2022 SOP target) implies conversion 0.33-1.00; current (0.30, 0.40, 0.60) implies lags 3.33/2.5/1.67y, i.e. conservative. Upward revision (mode 0.50) held by the 2015 headroom red line.",
         "internal: backlog_conversion (fraction/tick, from realised "
         "order-to-revenue lag: project design-in→SOP durations or a "
         "realised conversion series)",
@@ -175,9 +163,7 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py (generic) + research harness case restatement (identical distribution)",
         {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
         STATUS_SIMULATED,
-        "Mode 0.25: mean-reversion of order growth after a surge year "
-        "— a planning assumption. No disclosed series states a decay "
-        "rate.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): fit attempted and failed — only two disclosed new-orders points (2019/2020 ~7.0bn, flat); revenue-growth decay unstable (0.894 / 2.721). Mode 0.25 is the centre of the plausible range; low sensitivity (kf7 probe: mode +/-0.15 -> anchor P50 -3.6%/+4.8%).",
         "internal: order_decay (fraction/tick, from the realised "
         "new-orders flow path after surge years)",
         internal_field="order_decay",
@@ -188,9 +174,7 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py::TEMPLATE_VARIABLES order_intake_rate",
         {"type": "triangular", "min": 0.50, "mode": 1.00, "max": 1.50},
         STATUS_SIMULATED,
-        "Generic range around 1.0× revenue (one year of intake ≈ one "
-        "year of revenue). A case overrides it from its decision-time "
-        "order announcements; the generic itself is uncalibrated.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): cross-case envelope — mode 1.00 = the most recent (2020) observed ratio 1.03 rounded; width 0.50-1.50 covers the observed 1.03-1.31 range plus a planning margin; never directly scored (cases override it).",
         "internal: order_intake_rate (per case; the generic is replaced "
         "by case-level internal values, not by a single global number)",
         internal_field="order_intake_rate",
@@ -205,9 +189,7 @@ TIER1_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py::TEMPLATE_VARIABLES annual_cut_rate",
         {"type": "triangular", "min": 0.03, "mode": 0.04, "max": 0.05},
         STATUS_SIMULATED,
-        "Conventional 3–5% range (synthesis B5); stressed 10%+ is a "
-        "scenario lever, not part of this distribution. The range is "
-        "an industry convention, not a measured execution series.",
+        "NOT GENERATED (dormant): no formula reads this variable on e047f50 (gap-audit A2); replacing the value changes no score until the annual-cut -> price/margin channel is built. Generation deferred (calibration-simulated-generation-2026-11-20).",
         "internal: annual_cut_rate (rate/year, executed annual cuts — "
         "contract schedule by OEM/product, or realised price realisation)",
         internal_field="annual_cut_rate",
@@ -221,9 +203,7 @@ TIER1_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py::TEMPLATE_VARIABLES payment_terms_months",
         {"type": "triangular", "min": 2.0, "mode": 6.0, "max": 9.0},
         STATUS_SIMULATED,
-        "6 months is common (n+3+6 structure, synthesis B5); 60-day "
-        "commitment floor; tails to 9+ months. Industry convention, "
-        "not a measured actuals series.",
+        "NOT GENERATED (dormant): no formula reads this variable on e047f50 (gap-audit A2); replacing the value changes no score until the terms -> cash-occupancy channel is built. Generation deferred (calibration-simulated-generation-2026-11-20).",
         "internal: payment_terms_months (months, actual payment terms "
         "by OEM — contract terms or realised DSO)",
         internal_field="payment_terms_months",
@@ -235,14 +215,9 @@ TIER1_ENTRIES: list[dict[str, Any]] = [
         "tier1_gross_margin",
         "tier1_terms",
         "template_spec.py::TEMPLATE_VARIABLES tier1_gross_margin",
-        {"type": "triangular", "min": 0.188, "mode": 0.191, "max": 0.20},
+        {"type": "triangular", "min": 0.20, "mode": 0.25, "max": 0.29},
         STATUS_SIMULATED,
-        "Mode from the Desay SV overall-margin trajectory 20% / 19.9% / "
-        "19.1% (2023–2025, listed benchmark). Two honest caveats: the "
-        "span is only 6.3% of the mode (gap-audit A3 — tighter than "
-        "the evidence supports), and 2023–25 is a POST-decision "
-        "caliber for the 2020 case (the evidence is the listed "
-        "trajectory, not Ho's own margin).",
+        "DESAY-EVIDENCE (calibration-simulated-generation-2026-11-20): audited overall gross margin 2015-2020 (26.96/26.95/25.78/24.0/22.75/23.39%; mean 24.97%, sd 1.84pp); moment-matched triangular (mean 24.67%, sd 1.84pp, CV 0.075 vs observed 0.074). Replaces the 2023-25 post-decision window (hindsight leak fix) and the too-tight span (old CV 0.013).",
         "internal: tier1_gross_margin (rate, audited overall gross "
         "margin; product-line split optional)",
         internal_field="tier1_gross_margin",
@@ -256,12 +231,7 @@ TIER1_ENTRIES: list[dict[str, Any]] = [
         "template_spec.py::TEMPLATE_ASSUMPTION_DATA supply_share_simulated",
         {"type": "fixed", "value": 0.10},
         STATUS_SIMULATED,
-        "Provenance in code: 'a round neutral value, NOT an estimate' "
-        "(Ho-authorized placeholder 2026-11-16). Per-model×trim×"
-        "product supplier splits come from Ho's workbook (Part D "
-        "rulings: FAW-VW 'duplicate' rows are two suppliers splitting "
-        "share per product slot; shares sum to 1 per slot). The 0.10 "
-        "is only the fallback where no split is bound.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): Ho-authorized neutral placeholder (2026-11-16), kept by design; a round neutral value, NOT an estimate. Replace with internal supply-share data when it arrives. Prospects always get 0, never this value.",
         "internal: supply_share records (share per OEM × model × trim "
         "× product; must sum to 1 per slot — enforced by the pipeline "
         "validator)",
@@ -283,10 +253,7 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
         {"type": "fixed", "value": 0.0658},
         STATUS_SIMULATED,
-        "Decision-year-minus-two-years average net margin: "
-        "(7.69% + 5.47%) / 2 from the audited A1 table. The two "
-        "inputs are evidence; the CHOICE of a two-year mean as the "
-        "reversion anchor is the labeled assumption.",
+        "DESAY-EVIDENCE (calibration-simulated-generation-2026-11-20): two-year-mean rule on the audited net-margin history: (7.6935% + 5.4738%) / 2 = 6.5836% (2018-2019). Exact arithmetic confirms the registry value.",
         "internal: margin_longrun (computed from the audited net-margin "
         "history by the documented two-year-mean rule — the rule "
         "itself, not the number, is what internal data would confirm)",
@@ -296,10 +263,9 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "margin_longrun/desay-2015",
         "profit_chain",
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
-        {"type": "fixed", "value": 0.0599},
+        {"type": "fixed", "value": 0.0598},
         STATUS_SIMULATED,
-        "Same two-year-mean rule: (5.7% + 6.28%) / 2 from the audited "
-        "A1 table.",
+        "DESAY-EVIDENCE (calibration-simulated-generation-2026-11-20): two-year-mean rule on the audited net-margin history: (5.6742% + 6.2779%) / 2 = 5.9761% (2013-2014). Exact arithmetic (registry 0.0599 used rounded inputs 5.7+6.28); a 0.0001 rounding correction.",
         "internal: margin_longrun (same rule, 2015 decision year)",
         internal_field="margin_longrun",
     ),
@@ -307,14 +273,9 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "margin_reversion",
         "profit_chain",
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
-        {"type": "fixed", "value": 0.25},
+        {"type": "fixed", "value": 0.16},
         STATUS_SIMULATED,
-        "Round number fixed before the run: one quarter of the "
-        "deviation closes per tick. No realised margin path was "
-        "fitted. Track B pre-registered sensitivity: reversion 0.15 / "
-        "0.25 / 0.35 moves the 2020 replay errors −10.1%/+18.1%, "
-        "−12.4%/+8.2%, −14.7%/−1.6% (yr3/yr5) — the most sensitive "
-        "chain parameter.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): DECIDED 0.16 by Ho 2026-11-20 — strict-firewall median of implied one-year reversion rates, 2013-2019 only (median 0.162). Full-window fit 2013-2020 (median 0.2718) NOT applied: the 2019->2020 transition uses the 2020 realised net margin, unknowable at the 2020-12-31 decision point. Cross-check OLS AR(1) r=0.59 R2=0.21 (weak); identification weak (implied r range -10.96 to +2.17).",
         "internal: margin_reversion (NOT directly observable — "
         "estimable only by fitting the reversion rule to a realised "
         "net-margin trajectory; the pipeline accepts a fitted value "
@@ -327,11 +288,7 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
         {"type": "triangular", "min": -0.02, "mode": 0.0, "max": 0.02},
         STATUS_SIMULATED,
-        "Mode 0 by design: decision-time evidence gives no sign "
-        "conclusion (scale/learning effects vs annual-cut/price "
-        "pressure cancel). ±0.02 is an uncertainty band, not a "
-        "measured range. The 2025 R&D-intensity decline is POST-"
-        "decision evidence and was NOT used to argue any trend.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): NEV-penetration vs net-margin panel (2015-2020, n=6) fitted and REJECTED as confounded by the 2018-19 down-cycle (slope -0.95 pp/pp, R2=0.68, corr=-0.82); mode 0 retained (no signed decision-time evidence).",
         "internal: margin_adoption (NOT directly observable — "
         "estimable only from a realised adoption-vs-margin panel; "
         "same fitted-value rule as margin_reversion)",
