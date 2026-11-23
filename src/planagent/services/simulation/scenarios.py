@@ -35,6 +35,7 @@ from planagent.services.simulation_branching import (
 )
 from planagent.services.variables.formulas import validate_formulas
 from planagent.services.variables.models import (
+    MAX_VARIABLES,
     VariableSet,
     VariableTemplate,
     VariableValidationResult,
@@ -51,6 +52,55 @@ from planagent.services.variables.validator import (
     validate_scope_bindings,
     validate_variable_set,
 )
+from .downside import (
+    DEFAULT_DEPTH_VARIABLE,
+    DEFAULT_DURATION_VARIABLE,
+    DEFAULT_OCCURS_VARIABLE,
+    DEFAULT_PERSISTENT_VARIABLE,
+    DEFAULT_START_VARIABLE,
+    DOWNSIDE_DEFAULT_LABEL,
+    default_downside_fill,
+)
+
+
+def _drop_unbindable_default_downside(child_configuration: dict[str, Any]) -> None:
+    """Drop an inherited DEFAULT downside fragment the child cannot bind.
+
+    A branch that replaces the parent's bindings (e.g. a template-only
+    branch, or a fill blocked by the variable cap) can leave an enabled
+    default fragment with unbound variables — which would fail the child
+    loudly at execution. A fresh run with no applicable bindings gets no
+    fragment, so the child drops it too and runs exactly as before. An
+    explicitly supplied fragment is left alone: its loud-failure
+    contract is preserved.
+    """
+
+    fragment = child_configuration.get("downside")
+    if not isinstance(fragment, dict) or not fragment.get("enabled"):
+        return
+    if fragment.get("label") != DOWNSIDE_DEFAULT_LABEL:
+        return
+    variables_fragment = child_configuration.get("variables")
+    bound_ids: set[str] = set()
+    if isinstance(variables_fragment, dict):
+        bindings = variables_fragment.get("bindings")
+        if isinstance(bindings, dict) and isinstance(bindings.get("variables"), list):
+            bound_ids = {
+                item["id"]
+                for item in bindings["variables"]
+                if isinstance(item, dict) and isinstance(item.get("id"), str)
+            }
+    required = [
+        fragment.get("occurs_variable") or DEFAULT_OCCURS_VARIABLE,
+        fragment.get("depth_variable") or DEFAULT_DEPTH_VARIABLE,
+        fragment.get("start_variable") or DEFAULT_START_VARIABLE,
+        fragment.get("duration_variable") or DEFAULT_DURATION_VARIABLE,
+    ]
+    persistent_name = fragment.get("persistent_variable")
+    if isinstance(persistent_name, str) and persistent_name:
+        required.append(persistent_name)
+    if any(name not in bound_ids for name in required):
+        child_configuration.pop("downside", None)
 
 
 class SimulationScenariosMixin:
@@ -185,6 +235,23 @@ class SimulationScenariosMixin:
             fragment["variables"]["branch_override"] = True
             return fragment
 
+        # Track C (default ON): a branch that replaces the parent's
+        # bindings must still bind the inherited default shock, or the
+        # child fails loudly at execution for a default it never asked
+        # for. Fill the missing canonical variables (appended at the
+        # end, so pre-existing draws are untouched); an explicit parent
+        # fragment is never auto-completed (see default_downside_fill).
+        # A fill blocked by the variable cap is left unfilled — the
+        # child-creation step below drops the inherited default
+        # fragment instead of failing the branch.
+        parent_downside = (parent_run.configuration or {}).get("downside")
+        fill = default_downside_fill(
+            parent_downside, {variable.id for variable in effective.variables}
+        )
+        if fill and len(effective.variables) + len(fill) <= MAX_VARIABLES:
+            effective = effective.model_copy(
+                update={"variables": [*effective.variables, *fill]}
+            )
         result = validate_variable_set(effective)
         issues = list(result.issues)
         allowed_scope = self._branch_scope_for_bindings(parent_run, payload.decomposition_branch)
@@ -321,6 +388,13 @@ class SimulationScenariosMixin:
         if variables_fragment:
             # Branch override replaces the inherited variables fragment.
             child_configuration["variables"] = variables_fragment["variables"]
+        # Track C (default ON): a branch whose effective bindings cannot
+        # bind the inherited default shock (template with no variables,
+        # or a fill blocked by the variable cap) drops the fragment and
+        # runs exactly as before, like a fresh run with no applicable
+        # bindings — instead of failing loudly for a default it never
+        # asked for. Explicit fragments are left alone (loud failure).
+        _drop_unbindable_default_downside(child_configuration)
         # Sprint 3: hash the child run's inputs at creation. The parent's
         # stored determinism fragment is excluded from the hashed payload,
         # so the child hash covers the child's own inputs.

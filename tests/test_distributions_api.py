@@ -18,6 +18,7 @@ from planagent.config import reset_settings_cache
 from planagent.db import reset_database_cache
 from planagent.main import create_app
 from planagent.services.distributions import rng_for_seed, sample_variable_set
+from planagent.services.simulation.downside import default_downside_variables
 from planagent.services.variables.models import VariableSet
 
 # Variables named after corporate state fields (cash, pipeline) drive the
@@ -121,7 +122,23 @@ def test_sampling_applies_to_initial_state_and_initial_state_wins(
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         run = _create_bound_run(client)
-        expected = sample_variable_set(VariableSet.model_validate(BOUND_SET), rng_for_seed(7))
+        # Track C (default ON): the engine appends the canonical
+        # downside variables at the END of the set, so the BOUND_SET
+        # draws are byte-identical and the audit gains exactly the five
+        # downturn draws. Tick-zero state is untouched (downturn
+        # variables match no state field).
+        combined = {
+            **BOUND_SET,
+            "variables": [
+                *BOUND_SET["variables"],
+                *[var.model_dump(mode="json") for var in default_downside_variables()],
+            ],
+        }
+        expected = sample_variable_set(VariableSet.model_validate(combined), rng_for_seed(7))
+        bound_only = sample_variable_set(
+            VariableSet.model_validate(BOUND_SET), rng_for_seed(7)
+        )
+        assert {k: expected[k] for k in bound_only} == bound_only
         tick_zero = _snapshots(client, run["id"])[0]["state"]
         assert tick_zero["cash"] == expected["cash"]
         assert tick_zero["pipeline"] == expected["pipeline"]
@@ -383,11 +400,22 @@ def test_branch_variable_override_merges_over_inherited_bindings(
         variables = client.get(f"/runs/{child_run_id}/variables")
         assert variables.status_code == 200
         bindings = {var["id"]: var for var in variables.json()["bindings"]["variables"]}
-        # The override wins for cash; the other inherited variables stay.
+        # The override wins for cash; the other inherited variables stay —
+        # including the canonical downside variables the default (Track C)
+        # appended to the parent's bindings.
         cash_distribution = bindings["cash"]["distribution"]
         assert cash_distribution["type"] == "fixed"
         assert cash_distribution["value"] == 55.0
-        assert set(bindings) == {"cash", "pipeline", "cac"}
+        assert set(bindings) == {
+            "cash",
+            "pipeline",
+            "cac",
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+            "downturn_persistent",
+        }
 
 
 def test_branch_override_invalid_refused_with_nothing_created(monkeypatch, tmp_path: Path) -> None:
@@ -466,6 +494,11 @@ def test_branch_decomposition_scope_ownership(monkeypatch, tmp_path: Path) -> No
             decomposition=PASSING_TREE,
         )
         # The template's variables fit the Demand branch scope.
+        # Track C: the branch replaces the parent's bindings with the
+        # template-only set, so the engine fills the missing canonical
+        # downside variables for the inherited default shock — the
+        # branch still succeeds (it used to fail loudly with an unbound
+        # downside variable before the branch fill was added).
         branch = client.post(
             f"/scenario/runs/{baseline['id']}",
             json={

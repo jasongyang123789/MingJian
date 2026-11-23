@@ -28,6 +28,7 @@ from planagent.config import reset_settings_cache
 from planagent.db import reset_database_cache
 from planagent.main import create_app
 from planagent.services.distributions import rng_for_seed, sample_variable_set
+from planagent.services.simulation.downside import default_downside_variables
 from planagent.services.variables import evaluate_formulas
 from planagent.services.variables.models import VariableSet
 
@@ -273,9 +274,24 @@ def test_tornado_ranks_cash_first_with_exact_probe_outcomes(monkeypatch, tmp_pat
         result = response.json()
         assert result["ensemble_id"] == ensemble["ensemble_id"]
         assert result["metric"] == "cash"
-        assert len(result["probe_run_ids"]) == 7  # base + 2 per variable
+        # Track C (default ON): the tornado probes every sampled variable,
+        # so the five canonical downside variables join the probe set
+        # (base + 2 per variable = 17 probes). Cash still ranks first;
+        # the downturn variables cannot move cash in this evidence-free
+        # setup, so their swings are 0.0 and they sort after the bound
+        # variables in binding order (stable sort on ties).
+        assert len(result["probe_run_ids"]) == 17  # base + 2 per variable
         rows = result["rows"]
-        assert [row["variable"] for row in rows] == ["cash", "pipeline", "cac"]
+        assert [row["variable"] for row in rows] == [
+            "cash",
+            "pipeline",
+            "cac",
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+            "downturn_persistent",
+        ]
         cash_row = rows[0]
         # Triangular(60, 100, 140) P10/P90, analytically.
         assert cash_row["low_value"] == pytest.approx(77.88854382)
@@ -289,6 +305,12 @@ def test_tornado_ranks_cash_first_with_exact_probe_outcomes(monkeypatch, tmp_pat
         # Pipeline and cac do not move cash in the evidence-free setup.
         assert rows[1]["swing"] == 0.0
         assert rows[2]["swing"] == 0.0
+        # Neither do the downturn variables: the shock hits revenue and
+        # profit, and no rule feeds those back into cash here.
+        for row in rows[3:]:
+            assert row["swing"] == 0.0
+            assert row["outcome_low"] == pytest.approx(100.0)
+            assert row["outcome_high"] == pytest.approx(100.0)
 
         stored = client.get(f"/runs/{run['id']}/robustness")
         assert stored.json()["tornado"]["rows"] == rows
@@ -580,7 +602,23 @@ def test_formulas_drive_tick_zero_state_and_audit(monkeypatch, tmp_path) -> None
         run = created.json()
 
         variable_set = VariableSet.model_validate(golden)
-        sampled = sample_variable_set(variable_set, rng_for_seed(7))
+        # Track C (default ON): the engine appends the canonical
+        # downside variables at the END of the set, so the golden draws
+        # are byte-identical and the audit gains exactly the five
+        # downturn draws. Derived values are unchanged (the formulas
+        # reference golden variables only).
+        golden_sampled = sample_variable_set(variable_set, rng_for_seed(7))
+        combined = VariableSet.model_validate(
+            {
+                **golden,
+                "variables": [
+                    *golden["variables"],
+                    *[var.model_dump(mode="json") for var in default_downside_variables()],
+                ],
+            }
+        )
+        sampled = sample_variable_set(combined, rng_for_seed(7))
+        assert {key: sampled[key] for key in golden_sampled} == golden_sampled
         derived = evaluate_formulas(variable_set.formulas, sampled)
         tick_zero = _snapshots(client, run["id"])[0]["state"]
         assert tick_zero["cash"] == derived["cash"]

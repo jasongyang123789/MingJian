@@ -239,9 +239,16 @@ def test_monte_carlo_on_profit_is_accepted(monkeypatch, tmp_path) -> None:
         run = _create_revenue_run(client)
         ensemble = _run_ensemble(client, run["id"], metric="profit")
         assert ensemble["metric"] == "profit"
-        # No profit variable/driver: every trial holds the template value.
+        # Track C (default ON): profit has no variable/driver, but it is
+        # a shocked field, so the default downturn now moves it: 9 of 10
+        # trials draw no occurring shock and hold the template value,
+        # one draws a shock and ends scarred at 18.2146 (24.0 x the
+        # realised window factors). The median still sits at 24.0; the
+        # decline probability is 0.1, not 0.0.
         assert ensemble["baseline"]["p50"] == 24.0
-        assert ensemble["baseline"]["min"] == ensemble["baseline"]["max"] == 24.0
+        assert ensemble["baseline"]["min"] == 18.2146
+        assert ensemble["baseline"]["max"] == 24.0
+        assert ensemble["baseline"]["decline_probability"] == 0.1
 
 
 def test_monte_carlo_on_cash_still_works(monkeypatch, tmp_path) -> None:

@@ -757,8 +757,19 @@ def test_generate_succeeds_on_tornado_enriched_run(monkeypatch, tmp_path: Path) 
         direction = body["body"]["directions"][0]
         assert direction["name"] == "D"
         drivers = direction["drivers"]
-        assert len(drivers["rows"]) == 1
+        # Track C (default ON): the tornado probes every sampled
+        # variable, so the drivers section (capped at 5 rows) now holds
+        # cash plus the first four canonical downside variables; the
+        # downturn rows cannot move cash here, so their swings are 0.0.
+        assert len(drivers["rows"]) == 5
         assert drivers["rows"][0]["variable"] == "cash"
+        assert [row["variable"] for row in drivers["rows"][1:]] == [
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+        ]
+        assert all(row["swing"] == 0.0 for row in drivers["rows"][1:])
         assert drivers["ensemble_id"] == ensemble["ensemble_id"]
 
 
@@ -813,7 +824,11 @@ def test_generate_succeeds_on_fully_enriched_run(monkeypatch, tmp_path: Path) ->
             {"directions": [{"name": "D", "source_run_id": run["id"]}]},
         )
         direction = body["body"]["directions"][0]
-        assert len(direction["drivers"]["rows"]) == 1
+        # Track C (default ON): drivers section capped at 5 rows — cash
+        # plus the first four canonical downside variables (swings 0.0
+        # on cash here); see the tornado-enriched test above.
+        assert len(direction["drivers"]["rows"]) == 5
+        assert direction["drivers"]["rows"][0]["variable"] == "cash"
         kinds = [s["kind"] for s in direction["signals"]]
         assert "decision_gate" in kinds
         assert "threshold_search" in kinds
@@ -848,7 +863,10 @@ def test_generate_ignores_unknown_robustness_keys(monkeypatch, tmp_path: Path) -
             run["id"],
             {"directions": [{"name": "D", "source_run_id": run["id"]}]},
         )
-        assert len(body["body"]["directions"][0]["drivers"]["rows"]) == 1
+        # Track C (default ON): drivers section capped at 5 rows — cash
+        # plus the first four canonical downside variables; see the
+        # tornado-enriched test above.
+        assert len(body["body"]["directions"][0]["drivers"]["rows"]) == 5
 
 
 def _assert_corrupt_refusal(client: TestClient, run_id: str, fragment_name: str) -> None:

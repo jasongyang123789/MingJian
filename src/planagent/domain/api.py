@@ -139,21 +139,30 @@ class ReviewItemRead(APIModel):
 
 
 class DownsideConfig(APIModel):
-    """Opt-in cyclical downturn / reversal shock (fix/downside-mechanism).
+    """Cyclical downturn / reversal shock (fix/downside-mechanism, Track C).
 
-    Default OFF: when absent (or ``enabled`` false) the run behaves
-    exactly as before. When enabled, the named variables must be bound
-    as sampled variables on the run (Bernoulli for ``occurs``,
-    triangular for ``depth`` / ``start`` / ``duration``); the executor
-    resolves them per run from the run seed and applies the shock after
-    the tick drivers. ``persistent_variable`` is None by default (pure
-    cycle, no reversal regime); name a Bernoulli variable to enable the
+    Default ON since Track C (2026-11-20): Ho ordered the default flipped
+    from OFF to ON on 2026-11-20 08:42, reversing his 2026-11-19 14:31
+    default-OFF decision ("下行风险机制，默认关闭保向后兼容"). A run that
+    omits ``downside`` gets the default config (``enabled`` true, fields
+    revenue + profit, persistent reversal named); the engine auto-binds
+    the canonical labeled-assumption variables (see
+    :mod:`planagent.services.simulation.downside`) where they apply.
+    Pass ``downside: null`` or ``{"enabled": false}`` to opt out; an
+    explicitly supplied fragment keeps the loud-failure contract (named
+    variables must be bound, or run creation fails). When enabled, the
+    named variables must be bound as sampled variables on the run
+    (Bernoulli for ``occurs``, triangular for ``depth`` / ``start`` /
+    ``duration``); the executor resolves them per run from the run seed
+    and applies the shock after the tick drivers. ``persistent_variable``
+    is None by default on an explicitly supplied fragment (pure cycle,
+    no reversal regime); name a Bernoulli variable to enable the
     reversal draw. All parameters are LABELED ASSUMPTIONS with no
     independent estimate — see
     :mod:`planagent.services.simulation.downside`.
     """
 
-    enabled: bool = False
+    enabled: bool = True
     fields: list[str] = Field(default_factory=lambda: ["revenue", "profit"])
     occurs_variable: str = "downturn_occurs"
     depth_variable: str = "downturn_depth"
@@ -179,6 +188,29 @@ class DownsideConfig(APIModel):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("Downside variable names must be non-empty strings.")
         return value.strip()
+
+
+def _default_downside_config() -> DownsideConfig:
+    """Default downside config for new runs (Track C, default ON).
+
+    The ``persistent_variable`` is named here (unlike the bare
+    ``DownsideConfig`` default of None) so the default shock includes
+    the reversal regime. The label literal must stay identical to
+    ``DOWNSIDE_DEFAULT_LABEL`` in
+    :mod:`planagent.services.simulation.downside` — ``domain/api.py``
+    cannot import that module (it would pull in the simulation package
+    and cycle back here); a test pins the two equal.
+    """
+
+    return DownsideConfig(
+        enabled=True,
+        persistent_variable="downturn_persistent",
+        label=(
+            "LABELED ASSUMPTION — default downside shock (Track C, 2026-11-20): "
+            "cyclical downturn + optional reversal; parameters have no "
+            "independent estimate"
+        ),
+    )
 
 
 class SimulationRunCreate(APIModel):
@@ -234,13 +266,14 @@ class SimulationRunCreate(APIModel):
     # When absent, runs behave exactly as before (the caller must pass
     # shares to the sales-layer endpoint).
     oem_production_shares: OemProductionShares | None = None
-    # Optional cyclical downturn / reversal shock (fix/downside-mechanism).
-    # Default OFF: when absent, runs behave exactly as before. When
-    # enabled, the named variables must be bound as sampled variables;
-    # the executor applies the shock after the tick drivers. Stored in
-    # the run's ``downside`` fragment, so the Sprint 3 input hash covers
-    # it and Monte Carlo trials, scenario branches, and replays inherit it.
-    downside: DownsideConfig | None = None
+    # Cyclical downturn / reversal shock (fix/downside-mechanism, Track C).
+    # Default ON: when omitted, the run gets the default config (enabled,
+    # fields revenue + profit, canonical labeled-assumption variables
+    # auto-bound by the engine where they apply). Pass ``downside: null``
+    # or ``{"enabled": false}`` to opt out. Stored in the run's
+    # ``downside`` fragment, so the Sprint 3 input hash covers it and
+    # Monte Carlo trials, scenario branches, and replays inherit it.
+    downside: DownsideConfig | None = Field(default_factory=_default_downside_config)
 
     @model_validator(mode="after")
     def validate_domain_subject(self) -> "SimulationRunCreate":

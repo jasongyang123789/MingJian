@@ -40,7 +40,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from planagent.domain.api import SimulationRunCreate
+from planagent.domain.api import DownsideConfig, SimulationRunCreate
 from planagent.domain.enums import ExecutionMode, SimulationRunStatus
 from planagent.domain.models import (
     Claim,
@@ -226,6 +226,35 @@ def _read_evaluation(row: LoopEvaluationRecord) -> LoopEvaluationRead:
         error_message=row.error_message,
         created_at=format_cutoff(row.created_at),
     )
+
+
+def _downside_from_baseline(configuration: dict[str, Any]) -> DownsideConfig:
+    """Downside config a re-simulation inherits from its baseline.
+
+    Track C (default ON): a stored fragment is carried verbatim, and a
+    baseline with no fragment (pre-Track-C, ran OFF) is re-simulated
+    explicitly OFF, so the new default cannot silently re-score an old
+    baseline. A malformed stored fragment refuses loudly, like the
+    other stored fragments in ``_build_resimulation_payload``.
+    """
+
+    fragment = configuration.get("downside")
+    if fragment is None:
+        return DownsideConfig(enabled=False)
+    if not isinstance(fragment, dict):
+        raise LoopError(
+            "loop_corrupt_baseline_fragment",
+            "Baseline run carries a malformed downside fragment; refusing "
+            "to re-simulate rather than silently drop it.",
+        )
+    try:
+        return DownsideConfig.model_validate(fragment)
+    except ValidationError as exc:
+        raise LoopError(
+            "loop_corrupt_baseline_fragment",
+            "Baseline run carries a malformed downside fragment; refusing "
+            f"to re-simulate rather than silently drop it: {exc}",
+        ) from exc
 
 
 class SimulationLivingLoopMixin:
@@ -1083,6 +1112,14 @@ class SimulationLivingLoopMixin:
             "decision_time": decision_time,
             "split_structure": split_structure,
             "oem_production_shares": oem_production_shares,
+            # Track C (default ON): the re-simulation inherits the
+            # baseline's downside exactly — a stored fragment is carried
+            # verbatim, and a baseline with no fragment (pre-Track-C,
+            # ran OFF) is re-simulated explicitly OFF. Without this,
+            # the new default would silently re-score every old baseline
+            # ON. A malformed stored fragment refuses, like the other
+            # stored fragments above.
+            "downside": _downside_from_baseline(configuration),
         }
         if baseline.domain_id in ("corporate", "automotive"):
             company = (

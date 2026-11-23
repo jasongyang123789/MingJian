@@ -97,6 +97,10 @@ from planagent.db import reset_database_cache
 from planagent.main import create_app
 from planagent.services.variables.presets import builtin_template
 from planagent.simulation.domain_packs import registry as domain_pack_registry
+
+#: Sentinel for "omit the downside key entirely" (Track C default ON).
+#: Passing None means an explicit ``downside: null`` (opt-out).
+_OMIT = object()
 from planagent.simulation.domain_packs.automotive.template_spec import (
     TEMPLATE_FORMULAS,
     TEMPLATE_VARIABLES,
@@ -560,7 +564,12 @@ def _level_shift_case_set() -> dict:
     return {"name": "order-book-level-shift", "variables": variables, "formulas": formulas}
 
 
-def _create_run(client: TestClient, case_set: dict, tick_count: int = 5) -> dict:
+def _create_run(
+    client: TestClient,
+    case_set: dict,
+    tick_count: int = 5,
+    downside: dict | None | object = _OMIT,
+) -> dict:
     payload = {
         "company_id": "order-book-test",
         "company_name": "Order Book Test",
@@ -573,6 +582,8 @@ def _create_run(client: TestClient, case_set: dict, tick_count: int = 5) -> dict
         "variable_template_id": "builtin:automotive",
         "variable_set": case_set,
     }
+    if downside is not _OMIT:
+        payload["downside"] = downside
     created = client.post("/simulation/runs", json=payload)
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "COMPLETED"
@@ -679,11 +690,17 @@ def test_order_book_decay_produces_falling_growth(monkeypatch, tmp_path: Path) -
     (conversion * pool / revenue) shrinks as the order surge passes
     and the pool lapses with adoption. Scored horizon is ticks 1–4
     (the Desay child replay has ticks 0–4); the trajectory matches an
-    independent replication of the driver equations tick by tick."""
+    independent replication of the driver equations tick by tick.
+
+    Track C: explicitly opted out — the shape pin is exact (strictly
+    falling factors + tick-by-tick replication), and the default shock
+    breaks the monotonicity it exists to guard.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         states = _trajectory(
-            client, _create_run(client, _backlog_case_set(0.40), tick_count=4)["id"]
+            client,
+            _create_run(client, _backlog_case_set(0.40), tick_count=4, downside=None)["id"],
         )
         revenue = {t: states[t]["revenue"] for t in states}
         backlog = {t: states[t]["order_backlog"] for t in states}
@@ -779,11 +796,20 @@ def test_order_book_frozen_baseline_conversion_zero_is_no_backlog(
     above it at every tick; share and profit are untouched by the
     backlog channel (same in both runs). With conversion 0 the book
     still drains via the adoption lapse, so it ends below its opening
-    level (it no longer accumulates as under the Track 11 update)."""
+    level (it no longer accumulates as under the Track 11 update).
+
+    Track C: explicitly opted out — the control is an exact-equality
+    device between two runs, and the default shock's draws depend on
+    the variable set, so the two runs would draw different shocks.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        states_on = _trajectory(client, _create_run(client, _backlog_case_set(0.40))["id"])
-        states_off = _trajectory(client, _create_run(client, _backlog_case_set(0.0))["id"])
+        states_on = _trajectory(
+            client, _create_run(client, _backlog_case_set(0.40), downside=None)["id"]
+        )
+        states_off = _trajectory(
+            client, _create_run(client, _backlog_case_set(0.0), downside=None)["id"]
+        )
         revenue_on = {t: states_on[t]["revenue"] for t in states_on}
         revenue_off = {t: states_off[t]["revenue"] for t in states_off}
         exp_rev, _, _, _ = _simulate_backlog(backlog_conversion=0.0)

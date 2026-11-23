@@ -39,6 +39,10 @@ from planagent.services.variables.models import (
     VariableDefinition,
     VariableSet,
 )
+
+#: Sentinel for "omit the downside key entirely" (Track C default ON).
+#: Passing None means an explicit ``downside: null`` (opt-out).
+_OMIT = object()
 from planagent.services.variables.presets import builtin_template
 from planagent.services.variables.validator import merge_variable_sets
 from planagent.simulation.domain_packs import registry as domain_pack_registry
@@ -723,7 +727,9 @@ def _chain_case_set(nev_coupling: float) -> dict:
     return {"name": "nev-chain-test-case", "variables": variables, "formulas": formulas}
 
 
-def _create_chain_run(client: TestClient, nev_coupling: float) -> dict:
+def _create_chain_run(
+    client: TestClient, nev_coupling: float, downside: dict | None | object = _OMIT
+) -> dict:
     payload = {
         "company_id": "nev-chain-test",
         "company_name": "NEV Chain Test",
@@ -736,6 +742,8 @@ def _create_chain_run(client: TestClient, nev_coupling: float) -> dict:
         "variable_template_id": "builtin:automotive",
         "variable_set": _chain_case_set(nev_coupling),
     }
+    if downside is not _OMIT:
+        payload["downside"] = downside
     created = client.post("/simulation/runs", json=payload)
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "COMPLETED"
@@ -756,10 +764,16 @@ def _trajectory(client: TestClient, run_id: str) -> dict[int, dict]:
 def test_nev_chain_end_to_end_revenue_term(monkeypatch, tmp_path: Path) -> None:
     """The full chain on the engine: the logistic penetration drives the
     dual-track splits AND the revenue term; per-tick revenue growth
-    equals 1 + rg + rc*adoption + k*pen exactly (frozen values)."""
+    equals 1 + rg + rc*adoption + k*pen exactly (frozen values).
+
+    Track C: explicitly opted out (``downside: null``) — the pin is the
+    exact diagnostic formula, and the default shock would multiply the
+    revenue factors away from it. The chain itself is covered under the
+    default in the four-case re-run.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        run = _create_chain_run(client, nev_coupling=0.25)
+        run = _create_chain_run(client, nev_coupling=0.25, downside=None)
         states = _trajectory(client, run["id"])
         assert sorted(states) == [0, 1, 2, 3, 4, 5]
         # Planning path, ticks 1..4 (tick 5: 0.2673).
@@ -794,11 +808,16 @@ def test_nev_chain_end_to_end_revenue_term(monkeypatch, tmp_path: Path) -> None:
 def test_nev_chain_frozen_baseline_k_zero_is_no_chain(monkeypatch, tmp_path: Path) -> None:
     """Frozen-baseline control (diagnostic Appendix A): every variable
     fixed, only nev_coupling changes. k=0 must reproduce the no-chain
-    revenue exactly, and k=0.25 must sit above it by the NEV term."""
+    revenue exactly, and k=0.25 must sit above it by the NEV term.
+
+    Track C: explicitly opted out — the control is an exact-equality
+    device between two runs, and the default shock's draws depend on
+    the variable set, so the two runs would draw different shocks.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        states_on = _trajectory(client, _create_chain_run(client, 0.25)["id"])
-        states_off = _trajectory(client, _create_chain_run(client, 0.0)["id"])
+        states_on = _trajectory(client, _create_chain_run(client, 0.25, downside=None)["id"])
+        states_off = _trajectory(client, _create_chain_run(client, 0.0, downside=None)["id"])
         revenue_on = {t: states_on[t]["revenue"] for t in states_on}
         revenue_off = {t: states_off[t]["revenue"] for t in states_off}
         # k=0: revenue is the pure disruptor-coupled path.
@@ -825,10 +844,15 @@ def test_automotive_override_directions_accepted(monkeypatch, tmp_path: Path) ->
     automotive anchor — the domain gates in the narratives service and
     the scenario-branch runner cover automotive alongside corporate.
     The child forks at tick 1 with nev_coupling pinned to 0.10 and its
-    revenue must sit below the k=0.25 anchor's at every tick."""
+    revenue must sit below the k=0.25 anchor's at every tick.
+
+    Track C: the anchor is explicitly opted out — with the default on,
+    the resampling child re-draws the shock variables, and the re-drawn
+    shock can swamp the coupling ordering at a tick.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        anchor = _create_chain_run(client, 0.25)
+        anchor = _create_chain_run(client, 0.25, downside=None)
         response = client.post(
             f"/runs/{anchor['id']}/directions/override",
             json={
