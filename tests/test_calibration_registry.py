@@ -47,17 +47,21 @@ def test_registry_no_duplicate_ids():
 
 
 def test_registry_status_counts():
-    # Inventory as recorded 2026-11-20 (61 entries: 33 curated + 28
+    # Inventory as recorded 2026-11-20 (70 entries: 33 curated + 37
     # template-derived). If the template gains a labeled assumption,
     # this fails loudly on purpose — update the inventory deliberately.
+    # Margin-profit transmission (2026-11-20): 61 -> 70 — the R&D
+    # margin promotion's 8 labeled-assumption variables (gross_*,
+    # rd_*, other_share) plus the transmission coefficient
+    # tier1_pass_through each gain a template-derived entry.
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 51
+    assert counts["simulated"] == 60
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 61
+    assert sum(counts.values()) == 70
 
 
 def test_registry_transmission_values_are_live():

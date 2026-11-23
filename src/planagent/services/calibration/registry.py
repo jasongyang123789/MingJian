@@ -235,14 +235,9 @@ TIER1_ENTRIES: list[dict[str, Any]] = [
         "tier1_gross_margin",
         "tier1_terms",
         "template_spec.py::TEMPLATE_VARIABLES tier1_gross_margin",
-        {"type": "triangular", "min": 0.188, "mode": 0.191, "max": 0.20},
+        {"type": "triangular", "min": 0.20, "mode": 0.25, "max": 0.29},
         STATUS_SIMULATED,
-        "Mode from the Desay SV overall-margin trajectory 20% / 19.9% / "
-        "19.1% (2023–2025, listed benchmark). Two honest caveats: the "
-        "span is only 6.3% of the mode (gap-audit A3 — tighter than "
-        "the evidence supports), and 2023–25 is a POST-decision "
-        "caliber for the 2020 case (the evidence is the listed "
-        "trajectory, not Ho's own margin).",
+        "DESAY-EVIDENCE (calibration-simulated-generation-2026-11-20): audited overall gross margin 2015-2020 (26.96/26.95/25.78/24.0/22.75/23.39%; mean 24.97%, sd 1.84pp); moment-matched triangular (mean 24.67%, sd 1.84pp, CV 0.075 vs observed 0.074). Replaces the 2023-25 post-decision window (hindsight leak fix) and the too-tight span (old CV 0.013).",
         "internal: tier1_gross_margin (rate, audited overall gross "
         "margin; product-line split optional)",
         internal_field="tier1_gross_margin",

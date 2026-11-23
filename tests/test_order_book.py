@@ -345,8 +345,12 @@ def _proportional_intake_driver() -> dict:
 
 def test_order_book_variables_match_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
+    # R&D margin promotion (2026-11-20): 61 -> 69 variables, 36 -> 42
+    # formulas (the revenue-passthrough merge anchor is one of the six
+    # chain formulas; see the template docstring).
+    # Margin-profit transmission (2026-11-20): 69 -> 70 variables.
+    assert len(TEMPLATE_VARIABLES) == 70
+    assert len(TEMPLATE_FORMULAS) == 42
     expected = {
         "order_backlog": ("fixed", 0.0),
         "order_intake": ("fixed", 0.0),
@@ -365,8 +369,12 @@ def test_order_book_variables_match_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    # R&D margin promotion (2026-11-20): 61 -> 69 variables, 36 -> 42
+    # formulas (the revenue-passthrough merge anchor is one of the six
+    # chain formulas; see the template docstring).
+    # Margin-profit transmission (2026-11-20): 69 -> 70 variables.
+    assert len(template.variables) == 70
+    assert len(template.formulas) == 42
     fields = {f.name: float(f.default) for f in domain_pack_registry.get("automotive").state_fields}
     assert len(fields) == 50
     assert fields["order_backlog"] == 0.0

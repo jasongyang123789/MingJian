@@ -55,7 +55,7 @@ def test_pack_registered_and_state_fields() -> None:
     assert fields["generation_transition_index"] == 0.0
     assert fields["dms_mandate"] == 0.0
     assert fields["policy_tax_rate"] == 0.05
-    assert fields["tier1_gross_margin"] == 0.191
+    assert fields["tier1_gross_margin"] == 0.25
     # Dual-track splits sum exactly to their spine totals.
     assert fields["nev_production_volume"] == 137.86
     assert fields["ice_production_volume"] == 149.94
@@ -127,10 +127,19 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 61
-    assert len(TEMPLATE_FORMULAS) == 36
+    # R&D margin promotion (2026-11-20): 61 -> 69 variables, 36 -> 42
+    # formulas, 33 -> 39 tick drivers (the six chain drivers append
+    # at the end, in chain order: adoption default -> revenue
+    # passthrough anchor -> gross_margin -> rd_intensity ->
+    # net_margin -> profit).
+    # Margin-profit transmission (2026-11-20): 69 -> 70 variables
+    # (one fixed variable, tier1_pass_through); formulas and tick
+    # drivers unchanged (the transmission is a term inside the
+    # gross_margin driver, not a new formula).
+    assert len(TEMPLATE_VARIABLES) == 70
+    assert len(TEMPLATE_FORMULAS) == 42
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 33
+    assert len(drivers) == 39
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -167,13 +176,22 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "funnel_prospects_total",
         "delivery_satisfaction",
         "funnel_overall_conversion",
+        # R&D decomposition drivers, in chain order: adoption default
+        # -> revenue passthrough anchor -> gross_margin ->
+        # rd_intensity -> net_margin -> profit.
+        "disruptor_adoption",
+        "revenue",
+        "gross_margin",
+        "rd_intensity",
+        "net_margin",
+        "profit",
     ]
     # Every variable carries a unit and an evidence reference.
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 33 of 61 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 28 formula parameters are the 9
+    # 33 of 70 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 36 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -181,7 +199,12 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # variable), plus the 3 Track 11 order-book parameters
     # (order_intake_rate / backlog_conversion / order_decay — the
     # backlog stock itself is the pack's order_backlog state field,
-    # bound, not a parameter).
+    # bound, not a parameter), plus the 8 R&D decomposition variables
+    # (the legs themselves are the gross_margin / rd_intensity /
+    # net_margin driver outputs, not further variables, and profit is
+    # the pack's profit state field, reused), plus the Tier-1
+    # transmission coefficient (tier1_pass_through, fixed, not
+    # sampled — it is a formula parameter, not a state field).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -213,6 +236,15 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "order_intake_rate",
         "backlog_conversion",
         "order_decay",
+        "gross_base",
+        "gross_longrun",
+        "gross_reversion",
+        "rd_base",
+        "rd_longrun",
+        "rd_reversion",
+        "rd_adoption",
+        "other_share",
+        "tier1_pass_through",
     }
 
 
@@ -220,8 +252,13 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 61
-    assert len(template.formulas) == 36
+    # R&D margin promotion (2026-11-20): 61 -> 69 variables, 36 -> 42
+    # formulas (the revenue-passthrough merge anchor is one of the six
+    # chain formulas; see the template docstring).
+    # Margin-profit transmission (2026-11-20): 69 -> 70 variables
+    # (tier1_pass_through, fixed).
+    assert len(template.variables) == 70
+    assert len(template.formulas) == 42
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
@@ -230,8 +267,76 @@ def test_builtin_automotive_template_validates() -> None:
     assert by_output["sales_volume_retail"].tick_driver is True
     # Simulated values are labeled as simulated, never as evidence.
     by_id = {variable.id: variable for variable in template.variables}
-    for var_id in ("annual_cut_rate", "payment_terms_months", "tier1_gross_margin"):
+    for var_id in ("annual_cut_rate", "payment_terms_months"):
         assert by_id[var_id].evidence_ref.startswith("simulated:industry-average"), var_id
+    # tier1_gross_margin is DESAY-EVIDENCE since calibration-simulated-
+    # generation-2026-11-20 (audited 2015-2020 decision-time margin,
+    # moment-matched) — no longer simulated, so it leaves the loop above.
+    assert by_id["tier1_gross_margin"].evidence_ref.startswith("desay-evidence:"), "tier1_gross_margin"
+
+
+def test_tier1_gross_margin_band_is_calibration_value() -> None:
+    """Margin-profit transmission / calibration alignment: the tier1
+    band is the calibration DESAY-EVIDENCE value (0.20, 0.25, 0.29) —
+    audited 2015-2020 decision-time margins, moment-matched — not the
+    A3 widened band (0.167, 0.191, 0.215), whose mode 0.191 is itself
+    a post-hoc 2025 value (TRACK-A3 §5.2 admits it), and not the
+    mainline (0.188, 0.191, 0.20), whose span was 6.3% of the mode.
+    Span/mode 36% clears the red-team 10% overconfidence threshold,
+    so the A3 finding stays cleared while the band is also
+    firewall-clean.
+    """
+    by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
+    dist = by_id["tier1_gross_margin"]["distribution"]
+    assert dist["type"] == "triangular"
+    assert (dist["min"], dist["mode"], dist["max"]) == (0.20, 0.25, 0.29)
+    assert abs((dist["max"] - dist["min"]) / dist["mode"] - 0.36) < 1e-9
+    assert by_id["tier1_gross_margin"]["evidence_ref"].startswith("desay-evidence:")
+
+
+def test_gross_margin_transmission_literal_matches_tier1_mode() -> None:
+    """Margin-profit transmission: the gross_margin driver carries
+    tier1_pass_through x (tier1_gross_margin(t) - MODE), where MODE
+    is a literal — the formula language has no 'distribution mode'
+    reference. This test pins the literal to the tier1 distribution's
+    mode so the two cannot drift apart silently: if the band is ever
+    re-anchored, this test fails until the literal is updated too.
+    It also pins the coefficient itself: fixed 0.5, labeled simulated.
+    """
+    by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
+    mode = by_id["tier1_gross_margin"]["distribution"]["mode"]
+    kappa = by_id["tier1_pass_through"]
+    assert kappa["distribution"] == {"type": "fixed", "value": 0.5}
+    assert kappa["evidence_ref"].startswith("simulated:")
+    template = builtin_template("automotive")
+    by_output = {f.output: f for f in template.formulas}
+    expression = by_output["gross_margin"].expression
+
+    def walk(node: object, found: list[object]) -> None:
+        if isinstance(node, dict):
+            found.append(node)
+            for value in node.values():
+                walk(value, found)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value, found)
+
+    nodes: list[object] = []
+    walk(expression, nodes)
+    literal: object = None
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("op") != "multiply":
+            continue
+        args = node.get("args", [])
+        if {"ref": "tier1_pass_through"} not in args:
+            continue
+        for arg in args:
+            if isinstance(arg, dict) and arg.get("op") == "subtract":
+                sub_args = arg.get("args", [])
+                assert sub_args[0] == {"ref": "tier1_gross_margin"}
+                literal = sub_args[1]
+    assert literal is not None, "gross_margin carries no tier1 term"
+    assert literal == mode
 
 
 def test_promoted_rate_variables_resolve_in_drivers() -> None:
@@ -289,9 +394,25 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
 
 
 def test_builtin_corporate_template_unchanged() -> None:
+    # Profit-chain pack (2026-11-20): the corporate template is no
+    # longer empty — it now carries the profit chain (4 margin
+    # variables + 4 formulas, same as the automotive chain). The
+    # assumption data is still empty (the automotive fitment lookup /
+    # supply-share data is auto-specific); what this test still pins
+    # is that the corporate template ships NOTHING else.
     template = builtin_template("corporate")
-    assert template.variables == []
-    assert template.formulas == []
+    assert [v.id for v in template.variables] == [
+        "margin_base",
+        "margin_longrun",
+        "margin_reversion",
+        "margin_adoption",
+    ]
+    assert [f.output for f in template.formulas] == [
+        "disruptor_adoption",
+        "revenue",
+        "net_margin",
+        "profit",
+    ]
     assert template.assumption_data == {}
 
 

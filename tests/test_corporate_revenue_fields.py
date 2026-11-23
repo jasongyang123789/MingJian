@@ -282,3 +282,65 @@ def test_expected_shortfall_accepts_revenue_ensemble(monkeypatch, tmp_path) -> N
         assert result["metric"] == "revenue"
         assert result["baseline"]["value"] == _expected_shortfall(baseline, 0.1)
         assert result["baseline"]["n"] == 10
+
+
+# ------------------------------------------------------------------ profit chain
+def test_corporate_builtin_template_carries_profit_chain(monkeypatch, tmp_path) -> None:
+    """Profit-chain pack (2026-11-20): the corporate template was empty
+    (0 variables / 0 formulas); it now carries the same profit chain
+    as the automotive template (4 margin variables + 4 formulas).
+    A generic run keeps revenue at its actor default and moves profit
+    as revenue x net_margin — it does NOT stay at the 24.0 default
+    (the sampled margin_base is triangular, not fixed at its 0.20
+    mode), so the exact chain path is asserted from the run's sampled
+    values instead of the default.
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        preset = client.get("/variable-templates/builtin:corporate")
+        assert preset.status_code == 200
+        body = preset.json()
+        assert [v["id"] for v in body["variables"]] == [
+            "margin_base",
+            "margin_longrun",
+            "margin_reversion",
+            "margin_adoption",
+        ]
+        assert [f["output"] for f in body["formulas"]] == [
+            "disruptor_adoption",
+            "revenue",
+            "net_margin",
+            "profit",
+        ]
+        created = client.post(
+            "/simulation/runs",
+            json=simulation_payload(
+                variable_template_id="builtin:corporate",
+                actor_template="ai_model_provider",
+            ),
+        )
+        assert created.status_code == 201, created.text
+        run_id = created.json()["id"]
+        snapshots = _snapshots(client, run_id)
+        assert len(snapshots) == 4  # tick 0 + 3 ticks
+        assert snapshots[0]["state"]["revenue"] == 120.0
+        assert snapshots[0]["state"]["profit"] == 24.0
+        det = client.get(f"/runs/{run_id}/determinism")
+        assert det.status_code == 200, det.text
+        sampled = det.json()["sampled_values"]
+        base = sampled["margin_base"]
+        adoption = sampled["margin_adoption"]
+        for tick in (1, 2, 3):
+            assert snapshots[tick]["state"]["revenue"] == 120.0
+            # Drivers round EACH output to 4 decimals, so profit reads
+            # the ROUNDED margin, not the full-precision value.
+            margin = round(
+                min(
+                    0.25,
+                    max(0.02, base + 0.25 * (0.20 - base) * (tick - 1) + adoption * 0.0),
+                ),
+                4,
+            )
+            assert snapshots[tick]["state"]["profit"] == round(
+                120.0 * margin, 4
+            ), tick

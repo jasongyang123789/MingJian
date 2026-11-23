@@ -102,6 +102,80 @@ Formula graph (evaluation order matters — drivers chain within a tick):
   stocks -> satisfaction (20% toward the delivery-performance
   target) -> the overall-conversion identity. See the driver
   descriptions at the end of ``TEMPLATE_FORMULAS``.
+
+- Profit transmission chain (R&D margin promotion, 2026-11-20;
+  replaces the profit-chain pack's single-regression net-margin leg
+  with the R&D expense-path decomposition, design spec
+  ``rd-expense-path-2026-11-20/EVIDENCE.md`` §2):
+  ``profit(t) = revenue(t) x net_margin(t)`` with
+  ``net_margin(t) = gross_margin(t) - rd_intensity(t) -
+  other_share``, clamped to [0.02, 0.25], where
+  ``gross_margin(t) = gross_base + gross_reversion x
+  (gross_longrun - gross_base) x (tick-1)`` and
+  ``rd_intensity(t) = rd_base + rd_reversion x
+  (rd_longrun - rd_base) x (tick-1) + rd_adoption x
+  disruptor_adoption``. Each leg reverts LINEARLY: each tick closes
+  25% of the ORIGINAL gap, so tick 4 closes 75% and leaves 25% —
+  NOT geometric (TRACK-B §2's "(0.75)^3 ≈ 42%" was a documentation
+  error; the implementation was always linear — see the CORRECTION
+  appended to TRACK-B.md). The clamp's upper rail is 0.25, not
+  Track B's 0.15: the template's own implied net margin is 0.20
+  (revenue 100 / profit 20 state defaults), so a 0.15 rail would
+  clip generic runs to 0.15 and break the "generic run unaffected"
+  convention; the Desay cases never touch either rail (mode-path
+  net margins 2015: 0.083–0.098, 2020: 0.076–0.082; the sampled
+  rd_adoption moves either by at most ±0.015). Template defaults
+  (gross 0.30 / rd 0.05 / other 0.05) make a generic run's net
+  margin sit at 0.20 with zero adoption, so generic runs keep
+  profit at its default.
+  SCOPE (M3, read before using the chain on a new case): the chain
+  assumes each leg reverts MONOTONICALLY and LINEARLY from its
+  decision-year level toward its pre-decision mean. It fits cases
+  whose starting margin is near its settled level with a flat or
+  gently falling realized path (2020-type). KNOWN MISFIT:
+  decision-year margin SPIKE cases — decision-year net margin more
+  than 2pp above the prior-two-year mean (2015-type: +3.79pp) —
+  where the yr3 net margin is systematically HIGH (realized path
+  rises first, then cliffs); judge such cases by the profit P50,
+  never by a single replay. The R&D expense line is now its OWN
+  decomposition leg (rd_intensity above): the profit-chain pack's
+  "reduced-form expression of cost behavior" (TRACK-B §8.7) is
+  SUPERSEDED for the automotive template — the R&D path is built,
+  with decision-time gross / R&D / other evidence per case; the
+  corporate template keeps the single-regression leg (no
+  decision-time gross/R&D decomposition evidence exists for
+  Huawei/Nokia in the research files).
+  MERGE-ORDER NOTE (why the template carries a ``revenue``
+  passthrough driver): template formulas always evaluate BEFORE
+  case-appended formulas, so a template ``profit`` driver would
+  otherwise read PRE-tick revenue (one-tick lag vs Track B's
+  same-tick form). The passthrough is an identity driver on the
+  pack's ``revenue`` state field (self-reference = current state);
+  a case revenue driver replaces it IN PLACE at merge time, so it
+  evaluates BEFORE ``gross_margin`` / ``rd_intensity`` /
+  ``net_margin`` / ``profit`` and profit reads same-tick revenue —
+  exactly the Track B semantics. The passthrough also makes
+  ``revenue`` a known id for template validation (the formula
+  language's known ids are sampled variables + earlier driver
+  outputs; ``revenue`` is a state field, not a template variable).
+  At runtime it is exactly identity (4-decimal rounding only: the
+  state value it reads is already 4-decimal).
+  TIER-1 TRANSMISSION (margin-profit transmission, 2026-11-20;
+  cures the A3 structural gap): the widened tier1_gross_margin band
+  never reached profit because no formula read it. The gross_margin
+  driver now adds tier1_pass_through x (tier1_gross_margin(t) -
+  0.25), where 0.25 is the tier1 distribution's mode (calibration
+  DESAY-EVIDENCE band (0.20, 0.25, 0.29); a test pins the literal to
+  the mode). tier1_pass_through is a fixed template variable, 0.5 —
+  the insufficient-reason midpoint between 0 and 1, a LABELED
+  SIMULATION (no decision-time evidence exists for the pass-through
+  coefficient), replaceable; kappa=0 reproduces the R&D promotion
+  exactly and kappa=1 is the full pass-through bound (both reported
+  in margin-profit-transmission-2026-11-20/REPORT.md §4.4). The term
+  sits on the GROSS leg (tier1 is a gross margin) so the identity
+  net = gross - rd - other carries it to profit; the corporate
+  template keeps the B single-regression leg (no tier1 evidence for
+  Huawei/Nokia).
 """
 
 from __future__ import annotations
@@ -212,9 +286,9 @@ TEMPLATE_VARIABLES: list[dict] = [
     {
         "id": "tier1_gross_margin",
         "unit": "rate",
-        "distribution": {"type": "triangular", "min": 0.188, "mode": 0.191, "max": 0.20},
-        "evidence_ref": "simulated:industry-average (synthesis B2: Desay SV overall margin trajectory 20%/19.9%/19.1% 2023-25; Ho-authorized simulation 2026-11-16, replace with internal margin)",
-        "description": "Tier-1 gross margin. Simulated from the listed-benchmark trajectory; Ho's own margin is an internal parameter.",
+        "distribution": {"type": "triangular", "min": 0.20, "mode": 0.25, "max": 0.29},
+        "evidence_ref": "desay-evidence:calibration-simulated-generation-2026-11-20 (audited overall gross margin 2015-2020: 26.96/26.95/25.78/24.0/22.75/23.39%; mean 24.97%, sd 1.84pp; moment-matched triangular mean 24.67%, sd 1.84pp, CV 0.075 vs observed 0.074; replaces the 2023-25 post-decision window — hindsight-leak fix)",
+        "description": "Tier-1 gross margin. Moment-matched to the audited 2015-2020 decision-time margin trajectory; Ho's own margin is an internal parameter.",
     },
     # --- Market structure (V) ---
     {
@@ -614,6 +688,103 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "fixed", "value": 0.75},
         "evidence_ref": "assumption:pending-calibration (no public Tier-1 delivery-satisfaction series exists; 0.75 is the neutral level of the feedback loop, not a measured score)",
         "description": "Delivery satisfaction score at run start (0-1). Also the feedback-loop input: the tick-1 RFQ rates read this value, so an initial_state override of satisfaction moves the funnel from tick 1.",
+    },
+    # --- Profit transmission chain, R&D decomposition (rd-margin
+    # promotion, 2026-11-20) ---
+    # The profit-chain pack's single-regression net-margin leg
+    # (margin_base / margin_longrun / margin_reversion /
+    # margin_adoption) is REPLACED here by the R&D expense-path
+    # decomposition (rd-expense-path-2026-11-20/EVIDENCE.md §2): the
+    # net margin is an accounting identity over three legs — gross
+    # margin, R&D intensity, and a fixed residual ("other") — each
+    # leg mean-reverting linearly toward its own long-run level, and
+    # the adoption coupling now sits on the R&D leg (rd_adoption)
+    # instead of on the net margin. The eight variables are the
+    # chain's parameters; the margin itself is the template's
+    # `net_margin` tick-driver output (intermediate, not a state
+    # field) and profit is the pack's `profit` STATE field, reused.
+    # A case attaches the chain by binding the eight values to its
+    # decision-time figures (Desay 2015: gross 0.2696/0.255 WEAK, rd
+    # 0.076/0.076 WEAK, other 0.0958; Desay 2020: gross 0.2339/0.2307,
+    # rd 0.1202/0.1117, other 0.0375; reversions 0.25). The template
+    # defaults below make a generic run's net margin sit at the
+    # template's own implied net margin (0.30 - 0.05 - 0.05 = 0.20),
+    # so generic runs keep profit at its default. No dead margin
+    # variables are left behind: the four B-pack margin ids are gone
+    # from this template (the corporate template keeps them — no
+    # decision-time gross/R&D decomposition evidence exists for
+    # Huawei/Nokia in the research files).
+    {
+        "id": "gross_base",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.30},
+        "evidence_ref": "assumption:pending-calibration — template default 0.30 IS a placeholder gross margin (template default, not evidence: the template's own implied net margin is gross 0.30 - rd 0.05 - other 0.05 = 0.20, matching profit 20.0 / revenue 100.0 state defaults); a case binds its decision-year gross margin (Desay 2015: 0.2696; Desay 2020: 0.2339)",
+        "description": "Starting gross margin at the decision year: the level the gross leg mean-reverts FROM (template default 0.30, a placeholder — bind the case's decision-year gross margin).",
+    },
+    {
+        "id": "gross_longrun",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.30},
+        "evidence_ref": "assumption:pending-calibration — template default 0.30 = no gross reversion in a generic run (equals gross_base); a case binds its long-run gross margin (Desay 2015: 0.255 WEAK, band midpoint; Desay 2020: 0.2307, two-year mean). LABELED ASSUMPTION: the anchor definition is the chain's, the value is case-bound.",
+        "description": "Long-run gross margin the gross leg mean-reverts TOWARD (template default 0.30 = no reversion in a generic run, since it equals gross_base).",
+    },
+    {
+        "id": "gross_reversion",
+        "unit": "per-tick",
+        "distribution": {"type": "fixed", "value": 0.25},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — a quarter of the gross-margin gap to the long-run level closes per tick (round number, fixed before the run; carried over from the B-pack margin_reversion — the R&D harness reuses the same 0.25/tick for both legs, no independent evidence)",
+        "description": "Gross-margin mean-reversion speed: each tick closes 25% of the ORIGINAL gap to gross_longrun (LINEAR reversion — tick 4 closes 75%, leaving 25% — not geometric).",
+    },
+    {
+        "id": "rd_base",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "assumption:pending-calibration — template default 0.05 IS a placeholder R&D intensity (template default, not evidence; with gross 0.30 and other 0.05 it yields the template's implied net margin 0.20); a case binds its decision-year R&D intensity (Desay 2015: 0.076 WEAK, 2014 anchor; Desay 2020: 0.1202)",
+        "description": "Starting R&D intensity (R&D expense / revenue) at the decision year: the level the R&D leg mean-reverts FROM (template default 0.05, a placeholder — bind the case's decision-year R&D intensity).",
+    },
+    {
+        "id": "rd_longrun",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "assumption:pending-calibration — template default 0.05 = no R&D reversion in a generic run (equals rd_base); a case binds its long-run R&D intensity (Desay 2015: 0.076 WEAK, same as base — single-point anchor, no reversion drift; Desay 2020: 0.1117, two-year mean). LABELED ASSUMPTION: the anchor definition is the chain's, the value is case-bound.",
+        "description": "Long-run R&D intensity the R&D leg mean-reverts TOWARD (template default 0.05 = no reversion in a generic run, since it equals rd_base).",
+    },
+    {
+        "id": "rd_reversion",
+        "unit": "per-tick",
+        "distribution": {"type": "fixed", "value": 0.25},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — a quarter of the R&D-intensity gap to the long-run level closes per tick (round number, fixed before the run; carried over from the B-pack margin_reversion — the R&D harness reuses the same 0.25/tick for both legs, no independent evidence)",
+        "description": "R&D-intensity mean-reversion speed: each tick closes 25% of the ORIGINAL gap to rd_longrun (LINEAR reversion — tick 4 closes 75%, leaving 25% — not geometric).",
+    },
+    {
+        "id": "rd_adoption",
+        "unit": "margin points per unit adoption",
+        "distribution": {"type": "triangular", "min": -0.02, "mode": 0.0, "max": 0.02},
+        "evidence_ref": "estimate: LABELED ASSUMPTION — net effect of adoption on R&D intensity (scale/learning vs price pressure passes through R&D spend); mode 0 (no signed decision-time evidence; same width as the B-pack margin_adoption it replaces, so the adoption uncertainty is carried once, not twice)",
+        "description": "Net effect of disruptor adoption on R&D intensity per unit of adoption (mode 0: no signed decision-time evidence). The only sampled variable of the eight (the other seven are fixed).",
+    },
+    {
+        "id": "other_share",
+        "unit": "rate",
+        "distribution": {"type": "fixed", "value": 0.05},
+        "evidence_ref": "assumption:pending-calibration — template default 0.05 IS a placeholder residual share (template default, not evidence); a case binds its t=1 residual gross - rd - net (Desay 2015: 0.0958; Desay 2020: 0.0375). The residual absorbs taxes, selling/general expenses, investment income and non-recurring items — it is FIXED by construction, not measured; see the R&D report §7.1 for its time-variation limits.",
+        "description": "Fixed residual share (gross margin - R&D intensity - net margin): everything the two modeled legs do not explain, frozen at its t=1 value (template default 0.05, a placeholder).",
+    },
+    # --- Tier-1 margin -> profit transmission (margin-profit
+    # transmission, 2026-11-20; cures the A3 structural gap: the
+    # widened tier1_gross_margin band never reached profit because no
+    # formula read it) ---
+    # The pass-through coefficient is the transmission's only new
+    # parameter. It is a FIXED variable (not sampled: it consumes no
+    # random draws and cannot shift the sampling stream), and a case
+    # may bind it when it has evidence. See the gross_margin driver
+    # for the formula.
+    {
+        "id": "tier1_pass_through",
+        "unit": "fraction of Tier-1 margin deviation",
+        "distribution": {"type": "fixed", "value": 0.5},
+        "evidence_ref": "simulated: LABELED ASSUMPTION — no decision-time evidence exists for the Tier-1-to-company margin pass-through (research files searched 2026-11-20; the audit found no series on this relationship). 0.5 is the insufficient-reason midpoint between 0 (no pass-through) and 1 (full pass-through), NOT an estimate. Ho-authorized simulation (2026-11-16), replaceable; bounds kappa=0/1 in margin-profit-transmission-2026-11-20/REPORT.md §4.4.",
+        "description": "Share of a Tier-1 gross-margin deviation from its mode that flows into the company's gross margin each tick (fixed 0.5, labeled simulation — no decision-time evidence; see the gross_margin driver).",
     },
     # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
     # (Sprint 2 design pin) and this template held exactly 30, so the
@@ -1468,6 +1639,143 @@ TEMPLATE_FORMULAS: list[dict] = [
             ],
         },
         "description": "Tick driver (Track 4): overall funnel conversion = cumulative deliveries / cumulative prospects (denominator guarded by max(..., 1)). An identity, not a parameter — it is the funnel's end-to-end yield, recomputed every tick from the two cumulative stocks.",
+    },
+    # --- Profit transmission chain, R&D decomposition (rd-margin
+    # promotion, 2026-11-20) ---
+    # The B-pack single-regression net-margin leg is REPLACED by the
+    # R&D expense-path decomposition (EVIDENCE.md §2): net_margin =
+    # gross_margin - rd_intensity - other_share, each leg reverting
+    # linearly toward its own long-run level, the adoption coupling
+    # on the R&D leg (rd_adoption). Order inside this block is
+    # load-bearing: disruptor_adoption first (rd_intensity reads it;
+    # a case adoption curve replaces it in place), then the revenue
+    # passthrough (a case revenue driver replaces it in place, so it
+    # evaluates BEFORE gross_margin / rd_intensity / net_margin and
+    # profit), then gross_margin, rd_intensity, net_margin, then
+    # profit — profit reads SAME-TICK revenue, exactly the Track B
+    # semantics. The formula language has no `clamp` operator (eight
+    # ops only: add/subtract/multiply/divide/min/max/pow/logistic),
+    # so the clamp is min(max(...)) nesting, as in the Track B
+    # harness.
+    {
+        "output": "disruptor_adoption",
+        "tick_driver": True,
+        "expression": 0.0,
+        "description": "Tick driver (profit-chain pack): default zero disruptor-adoption intermediate (a bare-number expression is a legal formula). A case with an adoption curve replaces this driver per-output (NEV drift driver precedent); without it, Huawei/generic runs would leave rd_intensity referencing an undefined quantity. Mode 0: no signed decision-time evidence for adoption moving the R&D leg.",
+    },
+    {
+        "output": "revenue",
+        "tick_driver": True,
+        "expression": {"ref": "revenue"},
+        "description": "Tick driver (profit-chain pack): identity passthrough on the pack's revenue state field (a driver self-reference reads the field's current state value). MERGE ANCHOR, not a model: (1) it makes `revenue` a known id for template validation — the formula language's known ids are sampled variables + earlier driver outputs, and `revenue` is a state field, not a template variable — so the profit driver below can reference it; (2) a case revenue driver replaces this driver IN PLACE at merge time, so the case revenue evaluates BEFORE net_margin/profit and profit reads same-tick revenue (Track B semantics) instead of pre-tick revenue (one-tick lag). At runtime it is exactly identity (4-decimal rounding only: the state value it reads is already 4-decimal).",
+    },
+    {
+        "output": "gross_margin",
+        "tick_driver": True,
+        "expression": {
+            "op": "add",
+            "args": [
+                {
+                    "op": "add",
+                    "args": [
+                        {"ref": "gross_base"},
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {
+                                    "op": "multiply",
+                                    "args": [
+                                        {"ref": "gross_reversion"},
+                                        {
+                                            "op": "subtract",
+                                            "args": [{"ref": "gross_longrun"}, {"ref": "gross_base"}],
+                                        },
+                                    ],
+                                },
+                                {"op": "subtract", "args": [{"ref": "tick"}, 1]},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "op": "multiply",
+                    "args": [
+                        {"ref": "tier1_pass_through"},
+                        {"op": "subtract", "args": [{"ref": "tier1_gross_margin"}, 0.25]},
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (R&D decomposition + Tier-1 transmission, 2026-11-20): gross margin, the first leg — mean-reverts LINEARLY toward gross_longrun at gross_reversion per tick (each tick closes 25% of the ORIGINAL gap; tick 4 closes 75%, leaving 25%), PLUS the Tier-1 transmission term tier1_pass_through x (tier1_gross_margin(t) - 0.25). The 0.25 literal is the tier1 distribution's MODE (calibration DESAY-EVIDENCE band (0.20, 0.25, 0.29)); a test pins the literal to the mode so the two cannot drift apart silently. tier1_gross_margin(t) is read same-tick from its own squeeze driver (evaluated earlier in the tick order), so at the baseline (material = price = 1) it is the sampled value, and in a material != price case the squeeze movement is carried into gross margin tick by tick. The term is why the A3-widened tier1 band now reaches profit: net_margin = gross - rd - other, profit = revenue x net_margin. Intermediate, not a state field. Feeds net_margin; the case binds gross_base/gross_longrun only (tier1_pass_through stays at its template default 0.5 unless a case has evidence).",
+    },
+    {
+        "output": "rd_intensity",
+        "tick_driver": True,
+        "expression": {
+            "op": "add",
+            "args": [
+                {
+                    "op": "add",
+                    "args": [
+                        {"ref": "rd_base"},
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {
+                                    "op": "multiply",
+                                    "args": [
+                                        {"ref": "rd_reversion"},
+                                        {
+                                            "op": "subtract",
+                                            "args": [{"ref": "rd_longrun"}, {"ref": "rd_base"}],
+                                        },
+                                    ],
+                                },
+                                {"op": "subtract", "args": [{"ref": "tick"}, 1]},
+                            ],
+                        },
+                    ],
+                },
+                {"op": "multiply", "args": [{"ref": "rd_adoption"}, {"ref": "disruptor_adoption"}]},
+            ],
+        },
+        "description": "Tick driver (R&D decomposition): R&D intensity (R&D expense / revenue), the second leg — mean-reverts LINEARLY toward rd_longrun at rd_reversion per tick, plus rd_adoption x adoption (mode 0: no signed decision-time evidence). Intermediate, not a state field. Feeds net_margin; the case binds rd_base/rd_longrun only.",
+    },
+    {
+        "output": "net_margin",
+        "tick_driver": True,
+        "expression": {
+            "op": "min",
+            "args": [
+                0.25,
+                {
+                    "op": "max",
+                    "args": [
+                        0.02,
+                        {
+                            "op": "subtract",
+                            "args": [
+                                {"op": "subtract", "args": [{"ref": "gross_margin"}, {"ref": "rd_intensity"}]},
+                                {"ref": "other_share"},
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (R&D decomposition): net margin, the decomposition identity — gross margin minus R&D intensity minus the fixed residual other_share, clamped to [0.02, 0.25]. The 0.25 upper rail (not Track B's 0.15) is the pack-level rail: the template's own implied net margin is 0.20, so a 0.15 rail would clip generic runs. No net-margin variable is sampled anymore — the margin is computed, not drawn. Intermediate, not a state field. SCOPE: assumes monotone linear reversion of each leg from the decision-year level toward its pre-decision mean; known misfit on decision-year margin-spike cases (>2pp above the prior-two-year mean, 2015-type: yr3 margin systematically high — judge by P50, not a single replay).",
+    },
+    {
+        "output": "profit",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {"op": "multiply", "args": [{"ref": "revenue"}, {"ref": "net_margin"}]},
+            ],
+        },
+        "description": "Tick driver (profit-chain pack): profit = same-tick revenue x net_margin — inherits the NEV term, the backlog term and revenue growth in full; replaces the decoupled profit_growth driver. Evaluates AFTER the (case) revenue driver via the revenue-passthrough merge anchor, so it reads same-tick revenue exactly as the Track B harness did.",
     },
 ]
 

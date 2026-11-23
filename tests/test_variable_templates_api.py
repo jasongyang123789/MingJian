@@ -3,9 +3,11 @@
 Covers the standalone validation endpoint, template CRUD (with built-in
 presets read-only), the run-creation binding gate (refusal leaves no run
 behind), audit retrieval, preset equivalence (a run with the built-in
-corporate preset produces the same snapshots as a run without one), custom
-template state defaults, and branch inheritance. Same scratch-SQLite +
-in-memory-bus + empty-LLM-keys pattern as the MECE tests.
+corporate preset produces the same snapshots as a run without one,
+except profit, which the profit-chain pack moves as revenue x
+net_margin), custom template state defaults, and branch inheritance.
+Same scratch-SQLite + in-memory-bus + empty-LLM-keys pattern as the
+MECE tests.
 """
 
 from __future__ import annotations
@@ -253,10 +255,26 @@ def test_run_with_builtin_preset_stores_snapshot_for_audit(monkeypatch, tmp_path
         assert body["run_id"] == run_id
         assert body["template"]["id"] == "builtin:corporate"
         assert body["template"]["is_builtin"] is True
-        # The built-in preset carries no variables and no inline set was
-        # attached, so there are no bindings and no validation result.
-        assert body["bindings"] is None
-        assert body["validation"] is None
+        # Profit-chain pack (2026-11-20): the corporate preset now
+        # carries 4 variables + 4 formulas, so a template-only run
+        # stores bindings (the template set itself) and a passing
+        # validation result. The old "no bindings" expectation was the
+        # EMPTY preset, not a property of the audit trail.
+        assert body["bindings"] is not None
+        assert [v["id"] for v in body["bindings"]["variables"]] == [
+            "margin_base",
+            "margin_longrun",
+            "margin_reversion",
+            "margin_adoption",
+        ]
+        assert [f["output"] for f in body["bindings"]["formulas"]] == [
+            "disruptor_adoption",
+            "revenue",
+            "net_margin",
+            "profit",
+        ]
+        assert body["validation"] is not None
+        assert body["validation"]["is_valid"] is True
 
 
 def test_run_with_inline_bindings_and_template_merge(monkeypatch, tmp_path: Path) -> None:
@@ -416,6 +434,16 @@ def _snapshots(client: TestClient, run_id: str) -> list[dict]:
 
 
 def test_preset_equivalence_snapshots_identical(monkeypatch, tmp_path: Path) -> None:
+    """Preset equivalence, profit-chain exception (2026-11-20).
+
+    The built-in corporate preset used to add no movement at all, so a
+    preset run's snapshots were identical to a plain run's. The
+    profit-chain pack gives the preset a profit driver, so the two
+    runs now differ in EXACTLY one field — profit — and profit follows
+    revenue x net_margin exactly. Every other field is still
+    identical, and revenue stays at its default (the template's
+    revenue driver is an identity passthrough).
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         plain = client.post("/simulation/runs", json=simulation_payload())
@@ -429,7 +457,36 @@ def test_preset_equivalence_snapshots_identical(monkeypatch, tmp_path: Path) -> 
         plain_snapshots = _snapshots(client, plain.json()["id"])
         preset_snapshots = _snapshots(client, preset.json()["id"])
         assert len(plain_snapshots) == 3  # tick 0 + 2 ticks
-        assert plain_snapshots == preset_snapshots
+        for plain_snap, preset_snap in zip(plain_snapshots, preset_snapshots):
+            assert plain_snap["tick"] == preset_snap["tick"]
+            for key, value in plain_snap["state"].items():
+                if key == "profit":
+                    continue
+                assert preset_snap["state"][key] == value, key
+            assert preset_snap["state"]["revenue"] == 100.0
+        # Profit follows the chain exactly, from the run's sampled
+        # margin values (determinism endpoint): tick 0 is the untouched
+        # default; later ticks revert linearly toward 0.20 with zero
+        # adoption in a generic run.
+        det = client.get(f"/runs/{preset.json()['id']}/determinism")
+        assert det.status_code == 200, det.text
+        sampled = det.json()["sampled_values"]
+        base = sampled["margin_base"]
+        adoption = sampled["margin_adoption"]
+        assert preset_snapshots[0]["state"]["profit"] == 20.0
+        for tick in (1, 2):
+            # Drivers round EACH output to 4 decimals, so profit reads
+            # the ROUNDED margin, not the full-precision value.
+            margin = round(
+                min(
+                    0.25,
+                    max(0.02, base + 0.25 * (0.20 - base) * (tick - 1) + adoption * 0.0),
+                ),
+                4,
+            )
+            assert preset_snapshots[tick]["state"]["profit"] == round(
+                100.0 * margin, 4
+            ), tick
 
 
 def test_custom_template_state_defaults_apply_at_tick_zero(monkeypatch, tmp_path: Path) -> None:
