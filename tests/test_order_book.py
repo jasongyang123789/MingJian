@@ -733,7 +733,12 @@ def test_order_book_2015_mode_falling_growth(monkeypatch, tmp_path: Path) -> Non
     yields falling per-tick growth on the scored horizon (ticks 1–4):
     the pool converts within the year and lapses with adoption, so the
     term falls from tick 1 instead of humping. Modes only — no
-    parameter was tuned to the 2015 actuals (hindsight firewall)."""
+    parameter was tuned to the 2015 actuals (hindsight firewall).
+
+    Track C: explicitly opted out — the pin is an exact tick-by-tick
+    replication, and the default shock would multiply the revenue
+    factors away from it.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         case = _backlog_case_set(
@@ -752,7 +757,7 @@ def test_order_book_2015_mode_falling_growth(monkeypatch, tmp_path: Path) -> Non
             nev_ceiling=0.30,
             nev_penetration0=0.0135,
         )
-        states = _trajectory(client, _create_run(client, case, tick_count=4)["id"])
+        states = _trajectory(client, _create_run(client, case, tick_count=4, downside=None)["id"])
         revenue = {t: states[t]["revenue"] for t in states}
         backlog = {t: states[t]["order_backlog"] for t in states}
         intake = {t: states[t]["order_intake"] for t in states}
@@ -840,7 +845,13 @@ def test_order_intake_rate_is_inert(monkeypatch, tmp_path: Path) -> None:
     (sampled-but-unread implies an uncertainty propagation that does
     not happen) and changes no trajectory — only the RNG stream
     position for later random draws in real runs, which the re-run
-    measures at the P50 level."""
+    measures at the P50 level.
+
+    Track C: explicitly opted out — the two runs differ in RNG stream
+    position (fixed vs sampled rate), and the default shock's draws
+    depend on the stream, so the trajectories would diverge for a
+    reason unrelated to the rate.
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         base = _backlog_case_set(0.40)
@@ -851,8 +862,8 @@ def test_order_intake_rate_is_inert(monkeypatch, tmp_path: Path) -> None:
             else v
             for v in triangular["variables"]
         ]
-        states_fixed = _trajectory(client, _create_run(client, base, tick_count=4)["id"])
-        states_tri = _trajectory(client, _create_run(client, triangular, tick_count=4)["id"])
+        states_fixed = _trajectory(client, _create_run(client, base, tick_count=4, downside=None)["id"])
+        states_tri = _trajectory(client, _create_run(client, triangular, tick_count=4, downside=None)["id"])
         for tick in (0, 1, 2, 3, 4):
             assert states_fixed[tick]["revenue"] == pytest.approx(
                 states_tri[tick]["revenue"], rel=1e-9
@@ -872,7 +883,12 @@ def test_order_book_generic_run_unaffected(monkeypatch, tmp_path: Path) -> None:
     """A generic automotive run (built-in template, no backlog
     drivers attached) leaves the book empty and revenue at its pack
     default: the new state fields and template variables are dormant
-    unless a case attaches the mechanism."""
+    unless a case attaches the mechanism.
+
+    Track C: explicitly opted out (``downside: null``) — the default
+    shock would move revenue off its pack default, which is not what
+    this test guards (it guards the order-book mechanism's dormancy).
+    """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         payload = {
@@ -886,6 +902,7 @@ def test_order_book_generic_run_unaffected(monkeypatch, tmp_path: Path) -> None:
             "decision_time": "2020-12-31T00:00:00Z",
             "variable_template_id": "builtin:automotive",
             "variable_set": {"name": "generic", "variables": [], "formulas": []},
+            "downside": None,
         }
         created = client.post("/simulation/runs", json=payload)
         assert created.status_code == 201, created.text
