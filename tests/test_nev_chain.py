@@ -86,7 +86,9 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
     # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas,
     # 33 -> 40 tick drivers — C1 ADAS chain (+6/+1/+1) plus R&D margin
-    # promotion (+8/+6/+6) plus transmission (+1/+0/+0). The R&D +8
+    # promotion (+8/+6/+6) plus transmission (+1/+0/+0). Track A
+    # rebase (2026-11-23): +1 formula / +1 tick driver — the
+    # order-intake decay merge anchor (43 -> 44, 40 -> 41). The R&D +8
     # variables (gross_base, gross_longrun, gross_reversion, rd_base,
     # rd_longrun, rd_reversion, rd_adoption, other_share) replace the
     # B-pack +4 margin variables, and the +6 formulas
@@ -95,10 +97,12 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # — the passthrough is the extra formula beyond the original +3
     # spec: see the template docstring's merge-order note. All six
     # chain drivers are drivers; the transmission is a term inside the
-    # gross_margin driver, not a new formula.
+    # gross_margin driver, not a new formula. Track A rebase
+    # (2026-11-23): the order-intake decay merge anchor is a seventh
+    # chain driver (43 -> 44 formulas, 40 -> 41 tick drivers).
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 43
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 40
+    assert len(TEMPLATE_FORMULAS) == 44
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 41
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -113,10 +117,10 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas
+    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
     # (see the count comment above).
     assert len(template.variables) == 76
-    assert len(template.formulas) == 43
+    assert len(template.formulas) == 44
 
 
 def test_nev_chain_planning_path_values() -> None:

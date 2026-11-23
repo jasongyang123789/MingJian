@@ -406,12 +406,12 @@ def _proportional_intake_driver() -> dict:
 
 def test_order_book_variables_match_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas
-    # (C1 +6/+1, R&D +8/+6, transmission +1/+0; the
-    # revenue-passthrough merge anchor is one of the six chain
-    # formulas; see the template docstring).
+    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
+    # (C1 +6/+1, R&D +8/+6, transmission +1/+0, Track A intake
+    # anchor +0/+1; the revenue-passthrough merge anchor is one of
+    # the seven chain formulas; see the template docstring).
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 43
+    assert len(TEMPLATE_FORMULAS) == 44
     expected = {
         "order_backlog": ("fixed", 0.0),
         "order_intake": ("fixed", 0.0),
@@ -430,12 +430,12 @@ def test_order_book_variables_match_spec() -> None:
         assert raw["unit"], var_id
         assert raw["evidence_ref"], var_id
     template = builtin_template("automotive")
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas
-    # (C1 +6/+1, R&D +8/+6, transmission +1/+0; the
-    # revenue-passthrough merge anchor is one of the six chain
-    # formulas; see the template docstring).
+    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
+    # (C1 +6/+1, R&D +8/+6, transmission +1/+0, Track A intake
+    # anchor +0/+1; the revenue-passthrough merge anchor is one of
+    # the seven chain formulas; see the template docstring).
     assert len(template.variables) == 76
-    assert len(template.formulas) == 43
+    assert len(template.formulas) == 44
     fields = {f.name: float(f.default) for f in domain_pack_registry.get("automotive").state_fields}
     assert len(fields) == 51
     assert fields["order_backlog"] == 0.0

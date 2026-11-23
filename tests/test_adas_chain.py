@@ -101,14 +101,16 @@ def test_adas_chain_variables_match_spec() -> None:
     by_id = {raw["id"]: raw for raw in TEMPLATE_VARIABLES}
     # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas,
     # 33 -> 40 tick drivers — C1 ADAS chain (+6/+1/+1) plus R&D margin
-    # promotion (+8/+6/+6) plus transmission (+1/+0/+0). (This test
+    # promotion (+8/+6/+6) plus transmission (+1/+0/+0). Track A
+    # rebase (2026-11-23): +1 formula / +1 tick driver — the
+    # order-intake decay merge anchor (43 -> 44, 40 -> 41). (This test
     # was written at the C1 merge, when the counts were 67/37/34;
     # the pin below was missed in the merge batch and caught by the
     # hub full suite on cb9ffd7 — deliberate update, same as the
     # registry pin.)
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 43
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 40
+    assert len(TEMPLATE_FORMULAS) == 44
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 41
     expected = {
         "adas_ceiling": (0.50, 0.65, 0.80),
         "adas_rate": (0.50, 0.70, 1.00),
@@ -135,7 +137,7 @@ def test_adas_chain_variables_match_spec() -> None:
     template = builtin_template("automotive")
     # Merge (2026-11-23): see the count comment above.
     assert len(template.variables) == 76
-    assert len(template.formulas) == 43
+    assert len(template.formulas) == 44
 
 
 def test_adas_chain_planning_path_values() -> None:

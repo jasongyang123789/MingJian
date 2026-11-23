@@ -1771,8 +1771,12 @@ TEMPLATE_FORMULAS: list[dict] = [
     # gross_margin - rd_intensity - other_share, each leg reverting
     # linearly toward its own long-run level, the adoption coupling
     # on the R&D leg (rd_adoption). Order inside this block is
-    # load-bearing: disruptor_adoption first (rd_intensity reads it;
-    # a case adoption curve replaces it in place), then the revenue
+    # load-bearing: the order-intake decay driver first (Track A: the
+    # revenue term converts the pool = pre-tick book + this tick's
+    # decayed intake, so the decay must precede the revenue driver; a
+    # case intake driver replaces it in place), then disruptor_adoption
+    # (rd_intensity reads it; a case adoption curve replaces it in
+    # place), then the revenue
     # passthrough (a case revenue driver replaces it in place, so it
     # evaluates BEFORE gross_margin / rd_intensity / net_margin and
     # profit), then gross_margin, rd_intensity, net_margin, then
@@ -1781,6 +1785,25 @@ TEMPLATE_FORMULAS: list[dict] = [
     # ops only: add/subtract/multiply/divide/min/max/pow/logistic),
     # so the clamp is min(max(...)) nesting, as in the Track B
     # harness.
+    # Track A (2026-11-20, order-book restatement): the intake-decay
+    # driver sits BEFORE the revenue passthrough, so the load-bearing
+    # order (decay -> revenue -> backlog update) survives the merge:
+    # a case intake driver replaces this driver in place; without this
+    # anchor the case intake driver appends AFTER the revenue anchor
+    # and the revenue term reads the undecayed flow. Generic runs are
+    # unaffected (order_intake defaults to 0.0, decay of 0 is 0).
+    {
+        "output": "order_intake",
+        "tick_driver": True,
+        "expression": {
+            "op": "multiply",
+            "args": [
+                {"ref": "order_intake"},
+                {"op": "subtract", "args": [1, {"ref": "order_decay"}]},
+            ],
+        },
+        "description": "Tick driver (Track 11 order-book mechanism, restated Track A 2026-11-20): new-orders flow decays by (1 - order_decay) per tick. MERGE ANCHOR, not a new model: a case intake driver replaces this driver in place, so the decay runs BEFORE the revenue driver reads the pool (pre-tick book + this tick's decayed intake). Generic runs keep the 0.0 default and the driver is a no-op.",
+    },
     {
         "output": "disruptor_adoption",
         "tick_driver": True,
