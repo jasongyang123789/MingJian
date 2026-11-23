@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta
 import logging
+import math
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select, update
@@ -148,6 +149,26 @@ def _bound_variable_ids(variables_fragment: dict[str, Any] | None) -> set[str]:
         for item in variables
         if isinstance(item, dict) and isinstance(item.get("id"), str)
     }
+
+
+def _collect_expression_refs(expression: Any, out: set[str]) -> None:
+    """Collect every ``{"ref": id}`` in a formula expression, recursively.
+
+    Expression shapes are the formula language's three forms: a number
+    literal, a ``{"ref": id}`` leaf, or an ``{"op": ..., "args": [...]}``
+    node. Unknown shapes contribute nothing (the caller treats the
+    driver as not chain-mounted rather than crashing the run).
+    """
+
+    if isinstance(expression, dict):
+        if set(expression) == {"ref"} and isinstance(expression.get("ref"), str):
+            out.add(expression["ref"])
+        elif isinstance(expression.get("args"), list):
+            for arg in expression["args"]:
+                _collect_expression_refs(arg, out)
+    elif isinstance(expression, list):
+        for item in expression:
+            _collect_expression_refs(item, out)
 
 
 def _downside_configuration_fragment(
@@ -784,6 +805,78 @@ class SimulationEngineMixin:
         downside_state = resolve_downside(
             run.configuration, variable_scope, state_field_names
         )
+        # Profit-chain initial consistency (fix/blindspot-2015-seam):
+        # when a run mounts the profit-chain pack — its `profit` tick
+        # driver READS `net_margin` (profit = revenue x net_margin),
+        # the tick-0 profit snapshot must be defined by the same
+        # product-path margin definition as ticks 1+, not by the
+        # independently sampled `profit` variable. (A run whose profit
+        # driver merely coexists with a `net_margin` driver — e.g. a
+        # case that keeps the decoupled profit-growth driver — is NOT
+        # chain-mounted: its driver evolves profit from the sampled
+        # initial, so the sampled value stays.) The sampled draw is
+        # retained (the sampling stream is untouched: no draw is
+        # added, removed, or reordered) but it no longer seeds the
+        # initial state: profit(0) = revenue(0) x margin_base, where
+        # margin_base is the decision-year net margin — the corporate
+        # template's sampled `margin_base`, or the automotive
+        # template's R&D identity gross_base - rd_base - other_share
+        # (which equals margin_base by construction of other_share).
+        # The margin is clamped to the net_margin driver's own rails
+        # [0.02, 0.25], so tick 0 uses exactly the decision-year value
+        # of the clamped path definition. Runs without a sampled
+        # `profit` keep their template default (the template's own
+        # mode-level implied margin); runs without the chain keep the
+        # sampled initial. Precedence, deliberately: chain definition
+        # > explicit initial_state overlay > sampled value — except a
+        # non-resampling scenario child forked mid-run, whose overlay
+        # is a genuine evolved fork-point state and must be preserved
+        # (the derivation is skipped there). A resampling child is
+        # NOT skipped: its resample step already discards the fork
+        # snapshot for covered fields, so the chain definition applies
+        # to it exactly as to a fresh run. Fail-open: any missing leg
+        # leaves the state exactly as before.
+        profit_initial_derivation: dict[str, Any] | None = None
+        _overlay_profit = (run.configuration.get("initial_state") or {}).get("profit")
+        _is_resampling = isinstance(scenario_fragment, dict) and bool(
+            scenario_fragment.get("resample_variables")
+        )
+        _profit_driver = next(
+            (formula for formula in driver_formulas if formula.output == "profit"), None
+        )
+        _profit_refs: set[str] = set()
+        if _profit_driver is not None:
+            _collect_expression_refs(_profit_driver.expression, _profit_refs)
+        if (
+            "net_margin" in _profit_refs
+            and "profit" in sampled_values
+            and "profit" in initial_state
+            and "revenue" in initial_state
+            and (_overlay_profit is None or _is_resampling)
+        ):
+            _margin_source: str | None = None
+            _margin0: float | None = None
+            if "margin_base" in variable_scope:
+                _margin0 = float(variable_scope["margin_base"])
+                _margin_source = "margin_base"
+            elif {"gross_base", "rd_base", "other_share"} <= set(variable_scope):
+                _margin0 = (
+                    float(variable_scope["gross_base"])
+                    - float(variable_scope["rd_base"])
+                    - float(variable_scope["other_share"])
+                )
+                _margin_source = "rd_identity"
+            if _margin0 is not None and math.isfinite(_margin0):
+                _margin0 = min(0.25, max(0.02, _margin0))
+                _derived_profit = float(initial_state["revenue"]) * _margin0
+                if math.isfinite(_derived_profit):
+                    initial_state["profit"] = _derived_profit
+                    profit_initial_derivation = {
+                        "revenue": float(initial_state["revenue"]),
+                        "margin": _margin0,
+                        "margin_source": _margin_source,
+                        "profit": _derived_profit,
+                    }
         effective_policies = resolve_policies(run.domain_id, run.configuration)
         # Sprint 5: hindsight firewall — resolve the decision-time cutoff
         # from the run's stored configuration and filter claim reads to
@@ -1008,13 +1101,24 @@ class SimulationEngineMixin:
             # variable values (with the subset applied to the state).
             # Sprint 4: derived formula values, recorded alongside.
             # Sprint 5: the hindsight-firewall cutoff in effect.
+            # Profit-chain initial (fix/blindspot-2015-seam): when the
+            # tick-0 profit was derived from the path margin instead of
+            # the sampled `profit` draw, the derivation is recorded
+            # here and `profit` leaves `sampled_applied` — the sampled
+            # value was drawn (stream preserved) but not applied.
             "determinism": {
                 "input_hash": (run.configuration.get("determinism") or {}).get("input_hash"),
                 "state_hashes": state_hashes,
                 "sampled_values": sampled_values,
-                "sampled_applied": [key for key in applied_values if key in sampled_values],
+                "sampled_applied": [
+                    key
+                    for key in applied_values
+                    if key in sampled_values
+                    and not (profit_initial_derivation is not None and key == "profit")
+                ],
                 "derived_values": derived_values,
                 "derived_applied": [key for key in applied_values if key in derived_values],
+                "profit_initial_derivation": profit_initial_derivation,
                 "decision_time": (
                     format_cutoff(firewall_cutoff) if firewall_cutoff is not None else None
                 ),
