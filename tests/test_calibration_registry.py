@@ -53,14 +53,18 @@ def test_registry_status_counts():
     # 2026-11-22: C1 ADAS chain added 4 simulated template entries
     # (template/adas_ceiling, adas_rate, adas_midpoint, adas_coupling):
     # simulated 51 -> 55, total 61 -> 65.
+    # 2026-11-23: R&D margin promotion merged (item 1) added 8
+    # simulated template entries (gross_base / gross_longrun /
+    # gross_reversion / rd_base / rd_longrun / rd_reversion /
+    # rd_adoption / other_share): simulated 55 -> 63, total 65 -> 73.
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 55
+    assert counts["simulated"] == 63
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 65
+    assert sum(counts.values()) == 73
 
 
 def test_registry_transmission_values_are_live():
@@ -111,8 +115,8 @@ def test_registry_profit_chain_values_pinned():
     assert by_id["margin_longrun/desay-2020"]["current"] == {
         "type": "fixed", "value": 0.0658}
     assert by_id["margin_longrun/desay-2015"]["current"] == {
-        "type": "fixed", "value": 0.0599}
-    assert by_id["margin_reversion"]["current"] == {"type": "fixed", "value": 0.25}
+        "type": "fixed", "value": 0.0598}
+    assert by_id["margin_reversion"]["current"] == {"type": "fixed", "value": 0.16}
     assert by_id["margin_adoption"]["current"] == {
         "type": "triangular", "min": -0.02, "mode": 0.0, "max": 0.02}
     assert by_id["margin_clamp"]["current"] == {"type": "fixed", "value": [0.02, 0.15]}

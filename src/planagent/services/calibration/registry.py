@@ -296,10 +296,9 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "margin_longrun/desay-2015",
         "profit_chain",
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
-        {"type": "fixed", "value": 0.0599},
+        {"type": "fixed", "value": 0.0598},
         STATUS_SIMULATED,
-        "Same two-year-mean rule: (5.7% + 6.28%) / 2 from the audited "
-        "A1 table.",
+        "DESAY-EVIDENCE (calibration-simulated-generation-2026-11-20): two-year-mean rule on the audited net-margin history: (5.6742% + 6.2779%) / 2 = 5.9761% (2013-2014). Exact arithmetic (registry 0.0599 used rounded inputs 5.7+6.28); a 0.0001 rounding correction.",
         "internal: margin_longrun (same rule, 2015 decision year)",
         internal_field="margin_longrun",
     ),
@@ -307,14 +306,9 @@ PROFIT_CHAIN_ENTRIES: list[dict[str, Any]] = [
         "margin_reversion",
         "profit_chain",
         "Track B harness run_desay_gapb.py (UNMERGED branch fix/desay-gap-profit)",
-        {"type": "fixed", "value": 0.25},
+        {"type": "fixed", "value": 0.16},
         STATUS_SIMULATED,
-        "Round number fixed before the run: one quarter of the "
-        "deviation closes per tick. No realised margin path was "
-        "fitted. Track B pre-registered sensitivity: reversion 0.15 / "
-        "0.25 / 0.35 moves the 2020 replay errors −10.1%/+18.1%, "
-        "−12.4%/+8.2%, −14.7%/−1.6% (yr3/yr5) — the most sensitive "
-        "chain parameter.",
+        "GENERATED (calibration-simulated-generation-2026-11-20): DECIDED 0.16 by Ho 2026-11-20 — strict-firewall median of implied one-year reversion rates, 2013-2019 only (median 0.162). Full-window fit 2013-2020 (median 0.2718) NOT applied: the 2019->2020 transition uses the 2020 realised net margin, unknowable at the 2020-12-31 decision point. Cross-check OLS AR(1) r=0.59 R2=0.21 (weak); identification weak (implied r range -10.96 to +2.17).",
         "internal: margin_reversion (NOT directly observable — "
         "estimable only by fitting the reversion rule to a realised "
         "net-margin trajectory; the pipeline accepts a fitted value "
