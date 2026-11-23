@@ -225,7 +225,18 @@ def test_override_creates_child_run_and_stores_active_mapping(monkeypatch, tmp_p
         configuration = asyncio.run(_read_run_configuration(outcome["child_run_id"]))
         bindings = configuration["variables"]["bindings"]
         assert configuration["variables"]["branch_override"] is True
-        assert len(bindings["variables"]) == 1
+        # Track C (default ON): the child inherits the parent's bindings
+        # — the cash override plus the five canonical downside variables
+        # the default appended to the parent.
+        assert len(bindings["variables"]) == 6
+        assert [var["id"] for var in bindings["variables"]] == [
+            "cash",
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+            "downturn_persistent",
+        ]
         assert bindings["variables"][0]["id"] == "cash"
         distribution = bindings["variables"][0]["distribution"]
         assert distribution["type"] == "fixed"

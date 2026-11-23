@@ -1,11 +1,17 @@
-"""Tests for the opt-in downside mechanism (fix/downside-mechanism).
+"""Tests for the downside mechanism (fix/downside-mechanism, Track C).
 
 Growth-coupled diffusion only computes "how fast it grows": a growth
 case's ensemble can never decline, so both Desay anchors report p_loss
 0.0. The downside mechanism adds a cyclical downturn shock (plus an
 optional persistent reversal) as ordinary sampled variables + a
 ``downside`` configuration fragment, applied after the tick drivers.
-Default OFF: with no fragment, runs behave exactly as before.
+Default ON since Track C (2026-11-20): Ho ordered the default flipped
+from OFF to ON on 2026-11-20 08:42, reversing his 2026-11-19 14:31
+default-OFF decision. A run that omits ``downside`` gets the default
+config (enabled, canonical labeled-assumption variables auto-bound by
+the engine); ``downside: null`` or ``{"enabled": false}`` opts out.
+Controls in this file that need the no-shock path therefore opt out
+explicitly — see each test's Track C note.
 
 Synthetic test parameters throughout — NOT fitted to any historical
 case. The Desay verification (real parameters, real scores) lives in
@@ -21,9 +27,12 @@ from fastapi.testclient import TestClient
 
 from planagent.config import reset_settings_cache
 from planagent.db import reset_database_cache
+from planagent.domain.api import SimulationRunCreate
 from planagent.main import create_app
 from planagent.services.simulation.downside import (
+    DOWNSIDE_DEFAULT_LABEL,
     DownsideError,
+    default_downside_variables,
     resolve_downside,
 )
 
@@ -44,6 +53,42 @@ def _enabled_config(**overrides) -> dict:
     fragment = {"enabled": True, "fields": ["revenue", "profit"]}
     fragment.update(overrides)
     return {"downside": fragment}
+
+
+def test_default_config_matches_canonical_downside() -> None:
+    """Track C: the schema default is the canonical default shock.
+
+    Omitted ``downside`` means default ON with the reversal regime
+    named and the canonical label; the label literal must stay
+    identical to ``DOWNSIDE_DEFAULT_LABEL`` (``domain/api.py`` cannot
+    import the downside module — it would cycle). An explicit null
+    still means OFF, and an explicit ``{"enabled": false}`` still
+    means OFF.
+    """
+
+    defaulted = SimulationRunCreate(company_id="x", company_name="X")
+    assert "downside" not in defaulted.model_fields_set
+    assert defaulted.downside is not None
+    assert defaulted.downside.enabled is True
+    assert defaulted.downside.fields == ["revenue", "profit"]
+    assert defaulted.downside.persistent_variable == "downturn_persistent"
+    assert defaulted.downside.label == DOWNSIDE_DEFAULT_LABEL
+    assert {var.id for var in default_downside_variables()} == {
+        "downturn_occurs",
+        "downturn_depth",
+        "downturn_start",
+        "downturn_duration",
+        "downturn_persistent",
+    }
+
+    explicit_null = SimulationRunCreate(company_id="x", company_name="X", downside=None)
+    assert "downside" in explicit_null.model_fields_set
+    assert explicit_null.downside is None
+    explicit_off = SimulationRunCreate(
+        company_id="x", company_name="X", downside={"enabled": False}
+    )
+    assert explicit_off.downside is not None
+    assert explicit_off.downside.enabled is False
 
 
 def test_disabled_by_default() -> None:
@@ -227,9 +272,15 @@ _DOWNSIDE_FRAGMENT = {
     "label": "LABELED ASSUMPTION — synthetic test shock",
 }
 
+#: Sentinel for "omit the downside key entirely" (Track C default ON).
+#: Passing None means an explicit ``downside: null`` (opt-out).
+_OMIT = object()
+
 
 def _create_run(
-    client: TestClient, variable_set: dict, downside: dict | None = None
+    client: TestClient,
+    variable_set: dict,
+    downside: dict | None | object = _OMIT,
 ) -> dict:
     payload = {
         "company_id": "downside-test-co",
@@ -240,7 +291,7 @@ def _create_run(
         "actor_template": "default",
         "variable_set": variable_set,
     }
-    if downside is not None:
+    if downside is not _OMIT:
         payload["downside"] = downside
     created = client.post("/simulation/runs", json=payload)
     assert created.status_code == 201, created.text
@@ -276,8 +327,12 @@ def test_downturn_dip_shape_and_off_control(monkeypatch, tmp_path: Path) -> None
         assert revenues[7] > revenues[6]
         assert revenues[7] < 1000.0 * 1.10**7
 
-        # Control: same recipe, no fragment — smooth 10% growth.
-        control = _create_run(client, _growth_variable_set(downside=None))
+        # Control: same recipe, explicitly opted out (Track C: omitting
+        # the key now means default ON, so the no-shock control must say
+        # so). Smooth 10% growth.
+        control = _create_run(
+            client, _growth_variable_set(downside=None), downside={"enabled": False}
+        )
         control_revenues = _revenue_trajectory(client, control["id"])
         assert control_revenues == pytest.approx(
             [round(1000.0 * 1.10**tick, 4) for tick in range(8)], abs=5e-4
@@ -290,7 +345,9 @@ def test_downturn_dip_shape_and_off_control(monkeypatch, tmp_path: Path) -> None
 def test_downside_off_is_identical_to_no_fragment(monkeypatch, tmp_path: Path) -> None:
     _setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
-        absent = _create_run(client, _growth_variable_set(downside=None))
+        # Track C: both OFF paths — explicit ``downside: null`` and
+        # ``{"enabled": false}`` — produce the smooth no-shock path.
+        absent = _create_run(client, _growth_variable_set(downside=None), downside=None)
         absent_revenues = _revenue_trajectory(client, absent["id"])
 
         disabled = _create_run(
@@ -305,6 +362,13 @@ def test_downside_off_is_identical_to_no_fragment(monkeypatch, tmp_path: Path) -
         no_occurs_set["variables"][2]["distribution"] = {"type": "fixed", "value": 0.0}
         no_occurs = _create_run(client, no_occurs_set, downside=_DOWNSIDE_FRAGMENT)
         assert _revenue_trajectory(client, no_occurs["id"]) == absent_revenues
+
+        # And the default (key omitted) is NOT the no-shock path: the
+        # canonical shock applies and the trajectory dips.
+        defaulted = _create_run(client, _growth_variable_set(downside=None))
+        default_revenues = _revenue_trajectory(client, defaulted["id"])
+        assert default_revenues != absent_revenues
+        assert default_revenues[4] < default_revenues[3]
 
 
 def test_monte_carlo_decline_probability(monkeypatch, tmp_path: Path) -> None:
@@ -327,9 +391,12 @@ def test_monte_carlo_decline_probability(monkeypatch, tmp_path: Path) -> None:
         # no-shock path's minimum (all trials grow at 10% without shock).
         assert ensemble["baseline"]["min"] < round(1000.0 * 1.10**7, 4)
 
-        # Control: same recipe without the mechanism — nothing ever declines.
+        # Control: same recipe, explicitly opted out (Track C: omitting
+        # the key now means default ON) — nothing ever declines.
         control = _create_run(
-            client, _growth_variable_set(downside=None, sampled=True)
+            client,
+            _growth_variable_set(downside=None, sampled=True),
+            downside={"enabled": False},
         )
         control_response = client.post(
             f"/runs/{control['id']}/monte-carlo",

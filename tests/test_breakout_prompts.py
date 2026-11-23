@@ -704,6 +704,10 @@ def test_api_desay_2020_anchor_carries_discount_prompt_and_numbers_unchanged(
         # T1 silent at decision time (B implied ~18%/yr, modes <= 0.15).
         assert body["breakout_prompts"] == []
         # Numbers unchanged by the annotation: anchor revenue ensemble.
+        # Track C (default ON): the anchor now carries the default
+        # downside shock, so the ensemble P50 sits at 21202.79 instead
+        # of the pre-Track-C 22335.94; the annotation itself still moves
+        # nothing (the value is the default-ON anchor, pinned here).
         mc = client.post(
             f"/runs/{body['id']}/monte-carlo",
             json={
@@ -715,7 +719,7 @@ def test_api_desay_2020_anchor_carries_discount_prompt_and_numbers_unchanged(
         )
         assert mc.status_code == 201, mc.text
         baseline = mc.json()["baseline"]
-        assert baseline["p50"] == pytest.approx(22335.94, abs=0.01)
+        assert baseline["p50"] == pytest.approx(21202.7867, abs=0.01)
         assert baseline["p_loss"] == 0.0
 
 

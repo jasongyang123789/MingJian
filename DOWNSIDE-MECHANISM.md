@@ -13,12 +13,62 @@ Growth-coupled diffusion only computes "how fast it grows". Both Desay
 anchors report `p_loss 0.0`, so the 2018–19 downturn and the 2020 growth
 shortfall had no advance warning: no trajectory can ever fall.
 
-## Mechanism (opt-in, default OFF)
+## Mechanism (default ON since Track C, 2026-11-20)
+
+Ho ordered the default flipped from OFF to ON on 2026-11-20 08:42
+(Desay-gap "全做"), explicitly reversing his 2026-11-19 14:31 decision
+("下行风险机制，默认关闭保向后兼容"). A run that omits `downside`
+now gets the default config (enabled, fields revenue + profit, the
+canonical labeled-assumption variables below, auto-bound by the engine
+where they apply); pass `downside: null` or `{"enabled": false}` to opt
+out. An explicitly supplied fragment keeps the loud-failure contract
+(named variables must be bound, or run creation fails).
+
+Default scope — the mechanism attaches only where it can run:
+
+- the run must carry a variable set (template and/or inline). A run
+  with no bindings has no sampling to bind the shock to, so the
+  default fragment is omitted and the run behaves exactly as before.
+- the run's domain pack must carry at least one of the default fields
+  (`revenue`, `profit`). The military pack carries neither, so military
+  runs are unaffected by the default.
+- the fill must fit the 100-variable cap; otherwise the fragment is
+  omitted rather than failing creation.
+
+Pre-existing runs are untouched: the default only affects runs created
+after the change. Replays, Monte Carlo trials, and scenario branches
+copy the stored configuration, so they reproduce exactly what the base
+run ran with; the living-loop re-simulation carries the baseline's
+stored downside fragment verbatim (and re-simulates a fragment-less
+pre-Track-C baseline explicitly OFF).
 
 A cyclical downturn shock, plus an optional persistent reversal, as
 ordinary sampled variables + a `downside` configuration fragment on the
 run. All parameters are LABELED ASSUMPTIONS — no independent estimate
 is claimed anywhere.
+
+## Canonical default parameter set (Track C, unified across cases)
+
+| Variable | Distribution | Meaning |
+|---|---|---|
+| `downturn_occurs` | Bernoulli(0.5) | Does a downturn hit inside the horizon at all |
+| `downturn_depth` | triangular(0.05, 0.20, 0.35) | Peak per-tick fractional level hit (0–1) |
+| `downturn_start` | triangular(2, 3, 4) | First tick of the downturn window |
+| `downturn_duration` | triangular(1, 2, 3) | Window length in ticks |
+| `downturn_persistent` | Bernoulli(0.15) | The downturn never recovers (thesis reverses) |
+
+The set is UNIFIED: the per-case ON observations differed (2020 used
+start (1, 2, 4) / persistent 0.10; 2015 and Huawei used start (2, 3, 4)
+/ persistent 0.15) and the unified default takes the majority values.
+A case that needs its own start / persistence still binds its own
+variables and passes an explicit fragment — those win over the default
+(the engine only fills missing ids, and only for the default config).
+The engine appends the missing canonical variables at the END of the
+run's variable set, so pre-existing draws are untouched (the sampler
+draws in set order, one draw per variable — verified: pre-existing
+sampled values are byte-identical with the default on vs explicitly
+off). The canonical variables carry no `scope_tags`, so they can never
+trip the decomposition scope cross-check.
 
 Per-case variables (appended to the variable set, so pre-existing draws
 are untouched):
@@ -78,16 +128,38 @@ regime that can push a final value below its starting value, which is
 why it exists as a separate, low-probability draw. ES needs no change:
 the fatter lower tail flows into it automatically.
 
-## Backward compatibility
+## Backward compatibility — and the deliberate comparability break
 
-- No `downside` fragment (or `enabled: false`): `resolve_downside`
-  returns `None`; executor, run summary, and Monte Carlo statistics are
-  exactly as before. Verified by `tests/test_downside_mechanism.py`:
-  off/disabled/never-occurring runs produce byte-identical
-  trajectories to the no-fragment control, and the Acme baseline P50
-  99.8143 is unchanged (see the Desay verification report).
+- No `downside` fragment (explicit opt-out via `downside: null`, or
+  `enabled: false`): `resolve_downside` returns `None`; executor, run
+  summary, and Monte Carlo statistics are exactly as before. Verified
+  by `tests/test_downside_mechanism.py`: off/disabled/never-occurring
+  runs produce byte-identical trajectories to the no-fragment control.
 - `DistributionSummary.decline_probability` defaults to 0.0, so
   ensembles stored before this change still validate.
+- **The break is deliberate and quantified, not hidden.** A run created
+  after Track C without an explicit opt-out carries the default shock,
+  so its scores are NOT comparable with pre-change scores for the same
+  case. Measured (Track C report
+  `~/workspace/research/strategy-engine/desay-gap-full-2026-11-20/TRACK-C.md`):
+  the Acme anchor P50 (cash, trials 5, seed 42) is UNCHANGED at
+  99.8143 — cash sits outside the shocked fields (revenue, profit) and
+  no rule feeds revenue/profit back into cash over 2 ticks — while the
+  same probe's revenue P50 moves 100.0 → 95.2326 with decline
+  probability 0.0 → 0.6. The four backtest cases re-run under the new
+  default keep their direction verdicts (highest_p50 → B in all four)
+  and their magnitude verdicts, but BOTH Desay milestones flip FAIL →
+  PASS by the band rule — NOT because the point forecasts improved
+  (both yr3 replay nodes moved further from actual) but because the
+  shock fattens the anchor bands' lower tails (2015 tick-3 P10
+  6798.11 → 5157.40; 2020 tick-3 P10 24538.31 → 19892.84), so the
+  actuals now fall inside. The milestone rule as written rewards wider
+  bands; that interaction is flagged in the Track C report, not hidden.
+  The 2020 headline statistics stay 0.0 (p_loss and decline_p) — the
+  auto-pack ~1.5×/tick growth still swamps the modal 0.20 shock.
+  To reproduce a pre-change score exactly, re-run with an explicit
+  opt-out (`downside: null`); the living-loop re-simulation does this
+  automatically for fragment-less baselines.
 
 ## Calibration gap (stated plainly)
 
@@ -103,7 +175,30 @@ report for the actual value and for what the meaningful statistics
 (decline probability, ES tail, shortfall vs base-case P10) actually
 say.
 
-## Files changed
+## Files changed (Track C, 2026-11-20 — default ON)
+
+- `src/planagent/services/simulation/downside.py` (canonical default
+  parameter set + `default_downside_variables()`; docstrings OFF → ON)
+- `src/planagent/domain/api.py` (`DownsideConfig.enabled` default False
+  → True; `SimulationRunCreate.downside` default `None` →
+  `default_factory=_default_downside_config` — omitted means default ON,
+  explicit `null` still means OFF)
+- `src/planagent/services/simulation/engine.py` (default-only variable
+  auto-bind in `_resolve_variable_bindings`; `_downside_configuration_fragment`
+  now takes the variables fragment and attaches the default only where
+  it can run; explicit fragments stored verbatim with the loud-failure
+  contract kept)
+- `src/planagent/services/simulation/living_loop.py` (re-simulation
+  carries the baseline's stored downside fragment verbatim; a
+  fragment-less baseline is re-simulated explicitly OFF)
+- `tests/test_downside_mechanism.py` (controls that asserted the old
+  default-OFF behaviour now opt out explicitly; new tests pin the
+  default-ON behaviour — see TRACK-C.md for the per-test reasons)
+- `tests/test_distributions_api.py` (`test_sampling_applies...` now
+  expects the canonical downside draws appended after the BOUND_SET
+  draws — pre-existing draws byte-identical)
+
+## Files changed (original fix/downside-mechanism)
 
 - NEW `src/planagent/services/simulation/downside.py` (pure mechanism)
 - `src/planagent/domain/api.py` (`DownsideConfig` + `SimulationRunCreate.downside`)

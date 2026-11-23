@@ -43,8 +43,16 @@ from planagent.services.splits.validator import (
 )
 from planagent.services.startup import normalize_tenant_id, startup_preset_config
 from planagent.services.variables.formulas import evaluate_tick_drivers, validate_formulas
-from .downside import DOWNSIDE_CONFIGURATION_KEY, resolve_downside
-from planagent.services.variables.models import VariableSet, VariableValidationResult
+from .downside import (
+    DOWNSIDE_CONFIGURATION_KEY,
+    default_downside_fill,
+    resolve_downside,
+)
+from planagent.services.variables.models import (
+    MAX_VARIABLES,
+    VariableSet,
+    VariableValidationResult,
+)
 from planagent.services.variables.opportunities import (
     BreakoutPrompt,
     KeyOpportunityPrompt,
@@ -117,17 +125,137 @@ def _split_configuration_fragment(
     return {"split_structure": fragment}
 
 
-def _downside_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
-    """Downside-shock fragment for a run under creation (fix/downside-mechanism).
+def _bound_variable_ids(variables_fragment: dict[str, Any] | None) -> set[str]:
+    """Variable ids in a run's stored ``variables`` fragment, or empty.
+
+    Defensive read: any malformed shape yields no ids (the caller then
+    treats the default as unattachable rather than crashing creation).
+    """
+
+    if not isinstance(variables_fragment, dict):
+        return set()
+    fragment = variables_fragment.get("variables")
+    if not isinstance(fragment, dict):
+        return set()
+    bindings = fragment.get("bindings")
+    if not isinstance(bindings, dict):
+        return set()
+    variables = bindings.get("variables")
+    if not isinstance(variables, list):
+        return set()
+    return {
+        item["id"]
+        for item in variables
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+
+
+def _downside_configuration_fragment(
+    payload: SimulationRunCreate,
+    variables_fragment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Downside-shock fragment for a run under creation (fix/downside-mechanism,
+    Track C default ON).
 
     Stored inside ``SimulationRun.configuration`` (existing JSON column),
-    so no schema migration is needed. Returns {} when no downside
-    config was attached — the default-off path. Mirrors
+    so no schema migration is needed. Mirrors
     :func:`_mece_configuration_fragment`.
+
+    - ``downside: null`` (explicit opt-out) or ``enabled: false``: {} or
+      the disabled fragment — the run behaves exactly as before.
+    - Explicitly supplied + enabled: stored verbatim; a misconfigured
+      fragment still fails the run loudly at execution, exactly as
+      before Track C.
+    - Default (omitted) + enabled: stored ONLY where it can actually
+      run — the domain pack must carry at least one of the configured
+      fields (the military pack carries neither revenue nor profit, so
+      the default never attaches there), and every named variable must
+      be bound in the run's stored bindings (auto-bound by
+      :func:`_resolve_variable_bindings`, or bound by the caller).
+      Otherwise {} — the run stays exactly as before instead of
+      failing creation for a default the caller never asked for. The
+      stored ``fields`` are narrowed to the pack's fields.
     """
     if payload.downside is None:
         return {}
-    return {"downside": payload.downside.model_dump(mode="json")}
+    config = payload.downside
+    dumped = config.model_dump(mode="json")
+    if not config.enabled:
+        return {"downside": dumped}
+    if "downside" in payload.model_fields_set:
+        # Explicit fragment: stored verbatim, loud-failure contract kept.
+        return {"downside": dumped}
+    try:
+        pack = registry.get(payload.domain_id)
+    except Exception:
+        return {}
+    pack_fields = {field.name for field in pack.state_fields}
+    fields = [field for field in config.fields if field in pack_fields]
+    if not fields:
+        return {}
+    required = [
+        config.occurs_variable,
+        config.depth_variable,
+        config.start_variable,
+        config.duration_variable,
+    ]
+    if config.persistent_variable:
+        required.append(config.persistent_variable)
+    if any(name not in _bound_variable_ids(variables_fragment) for name in required):
+        return {}
+    dumped["fields"] = fields
+    return {"downside": dumped}
+
+
+def _apply_default_downside_variables(
+    payload: SimulationRunCreate,
+    effective: VariableSet,
+) -> VariableSet:
+    """Append canonical downside variables for the default-ON config.
+
+    Track C: a run that omits ``downside`` gets the default shock, but
+    the shock needs sampled variables to bind to. This fills the
+    missing canonical variables (occurs / depth / start / duration /
+    persistent) at the END of the effective variable set, so
+    pre-existing draws are untouched (the sampler draws in set order).
+    A caller that bound its own variable under one of these ids keeps
+    its own definition — only missing ids are filled.
+
+    Applies ONLY to the default config (``downside`` not explicitly
+    supplied): an explicit fragment keeps the loud-failure contract —
+    unbound or misspelled variables fail run creation instead of being
+    silently auto-completed. Also skipped when the effective set is
+    empty (a run with no variable table has no sampling to attach to),
+    when the domain pack carries none of the configured fields
+    (military), and when the fill would breach the 100-variable cap
+    (the fragment step then omits the default instead of failing).
+    """
+
+    config = payload.downside
+    if config is None or not config.enabled:
+        return effective
+    if "downside" in payload.model_fields_set:
+        return effective
+    if not effective.variables:
+        return effective
+    try:
+        pack = registry.get(payload.domain_id)
+    except Exception:
+        return effective
+    pack_fields = {field.name for field in pack.state_fields}
+    if not pack_fields.intersection(config.fields):
+        return effective
+    missing = default_downside_fill(
+        config.model_dump(mode="json"),
+        {variable.id for variable in effective.variables},
+    )
+    if not missing:
+        return effective
+    if len(effective.variables) + len(missing) > MAX_VARIABLES:
+        return effective
+    return effective.model_copy(
+        update={"variables": [*effective.variables, *missing]}
+    )
 
 
 def _firewall_configuration_fragment(payload: SimulationRunCreate) -> dict[str, Any]:
@@ -251,6 +379,12 @@ class SimulationEngineMixin:
                     is_valid=True, variable_count=0, checks=formula_checks, issues=[]
                 ),
             )
+        # Track C (default ON): fill the canonical downside variables
+        # the default config needs, appended at the end so pre-existing
+        # draws are untouched. Runs with an explicit fragment, no
+        # variable table, or an inapplicable pack are left alone (see
+        # _apply_default_downside_variables).
+        effective = _apply_default_downside_variables(payload, effective)
         result = validate_variable_set(effective)
         issues = list(result.issues)
         if payload.decomposition is not None:
@@ -432,7 +566,7 @@ class SimulationEngineMixin:
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
             **_firewall_configuration_fragment(payload),
-            **_downside_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload, variables_fragment),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -485,7 +619,7 @@ class SimulationEngineMixin:
             **_mece_configuration_fragment(payload, mece_result),
             **(variables_fragment or {}),
             **_firewall_configuration_fragment(payload),
-            **_downside_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload, variables_fragment),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(
@@ -554,7 +688,7 @@ class SimulationEngineMixin:
             **(variables_fragment or {}),
             **_split_configuration_fragment(payload, split_result),
             **_firewall_configuration_fragment(payload),
-            **_downside_configuration_fragment(payload),
+            **_downside_configuration_fragment(payload, variables_fragment),
         }
         # Sprint 3: hash the run inputs at creation (determinism audit trail).
         configuration["determinism"] = determinism_input_fragment(

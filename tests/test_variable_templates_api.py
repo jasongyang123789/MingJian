@@ -260,12 +260,20 @@ def test_run_with_builtin_preset_stores_snapshot_for_audit(monkeypatch, tmp_path
         # stores bindings (the template set itself) and a passing
         # validation result. The old "no bindings" expectation was the
         # EMPTY preset, not a property of the audit trail.
+        # Track C (2026-11-23): downside default ON appends the 5
+        # downside variables to the run's bindings, after the
+        # template variables, in downside.py order.
         assert body["bindings"] is not None
         assert [v["id"] for v in body["bindings"]["variables"]] == [
             "margin_base",
             "margin_longrun",
             "margin_reversion",
             "margin_adoption",
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+            "downturn_persistent",
         ]
         assert [f["output"] for f in body["bindings"]["formulas"]] == [
             "disruptor_adoption",
@@ -338,7 +346,19 @@ def test_run_with_inline_bindings_and_template_merge(monkeypatch, tmp_path: Path
         body = audit.json()
         assert body["template"]["id"] == template_id
         bindings = body["bindings"]
-        assert [variable["id"] for variable in bindings["variables"]] == ["cac", "churn", "nrr"]
+        # Track C (default ON): the canonical downside variables are
+        # appended at the end of the merged bindings, after the
+        # template/inline variables.
+        assert [variable["id"] for variable in bindings["variables"]] == [
+            "cac",
+            "churn",
+            "nrr",
+            "downturn_occurs",
+            "downturn_depth",
+            "downturn_start",
+            "downturn_duration",
+            "downturn_persistent",
+        ]
         by_id = {variable["id"]: variable for variable in bindings["variables"]}
         assert by_id["cac"]["distribution"]["value"] == 15000.0
         assert by_id["cac"]["evidence_ref"] == "evidence:override"
