@@ -188,6 +188,22 @@ Formula graph (evaluation order matters — drivers chain within a tick):
   outputs; ``revenue`` is a state field, not a template variable).
   At runtime it is exactly identity (4-decimal rounding only: the
   state value it reads is already 4-decimal).
+  TIER-1 TRANSMISSION (margin-profit transmission, 2026-11-20;
+  cures the A3 structural gap): the widened tier1_gross_margin band
+  never reached profit because no formula read it. The gross_margin
+  driver now adds tier1_pass_through x (tier1_gross_margin(t) -
+  0.25), where 0.25 is the tier1 distribution's mode (calibration
+  DESAY-EVIDENCE band (0.20, 0.25, 0.29); a test pins the literal to
+  the mode). tier1_pass_through is a fixed template variable, 0.5 —
+  the insufficient-reason midpoint between 0 and 1, a LABELED
+  SIMULATION (no decision-time evidence exists for the pass-through
+  coefficient), replaceable; kappa=0 reproduces the R&D promotion
+  exactly and kappa=1 is the full pass-through bound (both reported
+  in margin-profit-transmission-2026-11-20/REPORT.md §4.4). The term
+  sits on the GROSS leg (tier1 is a gross margin) so the identity
+  net = gross - rd - other carries it to profit; the corporate
+  template keeps the B single-regression leg (no tier1 evidence for
+  Huawei/Nokia).
 """
 
 from __future__ import annotations
@@ -857,6 +873,22 @@ TEMPLATE_VARIABLES: list[dict] = [
         "distribution": {"type": "fixed", "value": 0.05},
         "evidence_ref": "assumption:pending-calibration — template default 0.05 IS a placeholder residual share (template default, not evidence); a case binds its t=1 residual gross - rd - net (Desay 2015: 0.0958; Desay 2020: 0.0375). The residual absorbs taxes, selling/general expenses, investment income and non-recurring items — it is FIXED by construction, not measured; see the R&D report §7.1 for its time-variation limits.",
         "description": "Fixed residual share (gross margin - R&D intensity - net margin): everything the two modeled legs do not explain, frozen at its t=1 value (template default 0.05, a placeholder).",
+    },
+    # --- Tier-1 margin -> profit transmission (margin-profit
+    # transmission, 2026-11-20; cures the A3 structural gap: the
+    # widened tier1_gross_margin band never reached profit because no
+    # formula read it) ---
+    # The pass-through coefficient is the transmission's only new
+    # parameter. It is a FIXED variable (not sampled: it consumes no
+    # random draws and cannot shift the sampling stream), and a case
+    # may bind it when it has evidence. See the gross_margin driver
+    # for the formula.
+    {
+        "id": "tier1_pass_through",
+        "unit": "fraction of Tier-1 margin deviation",
+        "distribution": {"type": "fixed", "value": 0.5},
+        "evidence_ref": "simulated: LABELED ASSUMPTION — no decision-time evidence exists for the Tier-1-to-company margin pass-through (research files searched 2026-11-20; the audit found no series on this relationship). 0.5 is the insufficient-reason midpoint between 0 (no pass-through) and 1 (full pass-through), NOT an estimate. Ho-authorized simulation (2026-11-16), replaceable; bounds kappa=0/1 in margin-profit-transmission-2026-11-20/REPORT.md §4.4.",
+        "description": "Share of a Tier-1 gross-margin deviation from its mode that flows into the company's gross margin each tick (fixed 0.5, labeled simulation — no decision-time evidence; see the gross_margin driver).",
     },
     # NOTE (cap raised, 2026-11-17): the variable-set limit was 30
     # (Sprint 2 design pin) and this template held exactly 30, so the
@@ -1762,26 +1794,38 @@ TEMPLATE_FORMULAS: list[dict] = [
         "expression": {
             "op": "add",
             "args": [
-                {"ref": "gross_base"},
                 {
-                    "op": "multiply",
+                    "op": "add",
                     "args": [
+                        {"ref": "gross_base"},
                         {
                             "op": "multiply",
                             "args": [
-                                {"ref": "gross_reversion"},
                                 {
-                                    "op": "subtract",
-                                    "args": [{"ref": "gross_longrun"}, {"ref": "gross_base"}],
+                                    "op": "multiply",
+                                    "args": [
+                                        {"ref": "gross_reversion"},
+                                        {
+                                            "op": "subtract",
+                                            "args": [{"ref": "gross_longrun"}, {"ref": "gross_base"}],
+                                        },
+                                    ],
                                 },
+                                {"op": "subtract", "args": [{"ref": "tick"}, 1]},
                             ],
                         },
-                        {"op": "subtract", "args": [{"ref": "tick"}, 1]},
+                    ],
+                },
+                {
+                    "op": "multiply",
+                    "args": [
+                        {"ref": "tier1_pass_through"},
+                        {"op": "subtract", "args": [{"ref": "tier1_gross_margin"}, 0.25]},
                     ],
                 },
             ],
         },
-        "description": "Tick driver (R&D decomposition): gross margin, the first leg — mean-reverts LINEARLY toward gross_longrun at gross_reversion per tick (each tick closes 25% of the ORIGINAL gap; tick 4 closes 75%, leaving 25%). Intermediate, not a state field. Feeds net_margin; the case binds gross_base/gross_longrun only.",
+        "description": "Tick driver (R&D decomposition + Tier-1 transmission, 2026-11-20): gross margin, the first leg — mean-reverts LINEARLY toward gross_longrun at gross_reversion per tick (each tick closes 25% of the ORIGINAL gap; tick 4 closes 75%, leaving 25%), PLUS the Tier-1 transmission term tier1_pass_through x (tier1_gross_margin(t) - 0.25). The 0.25 literal is the tier1 distribution's MODE (calibration DESAY-EVIDENCE band (0.20, 0.25, 0.29)); a test pins the literal to the mode so the two cannot drift apart silently. tier1_gross_margin(t) is read same-tick from its own squeeze driver (evaluated earlier in the tick order), so at the baseline (material = price = 1) it is the sampled value, and in a material != price case the squeeze movement is carried into gross margin tick by tick. The term is why the A3-widened tier1 band now reaches profit: net_margin = gross - rd - other, profit = revenue x net_margin. Intermediate, not a state field. Feeds net_margin; the case binds gross_base/gross_longrun only (tier1_pass_through stays at its template default 0.5 unless a case has evidence).",
     },
     {
         "output": "rd_intensity",

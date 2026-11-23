@@ -57,14 +57,17 @@ def test_registry_status_counts():
     # simulated template entries (gross_base / gross_longrun /
     # gross_reversion / rd_base / rd_longrun / rd_reversion /
     # rd_adoption / other_share): simulated 55 -> 63, total 65 -> 73.
+    # 2026-11-23: margin-profit transmission merged (item 3) added 1
+    # simulated template entry (tier1_pass_through, fixed):
+    # simulated 63 -> 64, total 73 -> 74.
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 63
+    assert counts["simulated"] == 64
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 73
+    assert sum(counts.values()) == 74
 
 
 def test_registry_transmission_values_are_live():
