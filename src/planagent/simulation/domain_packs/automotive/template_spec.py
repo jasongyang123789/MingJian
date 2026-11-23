@@ -450,7 +450,9 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "estimate: LABELED ASSUMPTION — uplift per unit of L2 penetration: the INCREMENTAL L2 premium stack only (cameras + radar + domain-controller IPU over L0/L1 content), NOT the intelligent-driving segment's 10.48% revenue share — that share includes L0/L1 content already priced by revenue_coupling, and deriving the coupling from it would double-count. Mode 0.25 matches nev_coupling's mode (evidence-2020.md §3(b)). Post-hoc fitted values are several times the max 0.40; never use them.",
         "description": "Revenue-growth uplift per unit of L2 penetration: the revenue tick driver gains + adas_coupling * adas_penetration. GRADE effect only — the L2 premium stack over L0/L1 — never the whole intelligent-driving segment. The post-hoc fitted values that would reach the desay-2020 actuals are several times this distribution's max and were indefensible at 2020-12-31.",
     },
-    # --- Order-book (backlog) mechanism (Track 11, 2026-11-19) ---
+    # --- Order-book (backlog) mechanism (Track 11, 2026-11-19;
+    # revised Track A, 2026-11-20 — see docs/causal-chain-pattern.md
+    # §5 for the restated criterion and the revision rationale) ---
     # Track 7 report §7 build spec (diagnostic-2020 §5.3 shape problem):
     # the NEV chain is the LEVEL term; the backlog term is the SHAPE
     # term. The four variables are the mechanism's parameters; the
@@ -459,20 +461,23 @@ TEMPLATE_VARIABLES: list[dict] = [
     # binding the opening book and flow as variables (both =
     # order_intake_rate * mode revenue — the stock proxy is one year
     # of intake, a LABELED ASSUMPTION: the order stock itself was
-    # never disclosed) and three tick drivers: the revenue driver
-    # gains exactly one additive term
-    # (+ backlog_conversion * order_backlog / revenue), the intake
-    # driver decays the flow (order_intake * (1 - order_decay)), and
-    # the backlog driver updates the stock
-    # (backlog + intake - backlog_conversion * backlog, floored at 0).
-    # Driver order within a tick (see docs/causal-chain-pattern.md):
-    # revenue reads the PRE-tick backlog, then intake decays, then the
-    # backlog updates — so the converted amount in a tick is
-    # backlog_conversion * pre-tick backlog, exactly the amount the
-    # revenue term adds. Generic automotive runs keep these four
-    # variables dormant (sampled, unread — the same standing as the
-    # NEV-chain variables in generic runs) and the pack defaults
-    # (backlog 0, intake 0) leave them with no effect.
+    # never disclosed) and three tick drivers, in list order — the
+    # order is load-bearing (see docs/causal-chain-pattern.md):
+    # the intake driver decays the flow (order_intake * (1 -
+    # order_decay)); the revenue driver gains exactly one additive
+    # term (+ backlog_conversion * (order_backlog + order_intake) /
+    # revenue), converting the pool available during the tick (opening
+    # book + this tick's decayed intake), so the revenue term equals
+    # the converted amount; the backlog driver updates the stock as
+    # (backlog + intake) * (1 - backlog_conversion -
+    # disruptor_adoption), floored at 0 — the pool lapses as adoption
+    # rises. Generic automotive runs keep these four variables dormant
+    # (sampled, unread — the same standing as the NEV-chain variables
+    # in generic runs) and the pack defaults (backlog 0, intake 0)
+    # leave them with no effect. `order_intake_rate` is sampled but
+    # unread by any driver; backtest cases pin it FIXED at its mode
+    # (Track A task 2, option (ii)) so the ensemble does not pretend
+    # to propagate intake-rate uncertainty — see the Track A report.
     {
         "id": "order_backlog",
         "unit": "RMB m (same units as the case's revenue)",
@@ -492,7 +497,7 @@ TEMPLATE_VARIABLES: list[dict] = [
         "unit": "annualized new orders / current revenue",
         "distribution": {"type": "triangular", "min": 0.50, "mode": 1.00, "max": 1.50},
         "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (cross-case envelope — mode 1.00 = the most recent (2020) observed ratio 1.03 rounded; width 0.50-1.50 covers the observed 1.03-1.31 range plus a planning margin; never directly scored — cases override it)",
-        "description": "Annualized new orders as a multiple of current revenue. Sets both the intake flow and (via the initial formula) the opening backlog stock. The 2021-2023 realized order path is scoring evidence only, never an input (hindsight firewall).",
+        "description": "Annualized new orders as a multiple of current revenue. Sets the opening intake flow and the opening backlog stock proxy (both bound as variables at order_intake_rate * mode revenue — bound as variables, not an initial formula, because merge is per-output). Sampled but unread by any driver: backtest cases pin it FIXED at the case mode (Track A), so the ensemble does not propagate intake-rate uncertainty until real order-book calibration data exists. The 2021-2023 realized order path is scoring evidence only, never an input (hindsight firewall).",
     },
     {
         "id": "backlog_conversion",
