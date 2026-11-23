@@ -162,22 +162,27 @@ The stock and flow are the pack's `order_backlog` / `order_intake`
 STATE fields (defaults 0.0; generic runs keep them dormant). A case
 attaches the mechanism by binding the opening book/flow as variables
 and adding three tick drivers, in list order — the order is
-load-bearing:
+load-bearing (intake must run before revenue, so revenue reads the
+decayed flow of this tick):
 
 ```python
-# 1. Revenue driver gains exactly one term (after the NEV term).
+# 1. Intake driver decays the flow.
+order_intake = order_intake * (1 - order_decay)
+
+# 2. Revenue driver gains exactly one term (after the NEV term):
+#    conversion on the pool available during the tick (pre-tick
+#    backlog + this tick's decayed intake). The converted amount is
+#    exactly backlog_conversion * pool, so the revenue term still
+#    equals the converted amount.
 revenue = max(0, revenue * (1 + revenue_growth
                             + revenue_coupling * disruptor_adoption
                             + nev_coupling * nev_penetration
-                            + backlog_conversion * order_backlog / revenue))
-#    reads the PRE-tick backlog.
+                            + backlog_conversion * (order_backlog + order_intake) / revenue))
 
-# 2. Intake driver decays the flow.
-order_intake = order_intake * (1 - order_decay)
-
-# 3. Backlog driver updates the stock from the pre-tick backlog.
-order_backlog = max(0, order_backlog + order_intake
-                       - backlog_conversion * order_backlog)
+# 3. Backlog driver updates the stock from the pool: the pool loses
+#    conversion AND the adoption lapse, floored at 0.
+order_backlog = max(0, (order_backlog + order_intake)
+                       * (1 - backlog_conversion - disruptor_adoption))
 ```
 
 Why variables, not initial formulas, for the opening book: merge is
@@ -185,23 +190,48 @@ per-output, so an initial formula and a tick driver cannot share an
 output id — the driver replaces the formula (caught by test during
 Track 11: the initial-formula version silently left the tick-0 book
 at 0.0). The opening book is therefore bound as a variable, exactly
-like `nev_penetration`'s opening level.
+like `nev_penetration`'s opening level. `order_intake_rate` is
+sampled but unread by any driver; backtest cases pin it FIXED at its
+mode (Track A task 2, option (ii)) — the ensemble does not propagate
+intake-rate uncertainty until real order-book calibration data
+exists (see the Track A report for the assessed engine-level
+alternative and why it was not taken).
+
+RESTATED CRITERION (Track A, 2026-11-20 — replaces Track 7 §7 as
+literally written): **per-tick growth becomes decreasing AND both
+absolute errors shrink** (yr-3 replay and yr-5 P50, each vs its
+actual). The old wording ("yr-3 and yr-5 signed errors moving toward
+each other") is unachievable by any positive additive term (Track 11
+proof; measured 22.0→33.2pp on 2015 and 37.4→43.6pp on 2020 at
+e047f50) and is kept only in the historical reports. The Track 11
+revision also fixes the 2015 control: under the Track 11 drivers the
+term humped before it decayed (the stock sat near 1300–1400 while
+revenue grew, because decay acted only on the flow), so 2015
+per-tick growth rose ([1.2316, 1.2614, 1.2613, 1.2622] at e047f50);
+under the revised drivers the pool converts within the year and
+lapses with adoption, so the term falls from tick 1 and 2015 growth
+falls too (unit tests lock both cases at mode values; the Track A
+re-run confirms on the real backtest). Screening note: putting the
+flow-decay rate into the stock lapse as well exhausts the book early
+and fails the shape grid 8/12 — the flow decay governs the intake
+flow itself, and only the adoption lapse touches the stock.
 
 What it does and does not do (measured on the Desay re-run,
-Track 11 report): at 2020 mode values the B-replay growth factors
-FALL tick by tick (1.616 → 1.615 → 1.557 → 1.522) while adoption and
-penetration keep rising — the shape property the monotone channels
-cannot express — and both absolute errors shrink by about two thirds
-(yr-3 replay −52.7% → −18.0%; yr-5 P50 −49.9% → +19.4%). What it
-does NOT do: make the two SIGNED errors converge (they move from
-2.7pp apart to 37.4pp apart, because yr-5 crosses zero), or raise the
-yr-3/yr-5 level ratio (0.583 → 0.422 vs actual 0.673). That is
-structural, not a parameter choice: a positive additive term
-compounds into year 5, so it can fix the growth-rate shape but cannot
-raise the level ratio — the §7 criterion as literally written ("yr-3
-and yr-5 errors moving toward each other") is unachievable by any
-positive additive term, and the criterion should be restated as
-"per-tick growth becomes decreasing AND both absolute errors shrink".
+Track 11 report — Track 11 driver equations; the Track A revision
+changes the 2015 shape verdict, see the paragraph above): at 2020
+mode values the B-replay growth factors FALL tick by tick (1.616 →
+1.615 → 1.557 → 1.522) while adoption and penetration keep rising —
+the shape property the monotone channels cannot express — and both
+absolute errors shrink by about two thirds (yr-3 replay −52.7% →
+−18.0%; yr-5 P50 −49.9% → +19.4%). What it does NOT do: make the
+two SIGNED errors converge (they move from 2.7pp apart to 37.4pp
+apart, because yr-5 crosses zero), or raise the yr-3/yr-5 level
+ratio (0.583 → 0.422 vs actual 0.673). That is structural, not a
+parameter choice: a positive additive term compounds into year 5, so
+it can fix the growth-rate shape but cannot raise the level ratio —
+hence the restated criterion above (Track A): per-tick growth
+becomes decreasing AND both absolute errors shrink. The signed-gap
+wording is retired; do not reintroduce it as a gate.
 The mechanism also over-lifts a non-surging case: the 2015 control
 book (0.25× revenue) still lifts B's year-5 P50 by +44%, because the
 decaying intake flow keeps replenishing the stock (the stock only

@@ -136,11 +136,13 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # chain order: adoption default -> revenue passthrough anchor ->
     # gross_margin -> rd_intensity -> net_margin -> profit; the
     # transmission is a term inside the gross_margin driver, not a
-    # new formula).
+    # new formula). Track A rebase (2026-11-23): +1 formula / +1 tick
+    # driver — the order-intake decay merge anchor, first in the
+    # chain (43 -> 44, 40 -> 41).
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 43
+    assert len(TEMPLATE_FORMULAS) == 44
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 40
+    assert len(drivers) == 41
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -178,9 +180,11 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "funnel_prospects_total",
         "delivery_satisfaction",
         "funnel_overall_conversion",
-        # R&D decomposition drivers, in chain order: adoption default
-        # -> revenue passthrough anchor -> gross_margin ->
-        # rd_intensity -> net_margin -> profit.
+        # R&D decomposition drivers, in chain order: order-intake
+        # decay anchor (Track A) -> adoption default -> revenue
+        # passthrough anchor -> gross_margin -> rd_intensity ->
+        # net_margin -> profit.
+        "order_intake",
         "disruptor_adoption",
         "revenue",
         "gross_margin",
@@ -263,12 +267,12 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 43 formulas
-    # (C1 +6/+1, R&D +8/+6, transmission +1/+0; the
-    # revenue-passthrough merge anchor is one of the six chain
-    # formulas; see the template docstring).
+    # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
+    # (C1 +6/+1, R&D +8/+6, transmission +1/+0, Track A intake
+    # anchor +0/+1; the revenue-passthrough merge anchor is one of
+    # the seven chain formulas; see the template docstring).
     assert len(template.variables) == 76
-    assert len(template.formulas) == 43
+    assert len(template.formulas) == 44
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
