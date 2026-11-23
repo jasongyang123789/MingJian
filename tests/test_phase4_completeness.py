@@ -55,8 +55,22 @@ DESAY_2020_VARIABLE_IDS = [
     "revenue_growth",
     "revenue_coupling",
     "profit",
-    "profit_growth",
-    "profit_coupling",
+    # R&D margin promotion (2026-11-20): the dead profit_growth /
+    # profit_coupling variables are DELETED (the pack chain replaces
+    # them) and the eight R&D decomposition variables take their
+    # place — this is the new case variable table, synced from the
+    # pack rerun harness. drivers_missing is UNCHANGED at 16: no
+    # registry entry's model_elements names profit_growth,
+    # profit_coupling, or any gross_*/rd_*/other_share id, so the
+    # count is identical before and after.
+    "gross_base",
+    "gross_longrun",
+    "gross_reversion",
+    "rd_base",
+    "rd_longrun",
+    "rd_reversion",
+    "rd_adoption",
+    "other_share",
 ]
 DESAY_2020_KEY_VARIABLES = ["market_share", "revenue", "profit"]
 

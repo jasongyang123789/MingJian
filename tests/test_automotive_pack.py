@@ -129,10 +129,16 @@ def test_pack_actions_events_actors() -> None:
 
 
 def test_template_spec_counts_and_driver_flags() -> None:
-    assert len(TEMPLATE_VARIABLES) == 67
-    assert len(TEMPLATE_FORMULAS) == 37
+    # Merge (2026-11-23): 61 -> 75 variables, 36 -> 43 formulas,
+    # 33 -> 40 tick drivers — C1 ADAS chain (+6/+1/+1) plus R&D margin
+    # promotion (+8/+6/+6), exact union, no overlap (the six R&D chain
+    # drivers append at the end, in chain order: adoption default ->
+    # revenue passthrough anchor -> gross_margin -> rd_intensity ->
+    # net_margin -> profit).
+    assert len(TEMPLATE_VARIABLES) == 75
+    assert len(TEMPLATE_FORMULAS) == 43
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 34
+    assert len(drivers) == 40
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -170,13 +176,22 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "funnel_prospects_total",
         "delivery_satisfaction",
         "funnel_overall_conversion",
+        # R&D decomposition drivers, in chain order: adoption default
+        # -> revenue passthrough anchor -> gross_margin ->
+        # rd_intensity -> net_margin -> profit.
+        "disruptor_adoption",
+        "revenue",
+        "gross_margin",
+        "rd_intensity",
+        "net_margin",
+        "profit",
     ]
     # Every variable carries a unit and an evidence reference.
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 34 of 67 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 33 formula parameters are the 9
+    # 34 of 75 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 41 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -188,7 +203,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # variables (adas_ceiling / adas_rate / adas_midpoint /
     # adas_coupling / adas_penetration_monthly_drift — the penetration
     # is the pack's adas_penetration state field, reused, not a sixth
-    # variable).
+    # variable), plus the 8 R&D decomposition variables
+    # (the legs themselves are the gross_margin / rd_intensity /
+    # net_margin driver outputs, not further variables, and profit is
+    # the pack's profit state field, reused).
     fields = {field.name for field in domain_pack_registry.get("automotive").state_fields}
     unbound = {raw["id"] for raw in TEMPLATE_VARIABLES} - fields
     assert unbound == {
@@ -225,6 +243,14 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "order_intake_rate",
         "backlog_conversion",
         "order_decay",
+        "gross_base",
+        "gross_longrun",
+        "gross_reversion",
+        "rd_base",
+        "rd_longrun",
+        "rd_reversion",
+        "rd_adoption",
+        "other_share",
     }
 
 
@@ -232,8 +258,11 @@ def test_builtin_automotive_template_validates() -> None:
     template = builtin_template("automotive")
     assert template.id == "builtin:automotive"
     assert template.is_builtin is True
-    assert len(template.variables) == 67
-    assert len(template.formulas) == 37
+    # Merge (2026-11-23): 61 -> 75 variables, 36 -> 43 formulas
+    # (C1 +6/+1, R&D +8/+6; the revenue-passthrough merge anchor is
+    # one of the six chain formulas; see the template docstring).
+    assert len(template.variables) == 75
+    assert len(template.formulas) == 43
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
@@ -301,9 +330,25 @@ def test_promoted_rate_variables_resolve_in_drivers() -> None:
 
 
 def test_builtin_corporate_template_unchanged() -> None:
+    # Profit-chain pack (2026-11-20): the corporate template is no
+    # longer empty — it now carries the profit chain (4 margin
+    # variables + 4 formulas, same as the automotive chain). The
+    # assumption data is still empty (the automotive fitment lookup /
+    # supply-share data is auto-specific); what this test still pins
+    # is that the corporate template ships NOTHING else.
     template = builtin_template("corporate")
-    assert template.variables == []
-    assert template.formulas == []
+    assert [v.id for v in template.variables] == [
+        "margin_base",
+        "margin_longrun",
+        "margin_reversion",
+        "margin_adoption",
+    ]
+    assert [f.output for f in template.formulas] == [
+        "disruptor_adoption",
+        "revenue",
+        "net_margin",
+        "profit",
+    ]
     assert template.assumption_data == {}
 
 

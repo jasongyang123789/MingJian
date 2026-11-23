@@ -43,7 +43,10 @@ class DriverRegistryEntry:
     carry an empty list: presence alone passes, and the wiring is the
     prompt/rule layer's job, not this check's. Link outputs must be
     real formula/driver outputs of the pack's template, never bare
-    state fields no formula produces (``revenue`` is not one).
+    state fields no formula produces (since the profit-chain pack,
+    ``revenue`` IS one — the template's identity passthrough driver
+    produces it; before that pack it was the standing example of one
+    that was not).
     ``drives``: key variables the driver moves, most-affected first.
     ``weight``: expected impact, 0-1; breaks ties inside a severity.
     ``boundary_class`` / ``boundary_basis``: the §6 verdict for a
