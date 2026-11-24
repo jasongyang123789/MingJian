@@ -20,11 +20,14 @@ when a run carries both a decomposition tree and variable bindings.
 
 from __future__ import annotations
 
+from typing import Any
+
 from .correlation import build_correlation_matrix, is_positive_semidefinite
 from .formulas import TICK_REFERENCE, validate_formulas
 from .models import (
     MAX_VARIABLES,
     DistributionType,
+    FormulaDefinition,
     VariableCheckRecord,
     VariableCorrelation,
     VariableDefinition,
@@ -494,6 +497,84 @@ def validate_scope_bindings(
     return issues
 
 
+def _expression_refs(expression: Any) -> set[str]:
+    """Collect every ``{"ref": ...}`` id in an expression, recursively."""
+
+    refs: set[str] = set()
+    if isinstance(expression, dict):
+        if set(expression) == {"ref"} and isinstance(expression["ref"], str):
+            refs.add(expression["ref"])
+        else:
+            args = expression.get("args")
+            if isinstance(args, list):
+                for arg in args:
+                    refs.update(_expression_refs(arg))
+    elif isinstance(expression, list):
+        for item in expression:
+            refs.update(_expression_refs(item))
+    return refs
+
+
+def _hoist_appended_initial_formulas(
+    formulas: list[FormulaDefinition], appended_initial_outputs: list[str]
+) -> list[FormulaDefinition]:
+    """Move newly appended initial formulas before the first tick driver
+    that references them.
+
+    Merge appends new override outputs at the end, but validation only
+    lets a formula reference sampled ids and EARLIER formula outputs — so
+    an initial formula appended after a driver that references it fails
+    validation (``formula_unknown_ref``) even though the set is
+    well-formed: an initial formula is evaluated once at run start, so
+    its position relative to tick drivers is semantically irrelevant.
+    Hoisting it before its first referencing driver restores validity
+    without changing any evaluation semantics. Relative order among
+    initial formulas is preserved, and tick driver order never moves.
+    A formula is left in place when no earlier driver references it, or
+    when hoisting it would cross an initial formula it depends on.
+    """
+
+    if not appended_initial_outputs:
+        return formulas
+    reordered = list(formulas)
+    for output in appended_initial_outputs:
+        current = next(
+            (index for index, f in enumerate(reordered) if f.output == output),
+            None,
+        )
+        if current is None:
+            continue
+        formula = reordered[current]
+        first_driver = next(
+            (
+                index
+                for index, f in enumerate(reordered)
+                if f.tick_driver and output in _expression_refs(f.expression)
+            ),
+            None,
+        )
+        if first_driver is None or first_driver >= current:
+            continue
+        # Do not cross an initial formula this one depends on: its own
+        # references must still resolve to sampled ids or earlier
+        # initial outputs after the move.
+        deps = _expression_refs(formula.expression)
+        dep_latest = max(
+            (
+                index
+                for index, f in enumerate(reordered)
+                if not f.tick_driver and f.output in deps
+            ),
+            default=-1,
+        )
+        target = max(first_driver, dep_latest + 1)
+        if target >= current:
+            continue
+        reordered.pop(current)
+        reordered.insert(target, formula)
+    return reordered
+
+
 def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet:
     """Merge two variable sets; the override wins on id collisions.
 
@@ -503,6 +584,16 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
     merge with the same discipline: the override wins per output id.
     Assumption data merges per top-level key, override wins; nested values
     are replaced wholesale, never deep-merged.
+
+    One exception to the append discipline: a newly appended INITIAL
+    formula (``tick_driver`` False) is hoisted before the first tick
+    driver that references it (see
+    :func:`_hoist_appended_initial_formulas`). Validation only lets a
+    formula reference sampled ids and earlier formula outputs, so an
+    initial formula left after its referencing driver would fail
+    validation even though the set is well-formed — an initial formula
+    is evaluated once at run start, so its position relative to tick
+    drivers is semantically irrelevant.
     """
 
     merged: list[VariableDefinition] = list(base.variables)
@@ -515,12 +606,16 @@ def merge_variable_sets(base: VariableSet, override: VariableSet) -> VariableSet
             merged.append(variable)
     merged_formulas = list(base.formulas)
     formula_positions = {formula.output: index for index, formula in enumerate(merged_formulas)}
+    appended_initials: list[str] = []
     for formula in override.formulas:
         if formula.output in formula_positions:
             merged_formulas[formula_positions[formula.output]] = formula
         else:
             formula_positions[formula.output] = len(merged_formulas)
             merged_formulas.append(formula)
+            if not formula.tick_driver:
+                appended_initials.append(formula.output)
+    merged_formulas = _hoist_appended_initial_formulas(merged_formulas, appended_initials)
     # Correlations merge with the same discipline: the override wins per
     # unordered pair, base order is preserved, new pairs append.
     merged_correlations = list(base.correlations)
