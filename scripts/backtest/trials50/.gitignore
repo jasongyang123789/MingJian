@@ -1,0 +1,13 @@
+# Harness run outputs (defaults live outside the repo under $BACKTEST_RUN_DIR;
+# these guards catch a run pointed at this dir by mistake).
+*.db
+*.log
+raw-desay/
+raw-classic/
+headline-check.json
+milestone-scores.json
+profit-summary.json
+analysis-*.txt
+server-*.log
+.proxy-secret
+__pycache__/
