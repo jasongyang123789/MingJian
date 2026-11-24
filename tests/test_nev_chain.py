@@ -104,9 +104,12 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # gross_margin driver, not a new formula. Track A rebase
     # (2026-11-23): the order-intake decay merge anchor is a seventh
     # chain driver (43 -> 44 formulas, 40 -> 41 tick drivers).
+    # Step 1 rebase (2026-11-24): the order_backlog finite-book
+    # depletion merge anchor is another chain driver (44 -> 45
+    # formulas, 41 -> 42 tick drivers).
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 44
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 41
+    assert len(TEMPLATE_FORMULAS) == 45
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 42
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -124,7 +127,7 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
     # (see the count comment above).
     assert len(template.variables) == 76
-    assert len(template.formulas) == 44
+    assert len(template.formulas) == 45
 
 
 def test_nev_chain_planning_path_values() -> None:

@@ -138,11 +138,13 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # transmission is a term inside the gross_margin driver, not a
     # new formula). Track A rebase (2026-11-23): +1 formula / +1 tick
     # driver — the order-intake decay merge anchor, first in the
-    # chain (43 -> 44, 40 -> 41).
+    # chain (43 -> 44, 40 -> 41). Step 1 rebase (2026-11-24): the
+    # order_backlog finite-book-depletion merge anchor is an eighth
+    # chain driver (44 -> 45 formulas, 41 -> 42 tick drivers).
     assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 44
+    assert len(TEMPLATE_FORMULAS) == 45
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 41
+    assert len(drivers) == 42
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -187,6 +189,7 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "order_intake",
         "disruptor_adoption",
         "revenue",
+        "order_backlog",
         "gross_margin",
         "rd_intensity",
         "net_margin",
@@ -272,7 +275,7 @@ def test_builtin_automotive_template_validates() -> None:
     # anchor +0/+1; the revenue-passthrough merge anchor is one of
     # the seven chain formulas; see the template docstring).
     assert len(template.variables) == 76
-    assert len(template.formulas) == 44
+    assert len(template.formulas) == 45
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.
