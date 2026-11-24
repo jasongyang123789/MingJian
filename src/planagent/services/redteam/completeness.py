@@ -91,6 +91,17 @@ _JUSTIFICATION_KEYWORDS = (
     "降价压力",
     "cost pressure",
     "成本压力",
+    # Step 4 (2026-11-24): the same family on Huawei-2000 — share_growth
+    # DID state its reason ("Dec 2000 bubble burst + winter warning"),
+    # but the table had no downturn term, so the justified discount
+    # fired as unjustified. A burst / winter warning is a stated reason
+    # to discount a pre-burst growth rate, like margin pressure is for
+    # a profit rate.
+    "bubble burst",
+    "泡沫破裂",
+    "泡沫破灭",
+    "winter warning",
+    "冬天",
     # A stated scope difference is a justification too: the cited rate
     # covers a quantity this variable deliberately excludes.
     "adoption effect",

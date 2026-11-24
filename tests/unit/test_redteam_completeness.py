@@ -180,6 +180,35 @@ def test_unjustified_discount_fires_without_reason() -> None:
     assert "27.39" in discount.evidence[0]
 
 
+def test_bubble_burst_downturn_is_a_stated_discount_reason() -> None:
+    # Step 4 (2026-11-24): Huawei-2000 share_growth cites 1995-2000
+    # ~70%/yr against mode 8%, with the stated reason "Dec 2000 bubble
+    # burst + winter warning" — a downturn reason, the same family as
+    # A4's "margin pressure". It must not fire as unjustified.
+    snapshot = CaseSnapshot(
+        case_id="huawei-2000-share",
+        decision_question="华为2000：冬天来了，收缩过冬还是坚持投入？",
+        variables=[
+            RedTeamVariable(
+                name="share_growth",
+                distribution="triangular(-0.05, 0.08, 0.25)",
+                low=-0.05,
+                mode=0.08,
+                high=0.25,
+                evidence=[
+                    "1995-2000 sales grew ~70%/yr (RMB 1.5B→22B); "
+                    "Dec 2000 bubble burst + winter warning; wide "
+                    "distribution, mode 8%"
+                ],
+            )
+        ],
+        internal_situation="互联网泡沫破裂，全球IT投资下滑。",
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "share_growth") not in by_key
+
+
 # --- Audit A4 (2026-11-20): the discount check read shares and margin
 # levels as growth rates. These tests lock the fix: the two anchor-run
 # false positives must not fire, and a real unjustified discount must
