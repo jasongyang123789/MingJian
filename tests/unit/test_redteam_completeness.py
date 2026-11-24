@@ -140,6 +140,140 @@ def test_unjustified_discount_fires_without_reason() -> None:
     assert "27.39" in discount.evidence[0]
 
 
+# --- Audit A4 (2026-11-20): the discount check read shares and margin
+# levels as growth rates. These tests lock the fix: the two anchor-run
+# false positives must not fire, and a real unjustified discount must
+# still fire. ---
+
+
+def _growth_snapshot(name: str, mode: float, evidence: list[str]) -> CaseSnapshot:
+    return CaseSnapshot(
+        case_id="a4",
+        decision_question="Grow or hold?",
+        variables=[
+            RedTeamVariable(
+                name=name,
+                distribution=f"triangular(0.0, {mode}, {mode * 2})",
+                low=0.0,
+                mode=mode,
+                high=mode * 2,
+                evidence=evidence,
+            )
+        ],
+        internal_situation="Desay 2020 anchor case.",
+    )
+
+
+def test_a4_anchor_base_growth_share_is_not_a_growth_rate() -> None:
+    # Audit A4 FP1: the anchor run flagged base_growth because the check
+    # took 86.95% — the cockpit share OF revenue — as the cited growth
+    # rate. The fixture now carries the live harness evidence verbatim
+    # plus one labeled-assumption sentence; neither the share nor the
+    # segment rate (a different quantity, adoption included) may fire it.
+    findings = run_completeness_checks(desay_2020_snapshot())
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "base_growth") not in by_key
+
+
+def test_a4_anchor_profit_growth_margin_level_is_not_a_growth_rate() -> None:
+    # Audit A4 FP2: the anchor run flagged profit_growth because the
+    # check took 25.78% — the 2017 gross-margin LEVEL — as the cited
+    # growth rate, and "margin pressure" was missing from the
+    # justification table even though the evidence stated the reason.
+    findings = run_completeness_checks(desay_2020_snapshot())
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "profit_growth") not in by_key
+
+
+def test_a4_share_percentage_alone_never_counts_as_growth() -> None:
+    # A bare share, with no justification anywhere, must still not fire:
+    # the like-for-like rule drops it before any comparison happens.
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "base_growth",
+            0.03,
+            ["cockpit already 86.95% of revenue"],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "base_growth") not in by_key
+
+
+def test_a4_margin_level_alone_never_counts_as_growth() -> None:
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "profit_growth",
+            0.12,
+            ["gross margin 23.39% in 2020, down from 25.78% in 2017"],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "profit_growth") not in by_key
+
+
+def test_a4_margin_pressure_justification_silences_discount() -> None:
+    # The cited rate IS a growth rate here (+27.39%), but the reason is
+    # stated — margin pressure must now count as a justification.
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "profit_growth",
+            0.05,
+            ["Revenue grew +27.39% last year, but we discount for margin pressure."],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "profit_growth") not in by_key
+
+
+def test_a4_scope_exclusion_justification_silences_discount() -> None:
+    # The cited rate IS a growth rate here (+33.5%), but the evidence
+    # says this variable excludes what the cited rate includes
+    # (adoption) — a stated scope difference is a justification.
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "base_growth",
+            0.03,
+            [
+                "Segment revenue grew +33.5% in 2020; this variable is "
+                "share growth absent adoption."
+            ],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "base_growth") not in by_key
+
+
+def test_a4_unsigned_growth_word_still_counts_as_growth() -> None:
+    # The like-for-like rule must not go blind: an unsigned rate next to
+    # a growth word, with no justification, still fires.
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "revenue_growth",
+            0.05,
+            ["Revenue grew 27.39% last year."],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    discount = by_key.get(("unjustified_discount", "revenue_growth"))
+    assert discount is not None
+    assert "27.39" in discount.evidence[0]
+
+
+def test_a4_percentage_with_no_anchor_is_not_compared() -> None:
+    # A percentage with no growth word and no level word nearby is an
+    # unknown quantity: the check fails toward no flag rather than
+    # guessing it is a growth rate.
+    findings = run_completeness_checks(
+        _growth_snapshot(
+            "revenue_growth",
+            0.05,
+            ["FY2020 figure: 27.39%."],
+        )
+    )
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "revenue_growth") not in by_key
+
+
 def test_overconfident_parameter_fires_on_tight_triangular() -> None:
     snapshot = CaseSnapshot(
         case_id="tight",

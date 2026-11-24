@@ -12,7 +12,12 @@ hallucinate missing drivers on it (acceptance test 2).
 
 Variable evidence strings are copied from the report so the
 unjustified-discount check sees the same justifications the backtest
-team recorded (e.g. revenue_growth's "恢复年" note).
+team recorded (e.g. revenue_growth's "恢复年" note). Since audit fix A4
+(2026-11-20), base_growth and profit_growth carry the LIVE evidence
+strings from the e047f50 re-run harness
+(``research/.../backtest-rerun-2026-11-19-e047f50/run_desay_e047f50.py``)
+plus one labeled-assumption sentence each, so the fixture reproduces
+the two anchor-run false positives the fix removes.
 """
 
 from __future__ import annotations
@@ -81,7 +86,22 @@ def desay_2020_variables() -> list[RedTeamVariable]:
                 )
             ],
         ),
-        _var("base_growth", 0.0, 0.03, 0.06, ["标注假设：决策时点推理"]),
+        _var(
+            "base_growth",
+            0.0,
+            0.03,
+            0.06,
+            [
+                (
+                    "estimate: labeled assumption — underlying share growth absent "
+                    "intelligent-driving adoption; cockpit already 86.95% of revenue and "
+                    "growing +33.5% in 2020. Labeled assumption: the cited +33.5% is "
+                    "cockpit segment revenue growth including adoption effects, while this "
+                    "variable is share growth absent adoption, so its mode sits "
+                    "deliberately below the cited segment rate."
+                )
+            ],
+        ),
         _var("disruptor_ceiling", 0.7, 0.85, 0.95, ["标注假设：决策时点推理"]),
         _var("disruptor_rate", 0.8, 1.0, 1.2, ["标注假设：决策时点推理"]),
         _var("disruptor_midpoint", 2.0, 3.0, 4.0, ["标注假设：决策时点推理"]),
@@ -113,7 +133,20 @@ def desay_2020_variables() -> list[RedTeamVariable]:
             600,
             ["FY2020 归母净利润 5.18 亿（内部数，2020 年报摘要公告 2021-010）"],
         ),
-        _var("profit_growth", 0.0, 0.12, 0.25, ["标注假设：决策时点推理"]),
+        _var(
+            "profit_growth",
+            0.0,
+            0.12,
+            0.25,
+            [
+                (
+                    "estimate: labeled assumption, tracks revenue growth at a lower mode "
+                    "(margin pressure; gross margin 23.39% in 2020, down from 25.78% in "
+                    "2017). Labeled assumption: the lower mode is a deliberate discount "
+                    "for margin pressure, not an unexplained discount."
+                )
+            ],
+        ),
         _var("profit_coupling", 0.10, 0.15, 0.25, ["标注假设：决策时点推理"]),
     ]
 
