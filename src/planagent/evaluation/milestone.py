@@ -58,6 +58,19 @@ change. Scores under the old rule and the new rule are not directly
 comparable. By design the OFF verdicts are unchanged (both Desay cases
 still FAIL, Nokia still PARTIAL, Huawei still PASS); only the ON
 verdicts change (both Desay cases flip back to FAIL).
+
+Band-edge distance (added 2026-11-24, trials50 rerun — diagnostic only)
+------------------------------------------------------------------------
+``MilestoneNodeScore`` also carries ``band_edge_distance`` (absolute,
+>= 0) and ``band_edge_distance_rel`` (absolute / |actual|): how far the
+actual sits from the nearest band edge — below the band ``p10 - actual``,
+above the band ``actual - p90``, inside the band ``min(actual - p10,
+p90 - actual)`` (0 exactly on an edge). It is a *diagnostic*: it never
+changes the verdict, the 35% line, or W0. It exists so a verdict flip
+between runs can be read at a glance (a node that was 800 below the band
+and is now 50 below it is still FAIL, but it is a near-miss, not the
+same miss). The pure helper ``band_edge_distance`` is exported for
+analysis / rescoring scripts to reuse instead of re-implementing it.
 """
 
 from __future__ import annotations
@@ -119,6 +132,27 @@ class MilestoneNodeScore:
     p90: float
     actual: float
     reason: str  # "out_of_band" | "width_exceeds_baseline" | "point_error_pass" | "point_error_partial"
+    band_edge_distance: float  # >= 0; diagnostic only, never changes the verdict
+    band_edge_distance_rel: float  # band_edge_distance / |actual|; diagnostic only
+
+
+def band_edge_distance(p10: float, p90: float, actual: float) -> float:
+    """Distance from the actual to the nearest edge of the [P10, P90] band.
+
+    Pure helper for analysis / rescoring scripts (same definition as the
+    ``band_edge_distance`` field on ``MilestoneNodeScore``). Always >= 0:
+    below the band ``p10 - actual``, above the band ``actual - p90``,
+    inside the band ``min(actual - p10, p90 - actual)`` — exactly 0 when
+    the actual sits on an edge. Diagnostic only; it does not enter the
+    verdict.
+    """
+    if p10 > p90:
+        raise ValueError(f"band endpoints must satisfy p10 <= p90, got {p10}, {p90}")
+    if actual < p10:
+        return p10 - actual
+    if actual > p90:
+        return actual - p90
+    return min(actual - p10, p90 - actual)
 
 
 def band_width(p10: float, p90: float) -> float:
@@ -178,6 +212,8 @@ def score_milestone_node(
     in_band = p10 <= actual <= p90
     point_error = abs(p50 - actual) / abs(actual)
     width_ratio = width / baseline_width
+    edge_distance = band_edge_distance(p10, p90, actual)
+    edge_distance_rel = edge_distance / abs(actual)
 
     if not in_band:
         verdict: MilestoneVerdict = "FAIL"
@@ -204,6 +240,8 @@ def score_milestone_node(
         p90=p90,
         actual=actual,
         reason=reason,
+        band_edge_distance=edge_distance,
+        band_edge_distance_rel=edge_distance_rel,
     )
 
 
