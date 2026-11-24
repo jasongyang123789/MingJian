@@ -59,10 +59,12 @@ DESAY_2020_VARIABLE_IDS = [
     # profit_coupling variables are DELETED (the pack chain replaces
     # them) and the eight R&D decomposition variables take their
     # place — this is the new case variable table, synced from the
-    # pack rerun harness. drivers_missing is UNCHANGED at 16: no
-    # registry entry's model_elements names profit_growth,
-    # profit_coupling, or any gross_*/rd_*/other_share id, so the
-    # count is identical before and after.
+    # pack rerun harness. drivers_missing is UNCHANGED by the R&D
+    # sync at 17 (before the order-book entry): no registry entry's
+    # model_elements names profit_growth, profit_coupling, or any
+    # gross_*/rd_*/other_share id, so the count is identical before
+    # and after. The order-book entry (step 4, 2026-11-24) brings it
+    # to 18: the old corporate table carries no order-book variable.
     "gross_base",
     "gross_longrun",
     "gross_reversion",
@@ -143,10 +145,10 @@ def full_automotive_case() -> CompletenessCase:
 # ---------------------------------------------------------------------------
 
 
-def test_registry_has_seventeen_entries_with_unique_ids() -> None:
+def test_registry_has_eighteen_entries_with_unique_ids() -> None:
     ids = [e.id for e in AUTOMOTIVE_DRIVER_REGISTRY]
-    assert len(ids) == 17
-    assert len(set(ids)) == 17
+    assert len(ids) == 18
+    assert len(set(ids)) == 18
 
 
 def test_registry_entries_are_complete_and_valid() -> None:
@@ -288,9 +290,9 @@ def test_finding_shape_matches_the_shared_contract() -> None:
 def test_desay_2020_flags_nev_chain_as_top_risk() -> None:
     report = run_completeness_check(desay_2020_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 17
+    assert report.drivers_checked == 18
     assert report.drivers_present == 0
-    assert report.drivers_missing == 17
+    assert report.drivers_missing == 18
 
     top = report.top_finding
     assert top is not None
@@ -305,6 +307,60 @@ def test_desay_2020_flags_nev_chain_as_top_risk() -> None:
     assert any("52.3%" in line for line in top.evidence)
     assert top.suggested_fix
 
+    # Step 4 (2026-11-24): the order book is the SECOND risk — high,
+    # weight 0.95, just behind NEV (1.00). The frozen decomposition
+    # names the backlog leg the largest single contributor to the
+    # anchor overshoot, so the old corporate table must flag it next.
+    second = report.findings[1]
+    assert second.id == "completeness:order_backlog"
+    assert second.kind is FindingKind.MISSING_DRIVER
+    assert second.severity is FindingSeverity.HIGH
+    assert second.target == "revenue"
+    assert second.boundary_class is BoundaryClass.FIXABLE_DEFECT
+    assert "§6" in second.boundary_basis
+    assert "2020-12-31" in second.boundary_basis
+
+
+def test_order_backlog_present_but_unlinked_is_missing_link() -> None:
+    """Backlog variables with no revenue link are a missing link, not
+    a pass: the stock exists but no formula carries it to revenue."""
+    case = CompletenessCase(
+        domain_id="automotive",
+        variable_ids=[*DESAY_2020_VARIABLE_IDS, "order_backlog", "backlog_conversion"],
+        formula_outputs=["market_share"],
+        key_variables=list(DESAY_2020_KEY_VARIABLES),
+    )
+    report = run_completeness_check(case)
+    by_id = {f.id: f for f in report.findings}
+    link = by_id["completeness:order_backlog:link"]
+    assert link.kind is FindingKind.MISSING_LINK
+    assert link.severity is FindingSeverity.HIGH
+    assert link.target == "revenue"
+
+
+def test_order_backlog_present_and_linked_passes() -> None:
+    """Backlog variables + a revenue output: the entry is present and
+    linked, so it drops out of the findings (drivers_present 1)."""
+    case = CompletenessCase(
+        domain_id="automotive",
+        variable_ids=[
+            *DESAY_2020_VARIABLE_IDS,
+            "order_backlog",
+            "order_intake",
+            "order_intake_rate",
+            "backlog_conversion",
+            "order_decay",
+        ],
+        formula_outputs=["revenue"],
+        key_variables=list(DESAY_2020_KEY_VARIABLES),
+    )
+    report = run_completeness_check(case)
+    assert report.drivers_present == 1
+    assert report.drivers_missing == 17
+    by_id = {f.id: f for f in report.findings}
+    assert "completeness:order_backlog" not in by_id
+    assert "completeness:order_backlog:link" not in by_id
+
 
 def test_desay_2020_also_flags_domain_controller_substitution() -> None:
     report = run_completeness_check(desay_2020_case())
@@ -313,8 +369,9 @@ def test_desay_2020_also_flags_domain_controller_substitution() -> None:
     assert dc.kind is FindingKind.MISSING_DRIVER
     assert dc.severity is FindingSeverity.HIGH
     assert dc.target == "revenue"
-    # Ranked second: NEV first, domain-controller substitution second.
-    assert report.findings[1].id == "completeness:domain_controller_substitution"
+    # Ranked third: NEV first, order book second (step 4), domain-controller
+    # substitution third.
+    assert report.findings[2].id == "completeness:domain_controller_substitution"
     # Only the TOP finding carries the meta-check phrasing.
     assert not dc.summary.startswith(META_CHECK_PREFIX)
 
@@ -427,8 +484,8 @@ def test_no_residual_input_means_no_residual_finding() -> None:
 def test_full_automotive_template_flags_nothing() -> None:
     report = run_completeness_check(full_automotive_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 17
-    assert report.drivers_present == 17
+    assert report.drivers_checked == 18
+    assert report.drivers_present == 18
     assert report.drivers_missing == 0
     assert report.findings == []
     assert report.top_finding is None
@@ -552,6 +609,7 @@ def test_ranking_is_severity_then_weight() -> None:
     highs = [f for f in report.findings if f.severity is FindingSeverity.HIGH]
     assert [f.id for f in highs] == [
         "completeness:nev_penetration",
+        "completeness:order_backlog",
         "completeness:domain_controller_substitution",
         "completeness:income",
         "completeness:lpr_financing",
@@ -589,7 +647,7 @@ def test_api_check_desay_2020_flags_nev_top(monkeypatch, tmp_path: Path) -> None
     assert body["top_finding"]["severity"] == "high"
     assert body["top_finding"]["summary"].startswith(META_CHECK_PREFIX)
     assert body["top_finding"]["source"] == "completeness_check"
-    assert body["drivers_missing"] == 17
+    assert body["drivers_missing"] == 18
 
 
 def test_api_check_desay_2020_with_residual_shows_both_verdicts(
@@ -633,7 +691,7 @@ def test_api_drivers_lists_automotive_registry(monkeypatch, tmp_path: Path) -> N
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["registry"] == "automotive"
-    assert len(body["drivers"]) == 17
+    assert len(body["drivers"]) == 18
     assert body["drivers"][0]["id"] == "nev_penetration"
     assert body["drivers"][0]["boundary_class"] == "fixable_defect"
     assert "§6" in body["drivers"][0]["boundary_basis"]

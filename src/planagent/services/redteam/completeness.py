@@ -297,6 +297,46 @@ DRIVER_CATALOG: tuple[DriverCheck, ...] = (
             "({mentions}), but no variable in the case represents it."
         ),
     ),
+    DriverCheck(
+        id="order_backlog",
+        kind="missing_driver",
+        target="order_backlog",
+        label="order-book / backlog",
+        situation_keywords=(
+            "order backlog",
+            "order book",
+            "订单簿",
+            "在手订单",
+            "未交付订单",
+            "新获订单",
+            "新获项目订单",
+            "backlog",
+        ),
+        variable_keywords=(
+            "order_backlog",
+            "backlog",
+            "order_intake",
+            "订单簿",
+            "在手订单",
+        ),
+        severity="high",
+        suggested_fix=(
+            "Add an order_backlog variable (+ order_intake_rate / "
+            "backlog_conversion / order_decay) with a tick driver "
+            "updating backlog + intake - converted (floored at 0), and "
+            "gain + backlog_conversion * order_backlog / revenue in the "
+            "revenue driver, so the booked-but-undelivered stock — not "
+            "a bare growth rate — carries the front-loaded growth. Bind "
+            "the opening book from the decision-time announced "
+            "annualized orders."
+        ),
+        evidence_template=(
+            "The internal situation names the order book as a live driver "
+            "({mentions}), but no variable in the case represents it: the "
+            "booked-but-undelivered stock that front-loads revenue is "
+            "invisible to the model."
+        ),
+    ),
 )
 
 

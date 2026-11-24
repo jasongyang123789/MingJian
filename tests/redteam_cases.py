@@ -194,15 +194,35 @@ def complete_case_snapshot() -> CaseSnapshot:
             ["2020 年 L2 装配率 ~12%"],
             description="L2 ADAS fitment rate",
         ),
+        # Step 4 (2026-11-24): the order book is a fourth known driver.
+        # The situation names 新获项目订单年化约 70 亿, so the complete
+        # case must carry the backlog chain too — otherwise the
+        # "complete" fixture would newly flag order_backlog.
+        _var(
+            "order_backlog",
+            0.0,
+            6799.06,
+            10000.0,
+            ["2020 年新获项目订单年化约 70 亿（年报摘要）；开簿按 mode 收入一年 intake"],
+            description="Stock of booked-but-undelivered orders (order_backlog)",
+        ),
+        _var(
+            "backlog_conversion",
+            0.30,
+            0.40,
+            0.60,
+            ["SOP 滞后：订单兑现按 backlog_conversion 转化"],
+            description="Share of the order book converting to revenue per tick",
+        ),
     ]
     formulas = [
         RedTeamFormula(
             target="revenue_growth",
             expression=(
                 "revenue_growth = 0.05 + 0.6 * nev_penetration + 0.4 * "
-                "domain_controller_substitution"
+                "domain_controller_substitution + 0.3 * order_backlog / revenue"
             ),
-            description="NEV adoption and domain-controller substitution drive revenue growth.",
+            description="NEV adoption, domain-controller substitution, and the order book drive revenue growth.",
         ),
         RedTeamFormula(
             target="market_share",

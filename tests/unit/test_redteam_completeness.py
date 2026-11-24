@@ -48,6 +48,46 @@ def test_acceptance_complete_case_no_high_missing_driver() -> None:
     assert findings == [], f"complete case should be clean; got: {findings}"
 
 
+def test_desay2020_also_flags_order_backlog_high() -> None:
+    # Step 4 (2026-11-24): the situation names 新获项目订单年化约 70 亿
+    # and the case has no order-book variable. The frozen decomposition
+    # names the backlog leg the largest single contributor to the
+    # anchor overshoot, so desay-2020 must flag it — high, fixable
+    # defect — as the fourth deterministic finding.
+    findings = run_completeness_checks(desay_2020_snapshot())
+    by_key = _by_kind_target(findings)
+    backlog = by_key.get(("missing_driver", "order_backlog"))
+    assert backlog is not None, f"order-book finding missing; got: {findings}"
+    assert backlog.severity == "high"
+    assert backlog.source == "completeness_check"
+    assert backlog.boundary_class == "fixable_defect"
+    # The basis must name THIS driver, not another catalog entry's.
+    assert "70" in backlog.boundary_basis or "订单" in backlog.boundary_basis
+    assert "NEV" not in backlog.boundary_basis
+    assert backlog.id == "rt-missing_driver-order_backlog"
+
+
+def test_order_backlog_present_but_unlinked_is_missing_link() -> None:
+    snapshot = desay_2020_snapshot()
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="order_backlog",
+            description="Stock of booked-but-undelivered orders (order_backlog)",
+            distribution="triangular(0.0, 6799.06, 10000.0)",
+            low=0.0,
+            mode=6799.06,
+            high=10000.0,
+            evidence=["2020 年新获项目订单年化约 70 亿"],
+        )
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("missing_driver", "order_backlog") not in by_key
+    unlinked = by_key.get(("missing_link", "order_backlog"))
+    assert unlinked is not None
+    assert unlinked.severity == "medium"
+
+
 def test_desay2020_also_flags_adas_penetration_medium() -> None:
     findings = run_completeness_checks(desay_2020_snapshot())
     by_key = _by_kind_target(findings)

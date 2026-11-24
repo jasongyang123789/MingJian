@@ -958,3 +958,74 @@ def test_boundary_desay_2020_demonstration() -> None:
     assert "18212" in magnitude_gap.boundary_basis
     assert "32557" in magnitude_gap.boundary_basis
     assert "边界判定：可接受的预测上限" in magnitude_gap.text
+
+
+# ---------------------------------------------------------------------------
+# Review composer (Step 4, 2026-11-24): T2 + T3 + T4 in one call.
+# ---------------------------------------------------------------------------
+
+
+def test_review_composer_empty_inputs_stay_silent() -> None:
+    from planagent.services.variables.opportunities import review_breakout_prompts
+
+    assert review_breakout_prompts() == []
+    assert review_breakout_prompts(actual_first_year_growth=0.30) == []
+    assert review_breakout_prompts(modeled_first_year_growth=0.15) == []
+
+
+def test_review_composer_t2_fires_on_2021_actuals() -> None:
+    from planagent.services.variables.opportunities import review_breakout_prompts
+
+    # TRACK9 live check: actual +40.74% vs live B replay +18.75%.
+    prompts = review_breakout_prompts(
+        period_label="2021",
+        actual_first_year_growth=0.4074,
+        modeled_first_year_growth=0.1875,
+    )
+    assert [p.trigger_id for p in prompts] == ["T2"]
+
+
+def test_review_composer_t2_silent_within_threshold() -> None:
+    from planagent.services.variables.opportunities import review_breakout_prompts
+
+    assert (
+        review_breakout_prompts(actual_first_year_growth=0.30, modeled_first_year_growth=0.15) == []
+    )
+
+
+def test_review_composer_t3_and_t4_in_trigger_order() -> None:
+    from planagent.services.variables.opportunities import (
+        FittedStretch,
+        review_breakout_prompts,
+    )
+
+    prompts = review_breakout_prompts(
+        period_label="2021",
+        actual_first_year_growth=0.4074,
+        modeled_first_year_growth=0.1875,
+        fitted=[
+            FittedStretch(
+                variable_id="nev_coupling",
+                fitted_value=2.08,
+                distribution_max=0.40,
+                target_label="year-5 收入 32557.18",
+            ),
+            FittedStretch(
+                variable_id="revenue_growth",
+                fitted_value=0.30,
+                distribution_max=0.30,
+                target_label="year-3 收入 21908",
+            ),
+        ],
+        orders_growth=0.71,
+        orders_to_revenue=1.76,
+        orders_label="2021 年新获订单",
+    )
+    # T2, then the firing T3 (nev_coupling 5.20x; revenue_growth 1.00x
+    # stays silent), then T4.
+    assert [p.trigger_id for p in prompts] == ["T2", "T3", "T4"]
+    t3 = prompts[1]
+    assert t3.details["variable_id"] == "nev_coupling"
+    assert t3.details["stretch_ratio"] == pytest.approx(5.2)
+    t4 = prompts[2]
+    assert t4.details["clauses"] == ["growth", "ratio"]

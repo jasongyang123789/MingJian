@@ -81,8 +81,10 @@ async def test_fixture_run_merges_completeness_and_llm() -> None:
     assert "down-cycle" in downside.boundary_basis
     assert all(f.boundary_class == "fixable_defect" for f in result.findings)
     assert all(f.boundary_basis for f in result.findings)
-    assert result.counts_by_severity == {"high": 2, "medium": 2}
-    assert result.counts_by_kind["missing_driver"] == 3
+    # Step 4 (2026-11-24): deterministic set is four — the order
+    # book joins as a third high missing_driver.
+    assert result.counts_by_severity == {"high": 3, "medium": 2}
+    assert result.counts_by_kind["missing_driver"] == 4
     assert len(result.stages) == 1
     assert result.stages[0]["template_id"] == "redteam.challenge"
     assert "human review" in result.disclaimer
@@ -102,7 +104,7 @@ async def test_auto_mode_without_llm_is_completeness_only() -> None:
     assert result.llm_available is False
     assert result.llm_source == "none"
     assert result.stages == []
-    assert len(result.findings) == 3  # the deterministic three
+    assert len(result.findings) == 4  # the deterministic four (step 4)
     assert port.calls == []
 
 
@@ -112,7 +114,7 @@ async def test_completeness_only_never_calls_llm() -> None:
     assert result.llm_available is True  # port exists, just not used
     assert result.llm_source == "none"
     assert result.stages == []
-    assert len(result.findings) == 3
+    assert len(result.findings) == 4  # the deterministic four (step 4)
     assert port.calls == []
 
 

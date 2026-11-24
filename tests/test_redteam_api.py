@@ -107,7 +107,9 @@ def test_analyze_desay_snapshot_flags_both_misses(monkeypatch, tmp_path: Path) -
             for f in result["findings"]
         )
         assert by_key[("missing_driver", "nev_penetration")]["boundary_class"] == "fixable_defect"
-        assert result["counts_by_severity"] == {"high": 2, "medium": 2}
+        # Step 4 (2026-11-24): three high deterministic findings now —
+        # NEV, order book, domain controller — plus the medium LLM one.
+        assert result["counts_by_severity"] == {"high": 3, "medium": 2}
         port.assert_exhausted()
 
 
@@ -136,7 +138,11 @@ def test_analyze_desay_completeness_only(monkeypatch, tmp_path: Path) -> None:
         )
         assert response.status_code == 200, response.text
         result = response.json()
-        assert len(result["findings"]) == 3
+        # Step 4 (2026-11-24): the deterministic set is four — NEV,
+        # domain-controller, ADAS, and the order book (the frozen
+        # decomposition's prime suspect; the situation names ~70亿
+        # annualized new orders).
+        assert len(result["findings"]) == 4
         assert result["llm_source"] == "none"
         assert port.calls == []
 

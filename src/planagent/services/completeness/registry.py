@@ -222,6 +222,45 @@ AUTOMOTIVE_DRIVER_REGISTRY: list[DriverRegistryEntry] = [
         ),
     ),
     DriverRegistryEntry(
+        id="order_backlog",
+        name="Order-book / backlog transmission",
+        description=(
+            "The stock of booked-but-undelivered orders converting into "
+            "revenue over following ticks. The book front-loads revenue "
+            "growth: intake arrives before revenue, so a case without the "
+            "stock cannot reproduce the fast-then-slowing shape of a "
+            "supplier ramping on new program wins."
+        ),
+        weight=0.95,
+        severity="high",
+        boundary_class=BoundaryClass.FIXABLE_DEFECT,
+        boundary_basis="§6 fixable defect: 2020-12-31 public evidence — Desay's announced annualized new orders ~70亿 ≈ 1.03× 2020 revenue 67.99亿 (2020 annual-report summary) — could be encoded into a distribution. The frozen decomposition (2026-11-24) names the backlog leg the largest single contributor to the anchor overshoot (desay-2015 tick-3 +1358.21, 63.7% of the overshoot; desay-2020 +11524.49, 147.4%).",
+        drives=["revenue"],
+        model_elements=[
+            "order_backlog",
+            "order_intake",
+            "order_intake_rate",
+            "backlog_conversion",
+            "order_decay",
+        ],
+        link_outputs=["revenue"],
+        evidence=[
+            "Desay announced annualized new orders ~70亿 ≈ 1.03× 2020 revenue 67.99亿 (2020 annual-report summary; Track 11 §5.4, decision-time input)",
+            "Frozen decomposition (2026-11-24): backlog leg tick-3 contribution +1358.21 (desay-2015, 63.7% of overshoot) / +11524.49 (desay-2020, 147.4%); the leg grows tick by tick from 0, a growth phenomenon, not an initial-level problem",
+            "2021-2023 realized order path (>120/>200/>245亿) is scoring evidence only, never an input (hindsight firewall)",
+        ],
+        suggested_fix=(
+            "Add `order_backlog` (+ `order_intake_rate` / "
+            "`backlog_conversion` / `order_decay`) as variables with a "
+            "backlog tick driver (backlog + intake − converted, floored "
+            "at 0) and gain exactly one additive term in the revenue "
+            "driver (`+ backlog_conversion * order_backlog / revenue`) — "
+            "or bind the automotive template's order-book chain. Bind "
+            "the opening book from the decision-time announced "
+            "annualized orders (≈1.03× revenue for 2020)."
+        ),
+    ),
+    DriverRegistryEntry(
         id="income",
         name="disposable-income transmission",
         description="Disposable-income level and growth feeding vehicle demand.",
