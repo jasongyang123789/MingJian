@@ -20,6 +20,7 @@ import pytest
 from planagent.evaluation.milestone import (
     BASELINE_BAND_WIDTHS,
     POINT_ERROR_THRESHOLD,
+    band_edge_distance,
     old_rule_verdict,
     score_milestone_case,
     score_milestone_node,
@@ -260,3 +261,63 @@ def test_node_score_carries_all_intermediates():
     assert s.baseline_width == 1297.9586
     assert s.width_ratio == pytest.approx(2664.5672 / 1297.9586)
     assert s.in_band is True
+
+
+# --- Band-edge distance (added 2026-11-24, diagnostic only) ----------------
+# Definition: below the band p10 - actual; above the band actual - p90;
+# inside the band min(actual - p10, p90 - actual); exactly 0 on an edge.
+# The distance never changes the verdict — these tests pin the value
+# alongside the (unchanged) verdict for each position.
+def test_band_edge_distance_in_band_near_lower_edge():
+    s = _score({"p10": 100.0, "p50": 110.0, "p90": 120.0}, 102.0, 100.0)
+    assert s.verdict == "PASS"
+    assert s.band_edge_distance == pytest.approx(2.0)
+    assert s.band_edge_distance_rel == pytest.approx(2.0 / 102.0)
+
+
+def test_band_edge_distance_in_band_near_upper_edge():
+    s = _score({"p10": 100.0, "p50": 110.0, "p90": 120.0}, 118.0, 100.0)
+    assert s.verdict == "PASS"
+    assert s.band_edge_distance == pytest.approx(2.0)
+    assert s.band_edge_distance_rel == pytest.approx(2.0 / 118.0)
+
+
+def test_band_edge_distance_below_band():
+    s = _score({"p10": 100.0, "p50": 110.0, "p90": 120.0}, 90.0, 100.0)
+    assert s.verdict == "FAIL" and s.reason == "out_of_band"
+    assert s.band_edge_distance == pytest.approx(10.0)
+    assert s.band_edge_distance_rel == pytest.approx(10.0 / 90.0)
+
+
+def test_band_edge_distance_above_band():
+    s = _score({"p10": 100.0, "p50": 110.0, "p90": 120.0}, 130.0, 100.0)
+    assert s.verdict == "FAIL" and s.reason == "out_of_band"
+    assert s.band_edge_distance == pytest.approx(10.0)
+    assert s.band_edge_distance_rel == pytest.approx(10.0 / 130.0)
+
+
+def test_band_edge_distance_exactly_on_edge_is_zero():
+    for actual in (100.0, 120.0):
+        s = _score({"p10": 100.0, "p50": 110.0, "p90": 120.0}, actual, 100.0)
+        assert s.in_band is True
+        assert s.band_edge_distance == 0.0
+        assert s.band_edge_distance_rel == 0.0
+
+
+def test_band_edge_distance_helper_direct():
+    assert band_edge_distance(100.0, 120.0, 90.0) == pytest.approx(10.0)
+    assert band_edge_distance(100.0, 120.0, 130.0) == pytest.approx(10.0)
+    assert band_edge_distance(100.0, 120.0, 102.0) == pytest.approx(2.0)
+    assert band_edge_distance(100.0, 120.0, 100.0) == 0.0
+    assert band_edge_distance(100.0, 120.0, 120.0) == 0.0
+    with pytest.raises(ValueError):
+        band_edge_distance(120.0, 100.0, 110.0)
+
+
+def test_band_edge_distance_real_node_desay_2015_on():
+    # Real A/C-run node: actual 5408.74 inside [5157.3955, 7821.9627],
+    # 251.3445 above the lower edge (still FAIL via the width cap).
+    s = _score(DESAY_2015_ON, ACTUAL_2015, BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)])
+    assert s.verdict == "FAIL" and s.reason == "width_exceeds_baseline"
+    assert s.band_edge_distance == pytest.approx(5408.74 - 5157.3955, abs=1e-9)
+    assert s.band_edge_distance_rel == pytest.approx((5408.74 - 5157.3955) / 5408.74)
