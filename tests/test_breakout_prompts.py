@@ -1019,7 +1019,7 @@ def test_review_composer_t3_and_t4_in_trigger_order() -> None:
         ],
         orders_growth=0.71,
         orders_to_revenue=1.76,
-        orders_label="2021 年新获订单",
+        orders_label="年化新获订单",
     )
     # T2, then the firing T3 (nev_coupling 5.20x; revenue_growth 1.00x
     # stays silent), then T4.
