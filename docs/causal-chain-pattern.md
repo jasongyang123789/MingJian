@@ -161,29 +161,61 @@ Template variables (`template_spec.py`):
 The stock and flow are the pack's `order_backlog` / `order_intake`
 STATE fields (defaults 0.0; generic runs keep them dormant). A case
 attaches the mechanism by binding the opening book/flow as variables
-and adding three tick drivers, in list order — the order is
-load-bearing (intake must run before revenue, so revenue reads the
-decayed flow of this tick):
+and adding TWO tick drivers — intake decay and the revenue term — in
+list order (intake must run before revenue). The stock update is the
+TEMPLATE's `order_backlog` tick driver (`TEMPLATE_FORMULAS`, right
+after the revenue passthrough — a merge anchor): a case must NOT
+supply its own backlog-update driver, because one on the same output
+replaces the anchor in place and silently reintroduces its own form
+(that is how the Track 11 stock form survived untested — see the
+history note below).
 
 ```python
-# 1. Intake driver decays the flow.
+# 1. Intake driver decays the flow (diagnostic only under this form:
+#    the flow enters neither the revenue term nor the stock update).
 order_intake = order_intake * (1 - order_decay)
 
 # 2. Revenue driver gains exactly one term (after the NEV term):
-#    conversion on the pool available during the tick (pre-tick
-#    backlog + this tick's decayed intake). The converted amount is
-#    exactly backlog_conversion * pool, so the revenue term still
+#    conversion on the PRE-TICK book only. The converted amount is
+#    exactly backlog_conversion * book, so the revenue term still
 #    equals the converted amount.
 revenue = max(0, revenue * (1 + revenue_growth
                             + revenue_coupling * disruptor_adoption
                             + nev_coupling * nev_penetration
-                            + backlog_conversion * (order_backlog + order_intake) / revenue))
+                            + backlog_conversion * order_backlog / revenue))
 
-# 3. Backlog driver updates the stock from the pool: the pool loses
-#    conversion AND the adoption lapse, floored at 0.
-order_backlog = max(0, (order_backlog + order_intake)
-                       * (1 - backlog_conversion - disruptor_adoption))
+# 3. TEMPLATE backlog driver (merge anchor, not a case driver):
+#    the finite decision-time book depletes geometrically at the
+#    conversion rate, floored at 0. The intake flow does NOT
+#    replenish the book.
+order_backlog = max(0, order_backlog * (1 - backlog_conversion))
 ```
+
+FINITE-BOOK DEPLETION (step 1, 2026-11-24 — replaces both the Track
+11 stock form and the Track A pool form). History: the Track 11
+stock form (term `c*B/R`, update `B + intake - c*B`) made the term
+a perpetual growth premium — the intake flow (≈1× revenue) re-filled
+the book every tick, so the term added ~+10pp/+38pp per tick forever,
+horizon-unbounded. Track A revised it to a POOL form (term on the
+pre-tick book + decayed intake, pool lapsing with adoption) — but
+that form was NEVER run by any backtest harness: the tests pinned
+it while every rerun harness (e047f50 → A/C → trials50) kept its own
+stock driver, and Track A's own rerun made the 2015 yr-3 replay
+error WORSE (−4.1% → +15.2%). Step 1 unifies template, tests and
+harness on one form, chosen by offline screening on the trials50
+replay paths (the old form is reproduced exactly by the screen;
+FBOOK yr-3 replay errors +3.4%/+8.8%/−11.7%/−9.0% vs OLD
++19.9%/+20.2%/+20.0%/+13.2%; the pool form screened HOTTER,
++24.9%/+21.2% on the anchor paths) and confirmed by a full four-case
+rerun (downside ON, seed 42, trials 50). The mechanism's evidence
+basis is unchanged: the opening book is a finite decision-time stock
+(mean delivery lag 1/c, ~2.5y at mode 0.40, inside the SOP-lag
+evidence 1.67–3.33y); later orders' delivery is carried by
+`revenue_growth`, which is calibrated on TOTAL historical growth and
+already includes normal order conversion — replenishing the stock on
+top of it double-counts. Under depletion the total backlog uplift is
+finite and front-loaded, and the book is 1/16 of its opening level
+by tick 4 at mode 0.40.
 
 Why variables, not initial formulas, for the opening book: merge is
 per-output, so an initial formula and a tick driver cannot share an
@@ -203,41 +235,56 @@ absolute errors shrink** (yr-3 replay and yr-5 P50, each vs its
 actual). The old wording ("yr-3 and yr-5 signed errors moving toward
 each other") is unachievable by any positive additive term (Track 11
 proof; measured 22.0→33.2pp on 2015 and 37.4→43.6pp on 2020 at
-e047f50) and is kept only in the historical reports. The Track 11
-revision also fixes the 2015 control: under the Track 11 drivers the
-term humped before it decayed (the stock sat near 1300–1400 while
-revenue grew, because decay acted only on the flow), so 2015
-per-tick growth rose ([1.2316, 1.2614, 1.2613, 1.2622] at e047f50);
-under the revised drivers the pool converts within the year and
-lapses with adoption, so the term falls from tick 1 and 2015 growth
-falls too (unit tests lock both cases at mode values; the Track A
-re-run confirms on the real backtest). Screening note: putting the
-flow-decay rate into the stock lapse as well exhausts the book early
-and fails the shape grid 8/12 — the flow decay governs the intake
-flow itself, and only the adoption lapse touches the stock.
+e047f50) and is kept only in the historical reports. STEP-1
+REFINEMENT (2026-11-24): the mechanism-level pin is the BACKLOG
+TERM falling every tick (the book depletes geometrically, so the
+term — the mechanism's own output — shrinks monotonically) plus the
+opening fall of total growth (the anti-hump guard: under Track 11
+total factors ROSE from tick 1, [1.2316, 1.2614, 1.2613, 1.2622] at
+e047f50). Total-factor monotonicity through the whole horizon is NOT
+pinned at synthetic mode values: the adoption/NEV couplings are
+monotone RISING channels, and once the term has burned off (tick
+3–4 at mode values) they take over and total growth rises again —
+that handover is the mechanism working as designed (the opportunity
+leg is front-loaded; after it burns off, base + coupling growth takes
+over). Unit tests lock the term's fall, the geometric depletion and
+the opening fall at 2020 AND 2015 mode values; total-factor falling
+through the horizon is verified on the REAL cases (step-1 rerun,
+below), not the synthetic controls.
 
-What it does and does not do (measured on the Desay re-run,
-Track 11 report — Track 11 driver equations; the Track A revision
-changes the 2015 shape verdict, see the paragraph above): at 2020
-mode values the B-replay growth factors FALL tick by tick (1.616 →
-1.615 → 1.557 → 1.522) while adoption and penetration keep rising —
-the shape property the monotone channels cannot express — and both
-absolute errors shrink by about two thirds (yr-3 replay −52.7% →
-−18.0%; yr-5 P50 −49.9% → +19.4%). What it does NOT do: make the
-two SIGNED errors converge (they move from 2.7pp apart to 37.4pp
-apart, because yr-5 crosses zero), or raise the yr-3/yr-5 level
-ratio (0.583 → 0.422 vs actual 0.673). That is structural, not a
-parameter choice: a positive additive term compounds into year 5, so
-it can fix the growth-rate shape but cannot raise the level ratio —
-hence the restated criterion above (Track A): per-tick growth
-becomes decreasing AND both absolute errors shrink. The signed-gap
-wording is retired; do not reintroduce it as a gate.
-The mechanism also over-lifts a non-surging case: the 2015 control
-book (0.25× revenue) still lifts B's year-5 P50 by +44%, because the
-decaying intake flow keeps replenishing the stock (the stock only
-drains via conversion). The intake-rate assumption therefore needs
-real calibration data (the internal order book) before the mechanism
-is used for planning — see the Track 11 report §"Limits".
+What it does and does not do (measured on the step-1 four-case
+re-run, downside ON, seed 42, trials 50): the B-replay growth
+factors FALL tick by tick on both real cases (2015 [1.2599, 1.1796,
+1.0694, 0.9763]; 2020 [1.7271, 1.3917, 1.2342, 1.1253]) while
+adoption and penetration keep rising — the shape property the
+monotone channels cannot express — and the anchor yr-3 bands now
+COVER both actuals (2015 band [5222, 6488, 7793] vs actual 5408.74;
+2020 band [17510, 22354, 26385] vs actual 21908), where trials50 had
+both actuals below P10. B year-4 P50 errors move to −7.0% (2015)
+and −23.9% (2020), from +10.6%/+7.1%; the tripwire stays CLEAR
+(2015 B P50 6325.42 vs the 9178.73 line). What it does NOT do: make
+the two SIGNED errors converge (they move from 2.7pp apart to 37.4pp
+apart under Track 11, because yr-5 crosses zero), or raise the
+yr-3/yr-5 level ratio (0.583 → 0.422 vs actual 0.673 under Track 11).
+That is structural, not a parameter choice: a positive additive term
+compounds into year 5, so it can fix the growth-rate shape but cannot
+raise the level ratio — hence the restated criterion above (Track A):
+per-tick growth becomes decreasing AND both absolute errors shrink.
+The signed-gap wording is retired; do not reintroduce it as a gate.
+It also does NOT bring band width under the W0 cap: widths are
+1.98×/1.77× W0 (was 2.10×/2.13×), so both Desay milestones still
+FAIL under the §2 width rule — now on width alone, not coverage.
+That is a rule question for Ho (whether the W0 cap, frozen from the
+downside-OFF run, should be re-baselined for downside-ON bands), not
+a model fix.
+The mechanism no longer over-lifts a non-surging case without
+bound: the 2015 control book (0.25× revenue) lifted B's year-5 P50
+by +44% under the stock form because the decaying intake flow kept
+replenishing the stock; under depletion the uplift is bounded by
+the finite book (2015 B year-4 P50 now sits −7.0% vs actual). The
+intake-rate assumption still needs real calibration data (the
+internal order book) before the mechanism is used for planning —
+see the Track 11 report §"Limits".
 
 ## 6. Worked example 3: the ADAS penetration chain — the grade term
 

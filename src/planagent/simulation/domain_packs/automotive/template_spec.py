@@ -461,29 +461,48 @@ TEMPLATE_VARIABLES: list[dict] = [
     # binding the opening book and flow as variables (both =
     # order_intake_rate * mode revenue — the stock proxy is one year
     # of intake, a LABELED ASSUMPTION: the order stock itself was
-    # never disclosed) and three tick drivers, in list order — the
-    # order is load-bearing (see docs/causal-chain-pattern.md):
-    # the intake driver decays the flow (order_intake * (1 -
-    # order_decay)); the revenue driver gains exactly one additive
-    # term (+ backlog_conversion * (order_backlog + order_intake) /
-    # revenue), converting the pool available during the tick (opening
-    # book + this tick's decayed intake), so the revenue term equals
-    # the converted amount; the backlog driver updates the stock as
-    # (backlog + intake) * (1 - backlog_conversion -
-    # disruptor_adoption), floored at 0 — the pool lapses as adoption
-    # rises. Generic automotive runs keep these four variables dormant
+    # never disclosed) and the revenue tick driver, which gains
+    # exactly one additive term (+ backlog_conversion *
+    # order_backlog / revenue). The stock update is the TEMPLATE's
+    # `order_backlog` tick driver below (a merge anchor: a case
+    # driver on the same output would replace it in place, so cases
+    # must NOT supply their own backlog-update driver).
+    # FINITE-BOOK DEPLETION (step 1, 2026-11-24 — replaces the Track
+    # 11 stock form AND the Track A pool form, see
+    # docs/causal-chain-pattern.md §5): the revenue term converts a
+    # fraction `backlog_conversion` of the PRE-TICK book each tick,
+    # and the book then depletes geometrically,
+    # B' = B * (1 - backlog_conversion), floored at 0 — the intake
+    # flow NO LONGER replenishes the convertible stock. The opening
+    # book is a FINITE decision-time stock (mean delivery lag 1/c,
+    # ~2.5y at mode 0.40, inside the SOP-lag evidence 1.67-3.33y);
+    # later orders' delivery is carried by `revenue_growth`, which
+    # is calibrated on TOTAL historical growth and already includes
+    # normal order conversion — replenishing the stock on top of it
+    # double-counts. The old stock form (B' = B + intake - c*B) made
+    # the term a perpetual growth premium (horizon-unbounded); the
+    # Track A pool form (term on B + decayed intake, pool lapsing
+    # with adoption) converted this tick's intake with no SOP lag and
+    # was NEVER run by any backtest harness — the tests pinned it
+    # while every rerun ran the stock form (step-1 finding). Both
+    # are superseded; the template driver below is the single
+    # implementation, and `tests/test_order_book.py` pins it.
+    # Generic automotive runs keep these four variables dormant
     # (sampled, unread — the same standing as the NEV-chain variables
     # in generic runs) and the pack defaults (backlog 0, intake 0)
     # leave them with no effect. `order_intake_rate` is sampled but
     # unread by any driver; backtest cases pin it FIXED at its mode
     # (Track A task 2, option (ii)) so the ensemble does not pretend
     # to propagate intake-rate uncertainty — see the Track A report.
+    # `order_intake` itself is unread by any driver under this form
+    # (like `order_intake_rate`): the intake-decay driver still runs
+    # each tick, so the flow stays available as a decaying diagnostic.
     {
         "id": "order_backlog",
         "unit": "RMB m (same units as the case's revenue)",
         "distribution": {"type": "fixed", "value": 0.0},
         "evidence_ref": "assumption:pending-calibration — the order stock is a case-level quantity (a case binds it directly, e.g. one year of intake at mode revenue); 0.0 is the no-book generic default, never a market estimate",
-        "description": "Stock of unfulfilled orders at run start. Lever handle: a case overrides it with its decision-time order book (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed). The tick driver updates it as backlog + intake - converted, floored at 0.",
+        "description": "Stock of unfulfilled orders at run start. Lever handle: a case overrides it with its decision-time order book (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed). The template tick driver updates it as backlog * (1 - backlog_conversion), floored at 0 (finite-book depletion; the intake flow does not replenish it).",
     },
     {
         "id": "order_intake",
@@ -504,14 +523,14 @@ TEMPLATE_VARIABLES: list[dict] = [
         "unit": "fraction of backlog converted per tick",
         "distribution": {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
         "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (lag-implied range check — design-in to start-of-production ~1-2 years (IPU04 2020 cooperation -> 2022 SOP target) implies conversion 0.33-1.00; current (0.30, 0.40, 0.60) implies lags 3.33/2.5/1.67y, i.e. conservative. Upward revision (mode 0.50) held by the 2015 headroom red line.)",
-        "description": "Fraction of the pre-tick backlog converted to revenue each tick: the revenue driver gains + backlog_conversion * (order_backlog / revenue), and the same amount leaves the backlog. Mode 0.40.",
+        "description": "Fraction of the pre-tick backlog converted to revenue each tick: the revenue driver gains + backlog_conversion * (order_backlog / revenue), and the same amount leaves the backlog (the book depletes geometrically at this rate — finite-book depletion, step 1 2026-11-24; the intake flow does not replenish the book, so the total backlog uplift is finite and front-loaded). Mode 0.40.",
     },
     {
         "id": "order_decay",
         "unit": "fraction of the order flow lost per tick",
         "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
         "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (fit attempted and failed — only two disclosed new-orders points (2019/2020 ~7.0bn, flat); revenue-growth decay unstable (0.894 / 2.721). Mode 0.25 is the centre of the plausible range; low sensitivity.)",
-        "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). The decay is the point of the mechanism: as the surge passes, the backlog term shrinks and per-tick growth falls even while penetration and adoption keep rising.",
+        "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). Under finite-book depletion (step 1 2026-11-24) the flow is a decaying diagnostic: the backlog term shrinks because the BOOK depletes geometrically at backlog_conversion, so per-tick growth falls even while penetration and adoption keep rising.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
@@ -1771,15 +1790,17 @@ TEMPLATE_FORMULAS: list[dict] = [
     # gross_margin - rd_intensity - other_share, each leg reverting
     # linearly toward its own long-run level, the adoption coupling
     # on the R&D leg (rd_adoption). Order inside this block is
-    # load-bearing: the order-intake decay driver first (Track A: the
-    # revenue term converts the pool = pre-tick book + this tick's
-    # decayed intake, so the decay must precede the revenue driver; a
-    # case intake driver replaces it in place), then disruptor_adoption
+    # load-bearing: the order-intake decay driver first (the decay
+    # must precede the revenue driver; a case intake driver replaces
+    # it in place), then disruptor_adoption
     # (rd_intensity reads it; a case adoption curve replaces it in
     # place), then the revenue
     # passthrough (a case revenue driver replaces it in place, so it
     # evaluates BEFORE gross_margin / rd_intensity / net_margin and
-    # profit), then gross_margin, rd_intensity, net_margin, then
+    # profit), then the order_backlog update (step 1 finite-book
+    # depletion: it drains exactly what the revenue term converted,
+    # after revenue has read the pre-tick book), then gross_margin,
+    # rd_intensity, net_margin, then
     # profit — profit reads SAME-TICK revenue, exactly the Track B
     # semantics. The formula language has no `clamp` operator (eight
     # ops only: add/subtract/multiply/divide/min/max/pow/logistic),
@@ -1792,6 +1813,16 @@ TEMPLATE_FORMULAS: list[dict] = [
     # anchor the case intake driver appends AFTER the revenue anchor
     # and the revenue term reads the undecayed flow. Generic runs are
     # unaffected (order_intake defaults to 0.0, decay of 0 is 0).
+    # Step 1 (2026-11-24, finite-book depletion): the backlog-update
+    # driver sits right AFTER the revenue passthrough, so it runs
+    # after the case revenue driver (which replaces the passthrough
+    # IN PLACE) has read the pre-tick book. A case must NOT supply
+    # its own backlog-update driver — one on the same output would
+    # replace this anchor in place and silently reintroduce its own
+    # form (that is how the Track 11 stock form survived untested:
+    # the harness carried its own driver while the tests pinned the
+    # Track A pool form). Generic runs are unaffected (the book
+    # defaults to 0.0, and 0 * (1 - c) is 0).
     {
         "output": "order_intake",
         "tick_driver": True,
@@ -1815,6 +1846,24 @@ TEMPLATE_FORMULAS: list[dict] = [
         "tick_driver": True,
         "expression": {"ref": "revenue"},
         "description": "Tick driver (profit-chain pack): identity passthrough on the pack's revenue state field (a driver self-reference reads the field's current state value). MERGE ANCHOR, not a model: (1) it makes `revenue` a known id for template validation — the formula language's known ids are sampled variables + earlier driver outputs, and `revenue` is a state field, not a template variable — so the profit driver below can reference it; (2) a case revenue driver replaces this driver IN PLACE at merge time, so the case revenue evaluates BEFORE net_margin/profit and profit reads same-tick revenue (Track B semantics) instead of pre-tick revenue (one-tick lag). At runtime it is exactly identity (4-decimal rounding only: the state value it reads is already 4-decimal).",
+    },
+    {
+        "output": "order_backlog",
+        "tick_driver": True,
+        "expression": {
+            "op": "max",
+            "args": [
+                0,
+                {
+                    "op": "multiply",
+                    "args": [
+                        {"ref": "order_backlog"},
+                        {"op": "subtract", "args": [1, {"ref": "backlog_conversion"}]},
+                    ],
+                },
+            ],
+        },
+        "description": "Tick driver (step 1, 2026-11-24, finite-book depletion): the order book depletes geometrically at the conversion rate — B' = B * (1 - backlog_conversion), floored at 0. MERGE ANCHOR, not a case override: it runs right after the revenue passthrough (which a case revenue driver replaces in place), so revenue reads the pre-tick book and the update drains exactly what the term converted. The intake flow does NOT replenish the book (its delivery is carried by revenue_growth, calibrated on total historical growth); the book is the finite decision-time stock, so the total backlog uplift is finite and front-loaded. A case must not supply its own backlog-update driver. Generic runs keep the 0.0 default and the driver is a no-op.",
     },
     {
         "output": "gross_margin",
