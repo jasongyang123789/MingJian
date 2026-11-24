@@ -13,6 +13,7 @@ import pytest
 
 from planagent.services.variables import (
     DistributionType,
+    FormulaDefinition,
     MetricPolicySpec,
     TemplateStateField,
     VariableDefinition,
@@ -282,6 +283,121 @@ def test_merge_variable_sets_override_wins_and_order_is_deterministic() -> None:
     empty_override = merge_variable_sets(base, VariableSet())
     assert [variable.id for variable in empty_override.variables] == ["a", "b"]
     assert empty_override.name == "base"
+
+
+def _formula(
+    output: str, expression: object, tick_driver: bool = False
+) -> FormulaDefinition:
+    return FormulaDefinition(output=output, expression=expression, tick_driver=tick_driver)
+
+
+def test_merge_hoists_appended_initial_formula_before_referencing_driver() -> None:
+    # Track B gapb: the override replaces the template's net_margin driver
+    # in place (middle of the list) and appends a new initial formula
+    # net_margin_base at the end; validation only lets a formula reference
+    # sampled ids and EARLIER formula outputs, so the appended initial
+    # must be hoisted before its referencing driver.
+    base = VariableSet(
+        name="base",
+        variables=[make_variable("profit"), make_variable("revenue")],
+        formulas=[
+            _formula(
+                "base_margin",
+                {"op": "divide", "args": [{"ref": "profit"}, {"ref": "revenue"}]},
+            ),
+            _formula(
+                "net_margin",
+                {"op": "add", "args": [{"ref": "base_margin"}, {"ref": "profit"}]},
+                tick_driver=True,
+            ),
+        ],
+    )
+    override = VariableSet(
+        name="override",
+        variables=[],
+        formulas=[
+            _formula(
+                "net_margin",
+                {"op": "add", "args": [{"ref": "net_margin_base"}, {"ref": "revenue"}]},
+                tick_driver=True,
+            ),
+            _formula(
+                "net_margin_base",
+                {"op": "divide", "args": [{"ref": "profit"}, {"ref": "revenue"}]},
+            ),
+        ],
+    )
+    merged = merge_variable_sets(base, override)
+    assert [formula.output for formula in merged.formulas] == [
+        "base_margin",
+        "net_margin_base",
+        "net_margin",
+    ]
+    assert validate_variable_set(merged).is_valid
+
+
+def test_merge_leaves_unreferenced_appended_initial_formula_in_place() -> None:
+    # Hoisting is a no-op unless an earlier driver references the new
+    # initial formula: the append order is preserved otherwise.
+    base = VariableSet(
+        name="base",
+        variables=[make_variable("profit"), make_variable("revenue")],
+        formulas=[
+            _formula(
+                "net_margin",
+                {"op": "add", "args": [{"ref": "profit"}, {"ref": "revenue"}]},
+                tick_driver=True,
+            ),
+        ],
+    )
+    override = VariableSet(
+        name="override",
+        variables=[],
+        formulas=[
+            _formula(
+                "standalone_init",
+                {"op": "divide", "args": [{"ref": "profit"}, {"ref": "revenue"}]},
+            ),
+        ],
+    )
+    merged = merge_variable_sets(base, override)
+    assert [formula.output for formula in merged.formulas] == [
+        "net_margin",
+        "standalone_init",
+    ]
+    assert validate_variable_set(merged).is_valid
+
+
+def test_merge_initial_formula_referencing_driver_still_fails() -> None:
+    # Reverse case: an initial formula may not reference a driver output
+    # (drivers do not exist at run start), and no hoist can fix that —
+    # validation must still report formula_unknown_ref.
+    base = VariableSet(
+        name="base",
+        variables=[make_variable("profit"), make_variable("revenue")],
+        formulas=[
+            _formula(
+                "net_margin",
+                {"op": "add", "args": [{"ref": "profit"}, {"ref": "revenue"}]},
+                tick_driver=True,
+            ),
+        ],
+    )
+    override = VariableSet(
+        name="override",
+        variables=[],
+        formulas=[
+            _formula(
+                "bad_init",
+                {"op": "add", "args": [{"ref": "net_margin"}, {"ref": "profit"}]},
+            ),
+        ],
+    )
+    merged = merge_variable_sets(base, override)
+    assert [formula.output for formula in merged.formulas] == ["net_margin", "bad_init"]
+    result = validate_variable_set(merged)
+    assert result.is_valid is False
+    assert kinds(result) == ["formula_unknown_ref"]
 
 
 def test_validate_or_raise_carries_result() -> None:
