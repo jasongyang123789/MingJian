@@ -80,8 +80,7 @@ def main() -> None:
     b = body["baseline"]
     print(f"P50={b['p50']} P10={b['p10']} P90={b['p90']} p_loss={b['p_loss']}")
     print("ACME_P50_EXACT_99.8143:", b["p50"] == 99.8143)
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "acme-smoke-c1.json"), "w") as f:
+    with open(backtest_common.get_run_dir() / "acme-smoke-c1.json", "w") as f:
         json.dump({"run_id": run_id, "baseline": b}, f, indent=2)
     sys.exit(0 if b["p50"] == 99.8143 else 1)
 

@@ -1,13 +1,16 @@
 # Harness run outputs (defaults live outside the repo under $BACKTEST_RUN_DIR;
 # these guards catch a run pointed at this dir by mistake).
-*.db
-*.log
-raw-desay/
-raw-classic/
-headline-check.json
-milestone-scores.json
-profit-summary.json
-analysis-*.txt
-server-*.log
-.proxy-secret
-__pycache__/
+# All patterns are anchored (leading /) so they match only this directory —
+# unanchored raw-desay/ would also match reference/seamfix/raw-desay/.
+/*.db
+/*.log
+/raw-desay/
+/raw-classic/
+/headline-check.json
+/milestone-scores.json
+/profit-summary.json
+/acme-smoke-c1.json
+/analysis-*.txt
+/server-*.log
+/.proxy-secret
+/__pycache__/

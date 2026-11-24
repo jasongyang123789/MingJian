@@ -1,0 +1,1120 @@
+{
+  "http_status": 200,
+  "body": {
+    "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+    "domain_id": "corporate",
+    "package": {
+      "run": {
+        "id": "adea76a9-684c-4782-87e4-a89bfe132997",
+        "company_id": "backtest-nokia-2007",
+        "force_id": null,
+        "domain_id": "corporate",
+        "actor_template": "ai_model_provider",
+        "status": "COMPLETED",
+        "execution_mode": "INLINE",
+        "tick_count": 9,
+        "seed": 7,
+        "parent_run_id": "f050a140-0559-4b6b-be57-2b1f72448ee4",
+        "summary": {
+          "scenario_id": "df696a7a-7e87-472d-bac9-33e651365096",
+          "ticks_completed": 9,
+          "evidence_count": 0,
+          "shock_count": 0,
+          "evidence_ids": [],
+          "evidence_statements": [],
+          "evidence_audit": {
+            "accepted_claim_count": 0,
+            "accepted_evidence_count": 0,
+            "provisional_claim_count": 0,
+            "provisional_claim_ids": [],
+            "provisional_evidence_count": 0,
+            "provisional_evidence_ids": [],
+            "provisional_confidence_floor": 0.62,
+            "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
+          },
+          "matched_rules": [],
+          "final_state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.1,
+            "market_share": 0.1726,
+            "team_morale": 1.0,
+            "pipeline": 1.15,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 25.2532,
+            "profit": 3.3461
+          },
+          "downside": {
+            "enabled": true,
+            "fields": [
+              "revenue",
+              "profit"
+            ],
+            "occurs": 1.0,
+            "depth": 0.18969271908301938,
+            "start": 2.3737791422073173,
+            "duration": 1.4259413418391436,
+            "persistent": 0.0,
+            "label": "LABELED ASSUMPTION — default downside shock (Track C, 2026-11-20): cyclical downturn + optional reversal; parameters have no independent estimate",
+            "factors": {
+              "1": 0.9825,
+              "2": 0.9087,
+              "3": 0.8112,
+              "4": 0.8873,
+              "5": 0.9759,
+              "6": 0.9965,
+              "7": 0.9995,
+              "8": 0.9999,
+              "9": 1.0
+            }
+          },
+          "determinism": {
+            "input_hash": "sha256:c265b9a3ac97931880affbd87f2cc6948bbe13d21a93dd36192f15e21cade71b",
+            "state_hashes": {
+              "0": "sha256:947cd2e971ce48ccc97eb8e3f6a1dba4ebe30e290b5aa8f52fc35f28bf47fd04",
+              "1": "sha256:082d6e31141de9f4d68c97adb8f4904039f489761b46be18c7e89fe5f9b45c70",
+              "2": "sha256:a6dcbf63228cc2150d6213cbe50e829968da566f2595df7b9a3800005600482f",
+              "3": "sha256:7772579486a098933d29c10a8596e55a5d35cc0dfe8f970582d35d55eb1ed340",
+              "4": "sha256:3f04ddbca93b890f54f39f407cd260da4dbfad7daf33ebee112c9a5d95d043aa",
+              "5": "sha256:a2a7f9c3eae10a2cac9fa83604dcd3565586f7cfaa7202fdfae68b9d85c62fdb",
+              "6": "sha256:437bb8354219b58024edbcaf6203438e4646e3de02439d258bb83b21665e37fe",
+              "7": "sha256:a03e4a5e4424a62a0574fda20d4ed6b57ab34b179810dda2e04e53286fc2db43",
+              "8": "sha256:921b8bbdd1f8bdf6c741582ef09bb6a327f4e022ae925f4fa9058a5791ebe82b",
+              "9": "sha256:c255da718269defed132bf419115f940a6c7842427091934f1403947ba683c91"
+            },
+            "sampled_values": {
+              "margin_base": 0.12989553391057687,
+              "margin_longrun": 0.1346,
+              "margin_reversion": 0.25,
+              "margin_adoption": -0.00901458516306273,
+              "market_share": 0.4149337288666969,
+              "base_growth": 0.02,
+              "disruptor_ceiling": 0.7601815115577628,
+              "disruptor_rate": 1.2146199815482652,
+              "disruptor_midpoint": 2.855206310678991,
+              "disruptor_coupling": 0.2,
+              "revenue": 37.88402075259591,
+              "revenue_growth": 0.12,
+              "profit": 5.50746358574551,
+              "profit_growth": 0.1,
+              "downturn_occurs": 1.0,
+              "downturn_depth": 0.18969271908301938,
+              "downturn_start": 2.3737791422073173,
+              "downturn_duration": 1.4259413418391436,
+              "downturn_persistent": 0.0
+            },
+            "sampled_applied": [
+              "market_share",
+              "revenue"
+            ],
+            "derived_values": {},
+            "derived_applied": [],
+            "profit_initial_derivation": {
+              "revenue": 37.88402075259591,
+              "margin": 0.12989553391057687,
+              "margin_source": "margin_base",
+              "profit": 4.92096510233782
+            },
+            "decision_time": "2007-06-29T00:00:00.000000Z",
+            "cutoff_source": "explicit",
+            "firewall_active": true
+          },
+          "military_tick_summaries": [],
+          "objective_network": {},
+          "enemy_posture": {},
+          "enemy_order_of_battle": [],
+          "report_id": "1d551068-9f75-40c5-ab88-fd31ad2d0d84",
+          "monte_carlo": {
+            "ensemble_id": "b19dab5f-acec-4056-ad40-d5e63cc5840c",
+            "base_run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+            "trials": 20,
+            "seed": 42,
+            "metric": "revenue",
+            "loss_threshold": 41.1,
+            "strategy_levers": {},
+            "baseline": {
+              "n": 20,
+              "mean": 29.3668,
+              "min": 11.4515,
+              "max": 47.3223,
+              "p10": 18.6314,
+              "p50": 27.0527,
+              "p90": 43.7582,
+              "stddev": 10.8434,
+              "p_loss": 0.85,
+              "decline_probability": 1.0
+            },
+            "strategy": {
+              "n": 20,
+              "mean": 29.3668,
+              "min": 11.4515,
+              "max": 47.3223,
+              "p10": 18.6314,
+              "p50": 27.0527,
+              "p90": 43.7582,
+              "stddev": 10.8434,
+              "p_loss": 0.85,
+              "decline_probability": 1.0
+            },
+            "paired": {
+              "n": 20,
+              "mean_delta": 0.0,
+              "p10": 0.0,
+              "p50": 0.0,
+              "p90": 0.0,
+              "p_strategy_better": 0.0
+            },
+            "trial_run_ids": {
+              "baseline": [
+                "5638c528-c563-4278-aacb-1f08d75e1099",
+                "2c66bbb6-0f88-4432-9cae-c0c15ef8b0ea",
+                "e4488ff1-c9b0-4f77-8135-0b6302d5a546",
+                "fb40380d-8521-4216-9390-2efbfc1c766d",
+                "aecf3830-da06-4bc2-b771-08c39abd10ef",
+                "51e5dac0-ca75-464c-a47b-8bcdd312e484",
+                "de7eccba-3d23-427c-bfdf-3e679b69af8f",
+                "ed3e0e94-e9de-4bc7-81f7-06f52563f33c",
+                "917d77a7-1a22-46b8-9cb1-e5d5fbb9136d",
+                "64afdfbb-7367-4139-b05a-e27fab34dbdc",
+                "bdcd6fc9-b1a4-40f7-8e7d-8af673c84245",
+                "640d92a3-e92c-4ff9-af64-ee066899ddf2",
+                "f6690901-d53c-4e9b-820b-7b269a178853",
+                "3f8780ab-de9b-4949-9559-91a3df2104b9",
+                "bcf676b7-cfb8-4e68-9db6-91592ca8a8e0",
+                "52ee65d4-ef25-4603-ab7e-e05a1ff8105e",
+                "d90873e8-0c42-44ef-894c-30b471555937",
+                "da0de0c0-a542-4fde-b8ba-2ef30e46413f",
+                "cd78285e-f78b-42ec-9ee3-e40fba84a7fe",
+                "7be80084-feea-4469-b2eb-33b06cea6c5b"
+              ],
+              "strategy": [
+                "f129ccd1-b840-41d1-9083-b70659ccd6a1",
+                "3fbd7195-96ef-4e4b-b0b7-040b6c028994",
+                "9f29797c-2cca-4f85-af17-12b3ad915f3f",
+                "a12678b9-658f-4724-9b74-611c3d31d411",
+                "03c73883-c53c-45d1-bd22-43cb96db4930",
+                "f6149dfa-7193-47fa-a2d1-6de255b1a35a",
+                "43d44139-f287-40ef-9ebd-cabdd4fa7767",
+                "3a2b7dda-87ad-46d8-a5b6-d6940d267ccc",
+                "547dbaea-b2c1-4e8b-9bc4-a5ce7227fa38",
+                "02c82e85-54dc-4ed5-a4f5-38b1e0918aad",
+                "90307a4b-e4c5-413f-acca-1a701dcb0ce6",
+                "82abfed5-d95c-4a36-a8a9-662e9c76a8c5",
+                "df9355bc-37b3-4cef-a164-220b32377c6b",
+                "84d7313e-d887-45ba-a07f-0c137e88b592",
+                "4425fad3-951e-45ea-bb90-13e1997774a4",
+                "f5965951-397e-41dd-aab3-20eba5972346",
+                "acc181a1-8120-4102-81f7-fc9d7f9128e3",
+                "c124da51-356a-4357-80b9-27b175eec95d",
+                "f98d88c6-6859-43a0-ac22-6087fea971c5",
+                "c0e0e918-b3cb-421d-930f-65873e2767a8"
+              ]
+            },
+            "protocol": "sprint3-v1"
+          },
+          "robustness": {
+            "expected_shortfall": {
+              "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+              "ensemble_id": "b19dab5f-acec-4056-ad40-d5e63cc5840c",
+              "metric": "revenue",
+              "alpha": 0.05,
+              "tail": "lower",
+              "baseline": {
+                "value": 11.4515,
+                "threshold": 11.4515,
+                "tail_count": 1,
+                "n": 20
+              },
+              "strategy": {
+                "value": 11.4515,
+                "threshold": 11.4515,
+                "tail_count": 1,
+                "n": 20
+              },
+              "paired": {
+                "value": 0.0,
+                "threshold": 0.0,
+                "tail_count": 1,
+                "n": 20
+              },
+              "trial_values_hash": "sha256:41258684c70faa8cdba5780a86665685fa4e4bb9fe25e50bbe2fcf8652c794e6",
+              "protocol": "sprint3-v1"
+            }
+          }
+        },
+        "created_at": "2026-11-23T07:28:32.068816",
+        "updated_at": "2026-11-23T07:28:38.864695",
+        "completed_at": "2026-11-23T07:28:32.087616",
+        "tenant_id": null,
+        "preset_id": null,
+        "military_use_mode": null,
+        "key_opportunities": [],
+        "breakout_prompts": []
+      },
+      "snapshots": [
+        {
+          "tick": 0,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.01,
+            "market_share": 0.4149337288666969,
+            "team_morale": 1.0,
+            "pipeline": 1.06,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 37.88402075259591,
+            "profit": 4.92096510233782
+          }
+        },
+        {
+          "tick": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.02,
+            "market_share": 0.4172,
+            "team_morale": 1.0,
+            "pipeline": 1.07,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 41.149,
+            "profit": 5.3165
+          }
+        },
+        {
+          "tick": 2,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.03,
+            "market_share": 0.409,
+            "team_morale": 1.0,
+            "pipeline": 1.08,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 40.3942,
+            "profit": 5.223
+          }
+        },
+        {
+          "tick": 3,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.04,
+            "market_share": 0.3834,
+            "team_morale": 1.0,
+            "pipeline": 1.09,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 33.9905,
+            "profit": 4.3678
+          }
+        },
+        {
+          "tick": 4,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.05,
+            "market_share": 0.3444,
+            "team_morale": 1.0,
+            "pipeline": 1.1,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 30.1071,
+            "profit": 3.8507
+          }
+        },
+        {
+          "tick": 5,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.06,
+            "market_share": 0.3025,
+            "team_morale": 1.0,
+            "pipeline": 1.11,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 28.7466,
+            "profit": 3.6853
+          }
+        },
+        {
+          "tick": 6,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.07,
+            "market_share": 0.2635,
+            "team_morale": 1.0,
+            "pipeline": 1.12,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 27.8206,
+            "profit": 3.5917
+          }
+        },
+        {
+          "tick": 7,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.08,
+            "market_share": 0.229,
+            "team_morale": 1.0,
+            "pipeline": 1.13,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 26.9435,
+            "profit": 3.5053
+          }
+        },
+        {
+          "tick": 8,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.09,
+            "market_share": 0.1988,
+            "team_morale": 1.0,
+            "pipeline": 1.14,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 26.0866,
+            "profit": 3.4252
+          }
+        },
+        {
+          "tick": 9,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "state": {
+            "cash": 120.0,
+            "runway_weeks": 52.0,
+            "infra_cost_index": 1.0,
+            "delivery_velocity": 1.0,
+            "brand_index": 1.1,
+            "market_share": 0.1726,
+            "team_morale": 1.0,
+            "pipeline": 1.15,
+            "active_deployments": 5.0,
+            "implementation_capacity": 4.5,
+            "support_load": 0.42,
+            "reliability_debt": 0.3,
+            "gross_margin": 0.58,
+            "nrr": 1.03,
+            "churn_risk": 0.11,
+            "revenue": 25.2532,
+            "profit": 3.3461
+          }
+        }
+      ],
+      "decisions": [
+        {
+          "id": "9d538668-8615-4fb9-aec1-2313bb60a83d",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 1,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091033"
+        },
+        {
+          "id": "217b3519-36ed-490a-99ee-cde993b81030",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 2,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091041"
+        },
+        {
+          "id": "1716a9e2-0c2f-4d64-bd38-c8957c954222",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 3,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091047"
+        },
+        {
+          "id": "214fb796-7a72-4a28-9167-4d14d432130d",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 4,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091052"
+        },
+        {
+          "id": "b6bf4be4-dfb9-445b-b7c3-a4508691cb9d",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 5,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091057"
+        },
+        {
+          "id": "f30ad6b8-07e8-4909-b401-51d24e8bec1d",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 6,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091062"
+        },
+        {
+          "id": "92595ac5-e122-4173-9141-c87a89100e4b",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 7,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091067"
+        },
+        {
+          "id": "ec2e2f1a-335e-4902-a890-05c4459dde6e",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 8,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091072"
+        },
+        {
+          "id": "8d9d3986-b1f1-4575-abdb-6f77dd0f9b3a",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "tick": 9,
+          "sequence": 1,
+          "actor_id": "backtest-nokia-2007:ai_model_provider",
+          "action_id": "monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "actual_effect": {
+            "brand_index": 0.01,
+            "pipeline": 0.01
+          },
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:28:32.091077"
+        }
+      ],
+      "external_shocks": [],
+      "reports": [
+        {
+          "id": "1d551068-9f75-40c5-ab88-fd31ad2d0d84",
+          "run_id": "adea76a9-684c-4782-87e4-a89bfe132997",
+          "company_id": "backtest-nokia-2007",
+          "force_id": null,
+          "scenario_id": "df696a7a-7e87-472d-bac9-33e651365096",
+          "tenant_id": null,
+          "preset_id": null,
+          "title": "Nokia (2007 retrospective) corporate scenario report",
+          "summary": "Nokia (2007 retrospective) completed 9 corporate ticks with 9 recorded decisions. Final runway is 52.0 weeks, pipeline coverage is 1.15, and support load is 0.42.",
+          "report_format": "markdown",
+          "sections": {
+            "executive_summary": "Nokia (2007 retrospective) completed 9 corporate ticks with 9 recorded decisions. Final runway is 52.0 weeks, pipeline coverage is 1.15, and support load is 0.42.",
+            "evidence_summary": [],
+            "audit": {
+              "accepted_claim_count": 0,
+              "accepted_evidence_count": 0,
+              "provisional_claim_count": 0,
+              "provisional_claim_ids": [],
+              "provisional_evidence_count": 0,
+              "provisional_evidence_ids": [],
+              "provisional_confidence_floor": 0.62,
+              "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
+            },
+            "timeline": [
+              {
+                "tick": 1,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 2,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 3,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 4,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 5,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 6,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 7,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 8,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 9,
+                "action_id": "monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              }
+            ],
+            "current_signals": [],
+            "scenario_tree": {
+              "baseline_only": false,
+              "branch_id": "df696a7a-7e87-472d-bac9-33e651365096",
+              "parent_run_id": "f050a140-0559-4b6b-be57-2b1f72448ee4",
+              "child_branch_ids": []
+            },
+            "decision_chain": [
+              {
+                "tick": 1,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 2,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 3,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 4,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 5,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 6,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 7,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 8,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              },
+              {
+                "tick": 9,
+                "action_id": "monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                },
+                "actual_effect": {
+                  "brand_index": 0.01,
+                  "pipeline": 0.01
+                }
+              }
+            ],
+            "leading_indicators": [
+              {
+                "metric": "runway_weeks",
+                "start": 52.0,
+                "end": 52.0
+              },
+              {
+                "metric": "delivery_velocity",
+                "start": 1.0,
+                "end": 1.0
+              },
+              {
+                "metric": "pipeline",
+                "start": 1.06,
+                "end": 1.15
+              },
+              {
+                "metric": "active_deployments",
+                "start": 5.0,
+                "end": 5.0
+              },
+              {
+                "metric": "implementation_capacity",
+                "start": 4.5,
+                "end": 4.5
+              },
+              {
+                "metric": "support_load",
+                "start": 0.42,
+                "end": 0.42
+              },
+              {
+                "metric": "reliability_debt",
+                "start": 0.3,
+                "end": 0.3
+              },
+              {
+                "metric": "gross_margin",
+                "start": 0.58,
+                "end": 0.58
+              },
+              {
+                "metric": "nrr",
+                "start": 1.03,
+                "end": 1.03
+              },
+              {
+                "metric": "churn_risk",
+                "start": 0.11,
+                "end": 0.11
+              },
+              {
+                "metric": "brand_index",
+                "start": 1.01,
+                "end": 1.1
+              },
+              {
+                "metric": "market_share",
+                "start": 0.4149337288666969,
+                "end": 0.1726
+              },
+              {
+                "metric": "revenue",
+                "start": 37.88402075259591,
+                "end": 25.2532
+              },
+              {
+                "metric": "profit",
+                "start": 4.92096510233782,
+                "end": 3.3461
+              },
+              {
+                "metric": "cash",
+                "start": 120.0,
+                "end": 120.0
+              }
+            ],
+            "scenario_compare": [
+              {
+                "metric": "runway_weeks",
+                "baseline_end": 52.0,
+                "scenario_end": 52.0
+              },
+              {
+                "metric": "delivery_velocity",
+                "baseline_end": 1.0,
+                "scenario_end": 1.0
+              },
+              {
+                "metric": "pipeline",
+                "baseline_end": 1.15,
+                "scenario_end": 1.15
+              },
+              {
+                "metric": "support_load",
+                "baseline_end": 0.42,
+                "scenario_end": 0.42
+              },
+              {
+                "metric": "reliability_debt",
+                "baseline_end": 0.3,
+                "scenario_end": 0.3
+              },
+              {
+                "metric": "gross_margin",
+                "baseline_end": 0.58,
+                "scenario_end": 0.58
+              },
+              {
+                "metric": "nrr",
+                "baseline_end": 1.03,
+                "scenario_end": 1.03
+              },
+              {
+                "metric": "churn_risk",
+                "baseline_end": 0.11,
+                "scenario_end": 0.11
+              },
+              {
+                "metric": "market_share",
+                "baseline_end": 0.002,
+                "scenario_end": 0.1726
+              }
+            ],
+            "strategy_recommendations": [
+              "Maintain the current pace and monitor for fresh external shocks."
+            ],
+            "why_this_happened": {
+              "key_evidence": [],
+              "rules_hit": [],
+              "actions_taken": [
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor",
+                "monitor"
+              ],
+              "metric_changes": {
+                "runway_weeks": {
+                  "start": 52.0,
+                  "end": 52.0
+                },
+                "delivery_velocity": {
+                  "start": 1.0,
+                  "end": 1.0
+                },
+                "pipeline": {
+                  "start": 1.06,
+                  "end": 1.15
+                },
+                "active_deployments": {
+                  "start": 5.0,
+                  "end": 5.0
+                },
+                "implementation_capacity": {
+                  "start": 4.5,
+                  "end": 4.5
+                },
+                "support_load": {
+                  "start": 0.42,
+                  "end": 0.42
+                },
+                "reliability_debt": {
+                  "start": 0.3,
+                  "end": 0.3
+                },
+                "gross_margin": {
+                  "start": 0.58,
+                  "end": 0.58
+                },
+                "nrr": {
+                  "start": 1.03,
+                  "end": 1.03
+                },
+                "churn_risk": {
+                  "start": 0.11,
+                  "end": 0.11
+                },
+                "brand_index": {
+                  "start": 1.01,
+                  "end": 1.1
+                },
+                "market_share": {
+                  "start": 0.4149337288666969,
+                  "end": 0.1726
+                },
+                "revenue": {
+                  "start": 37.88402075259591,
+                  "end": 25.2532
+                },
+                "profit": {
+                  "start": 4.92096510233782,
+                  "end": 3.3461
+                },
+                "cash": {
+                  "start": 120.0,
+                  "end": 120.0
+                }
+              },
+              "scenario_assumptions": [
+                "Direction 'B 转向触屏生态': override base_growth=0.02, disruptor_coupling=0.2, profit_growth=0.1, revenue_growth=0.12."
+              ],
+              "decision_deltas": [
+                "Scenario followed the baseline action sequence after the fork point."
+              ]
+            },
+            "startup_kpi_pack": null
+          },
+          "created_at": "2026-11-23T07:28:32.117156"
+        }
+      ]
+    },
+    "created_at": "2026-11-23T07:28:38.969697"
+  }
+}
