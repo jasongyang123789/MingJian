@@ -145,8 +145,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # rebase (2026-11-25): the backlog_delivery_fraction merge anchor
     # is a ninth chain driver (45 -> 46 formulas, 42 -> 43 tick
     # drivers), sitting between the intake-decay anchor and the
-    # adoption default.
-    assert len(TEMPLATE_VARIABLES) == 78
+    # adoption default. 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast, the schedule-profile selector; no new
+    # formula — the blend lives inside backlog_delivery_fraction).
+    assert len(TEMPLATE_VARIABLES) == 79
     assert len(TEMPLATE_FORMULAS) == 46
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
     assert len(drivers) == 43
@@ -205,8 +207,8 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 34 of 78 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 44 formula parameters are the 9
+    # 34 of 79 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 45 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -214,9 +216,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # variable), plus the 3 Track 11 order-book parameters
     # (order_intake_rate / backlog_conversion / order_decay — the
     # backlog stock itself is the pack's order_backlog state field,
-    # bound, not a parameter), plus the 2 D2C order-book parameters
-    # (order_backlog_opening / downturn_brake — the frozen opening
-    # stock and the tick-1 brake, both fixed, not state fields),
+    # bound, not a parameter), plus the 3 D2C order-book parameters
+    # (order_backlog_opening / downturn_brake / backlog_delivery_fast
+    # — the frozen opening stock, the tick-1 brake, and the
+    # schedule-profile selector, all fixed, not state fields),
     # plus the 5 Track C1 ADAS-chain
     # variables (adas_ceiling / adas_rate / adas_midpoint /
     # adas_coupling / adas_penetration_monthly_drift — the penetration
@@ -265,6 +268,7 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "order_decay",
         "order_backlog_opening",
         "downturn_brake",
+        "backlog_delivery_fast",
         "gross_base",
         "gross_longrun",
         "gross_reversion",
@@ -287,8 +291,9 @@ def test_builtin_automotive_template_validates() -> None:
     # the seven chain formulas; see the template docstring).
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas
     # (order_backlog_opening + downturn_brake; the delivery-fraction
-    # merge anchor).
-    assert len(template.variables) == 78
+    # merge anchor). 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(template.variables) == 79
     assert len(template.formulas) == 46
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a

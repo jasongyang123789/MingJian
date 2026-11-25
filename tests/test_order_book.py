@@ -473,7 +473,10 @@ def test_order_book_variables_match_spec() -> None:
     # downturn_brake, both fixed), 45 -> 46 formulas (the
     # backlog_delivery_fraction merge anchor, before the revenue
     # passthrough).
-    assert len(TEMPLATE_VARIABLES) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables (backlog_delivery_fast,
+    # fixed 0.0; no new formula — the blend lives inside the
+    # delivery-fraction formula).
+    assert len(TEMPLATE_VARIABLES) == 79
     assert len(TEMPLATE_FORMULAS) == 46
     expected = {
         "order_backlog": ("fixed", 0.0),
@@ -483,6 +486,7 @@ def test_order_book_variables_match_spec() -> None:
         "backlog_conversion": ("triangular", (0.30, 0.40, 0.60)),
         "order_decay": ("triangular", (0.10, 0.25, 0.40)),
         "downturn_brake": ("fixed", 0.0),
+        "backlog_delivery_fast": ("fixed", 0.0),
     }
     for var_id, (kind, dist_v) in expected.items():
         raw = by_id[var_id]
@@ -502,7 +506,9 @@ def test_order_book_variables_match_spec() -> None:
     # Step 1 (2026-11-24): 44 -> 45 formulas (backlog-update anchor).
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas
     # (delivery-fraction anchor).
-    assert len(template.variables) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(template.variables) == 79
     assert len(template.formulas) == 46
     # The template carries the backlog-update driver (finite-book
     # depletion) right after the revenue passthrough, and it is the
@@ -566,6 +572,7 @@ def _backlog_case_set(
     nev_ceiling: float = 0.40,
     nev_penetration0: float = 0.054,
     downturn_brake: float = 0.0,
+    backlog_delivery_fast: float = 0.0,
 ) -> dict:
     """Full Desay case set: adoption + NEV chain + backlog (D2C
     lag-shaped drivers). Fixed values throughout, so the trajectory
@@ -601,6 +608,7 @@ def _backlog_case_set(
         _fixed("order_backlog", book0),
         _fixed("order_backlog_opening", book0),
         _fixed("downturn_brake", downturn_brake),
+        _fixed("backlog_delivery_fast", backlog_delivery_fast),
         _fixed("order_intake", book0),
         _fixed("order_intake_rate", order_intake_rate),
         _fixed("backlog_conversion", backlog_conversion),
@@ -696,6 +704,14 @@ def _trajectory(client: TestClient, run_id: str) -> dict[int, dict]:
 #: template spec.
 _DELIVERY_SCHEDULE = (0.0, 0.15, 0.45, 0.30, 0.10)
 
+#: Fast delivery schedule (2026-11-25 adjustment, Ho-approved): the
+#: same uniform-lag discretization with ZERO widening — the D2U
+#: variant tested in the desay-2018 diagnosis. Must match
+#: BACKLOG_DELIVERY_SCHEDULE_FAST in the template spec. Selected
+#: when the book's long-lag programs have already reached SOP at the
+#: decision point (desay-2020 binds it via backlog_delivery_fast = 1).
+_DELIVERY_SCHEDULE_FAST = (0.0, 0.20, 0.60, 0.20, 0.0)
+
 
 def _simulate_backlog(
     revenue0: float = 6799.06,
@@ -713,6 +729,7 @@ def _simulate_backlog(
     nev_midpoint: float = 4.0,
     nev_ceiling: float = 0.40,
     downturn_brake: float = 0.0,
+    fast: bool = False,
     ticks: int = 5,
 ) -> tuple[dict[int, float], dict[int, float], dict[int, float], dict[int, float]]:
     """Independent replication of the D2C driver math (same
@@ -730,11 +747,12 @@ def _simulate_backlog(
     intake = {0: backlog0 if intake0 is None else intake0}
     term: dict[int, float] = {}
     gate = min(1.0, backlog_conversion / 0.30) if backlog_conversion else 0.0
+    sched = _DELIVERY_SCHEDULE_FAST if fast else _DELIVERY_SCHEDULE
     for tick in range(1, ticks + 1):
         adoption = _logistic(disruptor_rate * (tick - disruptor_midpoint), disruptor_ceiling)
         pen = _logistic(nev_rate * (tick - nev_midpoint), nev_ceiling)
         intake[tick] = round(intake[tick - 1] * (1 - order_decay), 4)
-        frac = gate * (_DELIVERY_SCHEDULE[tick - 1] if tick <= len(_DELIVERY_SCHEDULE) else 0.0)
+        frac = gate * (sched[tick - 1] if tick <= len(sched) else 0.0)
         term[tick] = frac * backlog0 / revenue[tick - 1]
         brake = downturn_brake if tick == 1 else 0.0
         factor = 1 + revenue_growth + revenue_coupling * adoption + nev_coupling * pen + term[tick] + brake
@@ -796,6 +814,69 @@ def test_order_book_finite_book_depletes_and_uplift_converges(monkeypatch, tmp_p
             assert revenue[tick] == pytest.approx(exp_rev[tick], rel=2e-3), tick
             assert backlog[tick] == pytest.approx(exp_backlog[tick], rel=2e-3), tick
             assert intake[tick] == pytest.approx(exp_intake[tick], rel=2e-3), tick
+
+
+# --- Fast schedule (2026-11-25 adjustment) ------------------------------
+
+
+def test_delivery_schedules_sum_to_one_and_share_length() -> None:
+    """Both schedules exhaust the book (sum 1) and share a length,
+    so the blend in _delivery_fraction_expr is well-defined, and
+    tick 1 is 0 under both (Ho's 1-2y floor)."""
+    from planagent.simulation.domain_packs.automotive.template_spec import (
+        BACKLOG_DELIVERY_SCHEDULE,
+        BACKLOG_DELIVERY_SCHEDULE_FAST,
+    )
+
+    assert sum(BACKLOG_DELIVERY_SCHEDULE) == pytest.approx(1.0)
+    assert sum(BACKLOG_DELIVERY_SCHEDULE_FAST) == pytest.approx(1.0)
+    assert len(BACKLOG_DELIVERY_SCHEDULE) == len(BACKLOG_DELIVERY_SCHEDULE_FAST)
+    assert BACKLOG_DELIVERY_SCHEDULE[0] == 0.0
+    assert BACKLOG_DELIVERY_SCHEDULE_FAST[0] == 0.0
+
+
+def test_fast_schedule_delivers_uniform_lag_profile(monkeypatch, tmp_path: Path) -> None:
+    """2026-11-25 adjustment: with backlog_delivery_fast = 1 the
+    delivery fraction follows the fast schedule [0, .20, .60, .20, 0]
+    (the uniform-lag discretization with zero widening) — 80% of the
+    book by tick 3 vs 60% on the default — and the book drains
+    1.00 / 0.80 / 0.20 / 0.00. With flag 0 the fractions are the
+    default schedule exactly (the blend is exact at the endpoints,
+    not approximate). Tick 1 stays 0 under both profiles (Ho's 1-2y
+    floor). Independent replication agrees tick by tick.
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        fast = _trajectory(
+            client,
+            _create_run(
+                client,
+                _backlog_case_set(0.40, backlog_delivery_fast=1.0),
+                tick_count=4,
+                downside=None,
+            )["id"],
+        )
+        default = _trajectory(
+            client,
+            _create_run(client, _backlog_case_set(0.40), tick_count=4, downside=None)["id"],
+        )
+        assert sorted(fast) == [0, 1, 2, 3, 4]
+        # The fast delivery fraction follows the fast schedule.
+        for tick, frac in ((1, 0.0), (2, 0.20), (3, 0.60), (4, 0.20)):
+            assert fast[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
+        # The book drains on the fast schedule.
+        for tick, remaining in ((1, 1.00), (2, 0.80), (3, 0.20), (4, 0.00)):
+            assert fast[tick]["order_backlog"] == pytest.approx(6799.06 * remaining, rel=1e-3), tick
+        # Flag 0 is the default schedule exactly.
+        for tick, frac in ((1, 0.0), (2, 0.15), (3, 0.45), (4, 0.30)):
+            assert default[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
+        # Fast delivers more by tick 3, so the tick-3 revenue is higher.
+        assert fast[3]["revenue"] > default[3]["revenue"]
+        # Independent replication agrees tick by tick (fast profile).
+        exp_rev, exp_backlog, _, _ = _simulate_backlog(fast=True)
+        for tick in (1, 2, 3, 4):
+            assert fast[tick]["revenue"] == pytest.approx(exp_rev[tick], rel=2e-3), tick
+            assert fast[tick]["order_backlog"] == pytest.approx(exp_backlog[tick], rel=2e-3), tick
 
 
 # --- Shape: the depleting book makes growth FALL ------------------------

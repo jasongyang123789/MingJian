@@ -798,7 +798,9 @@ def _adas_wiring_variables(adas_pen: tuple, adas_midpoint: tuple | None, base_ta
     return variables
 
 
-def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag: str) -> list:
+def _orderbook_wiring_variables(
+    intake_rate: tuple, book_value: float, base_tag: str, fast_schedule: bool = False
+) -> list:
     """Track 11 order-book wiring variables appended to each Desay case.
 
     - order_backlog / order_intake: FIXED at one year of intake
@@ -814,6 +816,16 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
       2020 cases (anchor-year growth positive — no brake). The 2018
       case binds -0.1501 in its own script (anchor-year -10.01% minus
       revenue_growth mode +5%).
+    - backlog_delivery_fast (2026-11-25 adjustment, Ho-approved):
+      FIXED 0/1 schedule-profile selector. 1 = fast schedule
+      [0, .20, .60, .20, 0] (uniform-lag discretization, zero
+      widening) for a book whose long-lag programs have reached SOP
+      at the decision point; 0 = default schedule. 2020 binds 1
+      (IPU03 in mass production on XPeng P7 by end-2020; cockpit
+      86.95% of revenue, +33.5%, on established lines); 2015 binds
+      0 (small book, no SOP evidence for a faster profile). The 2018
+      case binds 0 (default) via the template default in its own
+      script. Tick 1 stays 0 under both profiles (Ho's 1-2y floor).
     - order_intake_rate: triangular around the decision-time order
       book. 2020: ~70亿 annualised new orders / 67.99亿 revenue ≈ 1.03
       → triangular(0.80, 1.00, 1.20). 2015: no order surge disclosed →
@@ -851,6 +863,25 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
             "distribution": {"type": "fixed", "value": 0.0},
             "evidence_ref": "rule: D2C downturn brake (2026-11-25, Ho-approved Option A) — anchor-year realized revenue growth is positive for 2015/2020, so no brake (0.0); the 2018 case binds -0.1501 in its own script",
             "description": "下行刹车（tick-1 增速修正；2015/2020 为 0）",
+            "scope_tags": [base_tag],
+        },
+        {
+            "id": "backlog_delivery_fast",
+            "unit": "0/1 selector",
+            "distribution": {"type": "fixed", "value": 1.0 if fast_schedule else 0.0},
+            "evidence_ref": (
+                "rule: D2C schedule-profile selector (2026-11-25 adjustment, Ho-approved) — "
+                "1 = fast schedule [0, .20, .60, .20, 0] (uniform-lag discretization, zero "
+                "widening) for desay-2020: IPU03 in mass production on XPeng P7 by end-2020, "
+                "cockpit 86.95% of revenue (+33.5%) on established in-production lines, so the "
+                "book's long-lag programs have reached SOP and its remaining-lag distribution "
+                "does not push later"
+                if fast_schedule
+                else "rule: D2C schedule-profile selector (2026-11-25 adjustment, Ho-approved) — "
+                "0 = default SOP-lag schedule [0, .15, .45, .30, .10] for desay-2015 (small book, "
+                "no decision-point evidence for a faster profile)"
+            ),
+            "description": "交付计划档位（2020 为快档，2015 为默认档）",
             "scope_tags": [base_tag],
         },
         {
@@ -1012,7 +1043,7 @@ CASES["desay-2015"]["variables"] += _orderbook_wiring_variables(
     (0.15, 0.25, 0.40), 917.06, "traditional",
 )
 CASES["desay-2020"]["variables"] += _orderbook_wiring_variables(
-    (0.80, 1.00, 1.20), 6799.06, "cockpit",
+    (0.80, 1.00, 1.20), 6799.06, "cockpit", fast_schedule=True,
 )
 # ADAS wiring appended to each case (Track C1 §2): 2015 is the
 # pre-L2 control (starting ~0, midpoint mode 5.0); 2020 is the

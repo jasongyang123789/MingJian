@@ -546,6 +546,13 @@ TEMPLATE_VARIABLES: list[dict] = [
         "evidence_ref": "rule: D2C downturn brake (2026-11-25, Ho-approved Option A) — when the anchor-year realized revenue growth is negative, the brake is (anchor-year growth − revenue_growth mode), applied to tick-1 growth only; 0 otherwise. Decision-point data only (last print / mode); never fitted to post-decision actuals. 2018: −0.1001 − 0.05 = −0.1501; 2015/2020 anchor years positive, brake 0.",
         "description": "Downturn brake on tick-1 revenue growth (D2C): added to the revenue driver's growth sum at tick 1 only, as downturn_brake * (tick == 1). Negative when the anchor year printed negative growth (the growth distribution's mode is recentered on the anchor-year print for the first tick); 0 for growth-year anchors. Bound per case (fixed); the template default 0.0 is the no-brake generic value.",
     },
+    {
+        "id": "backlog_delivery_fast",
+        "unit": "0/1 selector",
+        "distribution": {"type": "fixed", "value": 0.0},
+        "evidence_ref": "rule: D2C schedule-profile selector (2026-11-25 adjustment, Ho-approved): 0 = default SOP-lag schedule [0, .15, .45, .30, .10]; 1 = fast schedule [0, .20, .60, .20, 0] (uniform-lag discretization, zero widening) for a book whose long-lag programs have reached SOP at the decision point. desay-2020 binds 1 (IPU03 in mass production on XPeng P7 by end-2020; cockpit 86.95% of revenue, +33.5%, on established lines); 2015/2018 bind 0. A rule switch, not a calibrated parameter.",
+        "description": "Delivery-schedule profile selector (D2C adjustment): 0 selects the default lag-shaped schedule, 1 selects the fast schedule (uniform-lag discretization). Bound per case (fixed); the template default 0.0 is the default-schedule generic value.",
+    },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
         "id": "promo_rate",
@@ -960,6 +967,21 @@ TEMPLATE_VARIABLES: list[dict] = [
 BACKLOG_DELIVERY_SCHEDULE: tuple[float, ...] = (0.0, 0.15, 0.45, 0.30, 0.10)
 
 
+# --- Fast delivery schedule (2026-11-25 adjustment, Ho-approved) --------
+# The uniform-lag discretization [0, 0.20, 0.60, 0.20, 0] of the same
+# SOP-lag evidence (uniform 1.67-3.33y: tick 2 gets (2-1.67)/1.66,
+# tick 3 gets 1/1.66, tick 4 gets (3.33-3)/1.66) — the D2U variant
+# tested in the desay-2018 diagnosis. It is the default schedule with
+# ZERO vintage-mix widening: appropriate for a book whose long-lag
+# programs have already reached SOP at the decision point, so its
+# remaining-lag distribution does not push later. desay-2020 binds it
+# (IPU03 in mass production on XPeng P7 by end-2020; cockpit 86.95%
+# of revenue on established in-production lines); 2015/2018 keep the
+# default. Selected on construction grounds (a pre-existing variant),
+# never fitted to a case actual — see the adjustment report.
+BACKLOG_DELIVERY_SCHEDULE_FAST: tuple[float, ...] = (0.0, 0.20, 0.60, 0.20, 0.0)
+
+
 def _tick_le(k: int) -> dict:
     """Indicator (tick <= k): 1 at ticks 1..k, 0 after — min/max only."""
     return {
@@ -988,12 +1010,36 @@ def _delivery_fraction_expr() -> dict:
     working after the geometric rate is replaced by the schedule.
     0.30 is the distribution's minimum; if the distribution is ever
     recalibrated, the gate denominator must track its minimum.
+
+    Schedule profile (2026-11-25 adjustment, Ho-approved): the
+    per-tick coefficient blends the default and fast schedules by the
+    case-bound flag ``backlog_delivery_fast`` (fixed 0/1): coefficient
+    = default + flag * (fast - default), so flag 0 gives the default
+    schedule exactly and flag 1 gives the fast schedule. The flag is
+    a rule switch, not a sampled parameter — it consumes no draws.
     """
-    terms = [
-        {"op": "multiply", "args": [f, _tick_eq(t)]}
-        for t, f in enumerate(BACKLOG_DELIVERY_SCHEDULE, start=1)
-        if f
-    ]
+    if len(BACKLOG_DELIVERY_SCHEDULE) != len(BACKLOG_DELIVERY_SCHEDULE_FAST):
+        raise ValueError("delivery schedules must have the same length")
+    terms = []
+    for t, (dflt, fast) in enumerate(
+        zip(BACKLOG_DELIVERY_SCHEDULE, BACKLOG_DELIVERY_SCHEDULE_FAST), start=1
+    ):
+        if dflt == 0.0 and fast == 0.0:
+            continue
+        if dflt == fast:
+            coeff: dict | float = dflt
+        else:
+            coeff = {
+                "op": "add",
+                "args": [
+                    dflt,
+                    {
+                        "op": "multiply",
+                        "args": [{"ref": "backlog_delivery_fast"}, fast - dflt],
+                    },
+                ],
+            }
+        terms.append({"op": "multiply", "args": [coeff, _tick_eq(t)]})
     frac: dict = terms[0]
     for term in terms[1:]:
         frac = {"op": "add", "args": [frac, term]}

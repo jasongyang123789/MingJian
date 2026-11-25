@@ -181,6 +181,10 @@ class DeclineSaturation:
     max_rise: float
     #: Slowest mode-path tick growth factor.
     slowest_growth: float
+    #: True when a lone first-tick dip was forgiven under the 2026-11-25
+    #: lone-first-tick rule (see assess_decline_saturation): the slowest
+    #: tick and required depth are then computed over the remaining ticks.
+    first_tick_dip_forgiven: bool = False
 
     @property
     def label_zh(self) -> str:
@@ -201,6 +205,21 @@ def assess_decline_saturation(
     If any mode-path tick already grows below 1, the path declines with
     no shock at all — structural, the opposite end of the same binary
     statistic, and it must not be reported as shock-driven signal.
+
+    Lone-first-tick rule (2026-11-25, §9 rule change, Ho-approved):
+    a SINGLE first-tick factor below 1, with every later factor at or
+    above 1, is treated as an opening level adjustment and excluded
+    from the test — the slowest tick and the required depth are then
+    computed over the remaining ticks, and ``first_tick_dip_forgiven``
+    is set. Rationale: the R&D product path steps the margin from the
+    anchor-year print to its steady margin in one tick (a level
+    re-anchoring, not a declining path), so a path that dips once at
+    the open and then rises monotonically is still a path a shock can
+    push down. A factor below 1 at any LATER tick, or a second sub-1
+    factor anywhere, stays structural: that shows the path itself
+    turning down after it has settled into its modeled dynamics.
+    A one-tick path that declines has no "after" to forgive and is
+    structural as before.
     """
 
     if not growth_factors:
@@ -209,7 +228,16 @@ def assess_decline_saturation(
         raise ValueError("assess_decline_saturation needs a positive depth_high.")
     if max_rise <= 0.0:
         raise ValueError("assess_decline_saturation needs a positive max_rise.")
-    slowest = min(growth_factors)
+    effective = list(growth_factors)
+    first_tick_dip_forgiven = False
+    if (
+        len(effective) > 1
+        and effective[0] < 1.0
+        and all(g >= 1.0 for g in effective[1:])
+    ):
+        effective = effective[1:]
+        first_tick_dip_forgiven = True
+    slowest = min(effective)
     if slowest < 1.0:
         return DeclineSaturation(
             category=STRUCTURAL,
@@ -217,6 +245,7 @@ def assess_decline_saturation(
             depth_high=depth_high,
             max_rise=max_rise,
             slowest_growth=slowest,
+            first_tick_dip_forgiven=first_tick_dip_forgiven,
         )
     required = (1.0 - 1.0 / slowest) / max_rise
     category = SATURATED if required > depth_high else INFORMATIVE
@@ -226,6 +255,7 @@ def assess_decline_saturation(
         depth_high=depth_high,
         max_rise=max_rise,
         slowest_growth=slowest,
+        first_tick_dip_forgiven=first_tick_dip_forgiven,
     )
 
 
