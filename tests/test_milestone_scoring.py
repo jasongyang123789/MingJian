@@ -11,6 +11,17 @@ Carlo ensembles) — NOT fitted, and NOT copied from the module under
 test: the W0 freeze test pins the module constants against these
 independently read values. The B-replay node errors are auxiliary
 information only; the verdict never uses them.
+
+W0 re-determination (2026-11-25, Ho 2026-11-24 13:44 — "W0 on the ON
+caliber"): the Desay W0s were re-frozen on downside ON, trials 50,
+seed 42, FBOOK model (mainline b14527f). The ON50 bands below are the
+trials50 merge rerun bands (milestone-scores.json) for 2015/2020 and
+the desay-2018 case DB band for 2018. The OFF/ON (trials-20) bands
+above are kept as historical inputs: the OFF bands still fail
+out-of-band under any W0, and the widening tests use them as
+synthetic inputs. The 2015/2020 "ON fails via width cap" tests are
+superseded by the re-determination (see below) — the cap now bites
+only for bands wider than the ON-calibrated W0.
 """
 
 from __future__ import annotations
@@ -33,11 +44,18 @@ DESAY_2015_OFF = {"p10": 6798.1106, "p50": 7271.8835, "p90": 8096.0692}
 DESAY_2015_ON = {"p10": 5157.3955, "p50": 6850.8303, "p90": 7821.9627}
 DESAY_2020_OFF = {"p10": 24538.3122, "p50": 27440.41, "p90": 29557.4679}
 DESAY_2020_ON = {"p10": 19892.8362, "p50": 25462.1399, "p90": 27787.0191}
+# ON50 = trials50 merge rerun on b14527f (milestone-scores.json),
+# downside ON, trials 50, seed 42 — the bands the re-frozen W0s are
+# read from. 2018 is NON-INDEPENDENT (case DB, 734ffdd).
+DESAY_2015_ON50 = {"p10": 5222.3945, "p50": 6487.505, "p90": 7793.4624}
+DESAY_2020_ON50 = {"p10": 17510.4529, "p50": 22353.714, "p90": 26384.8537}
+DESAY_2018_ON50 = {"p10": 12076.7565, "p50": 15177.4829, "p90": 17888.6415}
 NOKIA_YR3 = {"p10": 0.2155, "p50": 0.2553, "p90": 0.3282}
 NOKIA_YR5 = {"p10": 0.0534, "p50": 0.0955, "p90": 0.1625}
 
 ACTUAL_2015 = 5408.74
 ACTUAL_2020 = 21908.0
+ACTUAL_2018 = 9569.0
 ACTUAL_NOKIA_YR3 = 0.27
 ACTUAL_NOKIA_YR5 = 0.064
 
@@ -51,19 +69,26 @@ def _score(band, actual, w0):
 
 # --- Frozen W0 --------------------------------------------------------------
 def test_frozen_baseline_widths_match_db_extraction():
-    """W0 constants equal the widths independently read from the OFF DB."""
+    """W0 constants equal the widths independently read from the ON
+    (trials50, downside ON) bands they freeze (re-determined
+    2026-11-25; the old OFF values 1297.9586 / 5019.1557 /
+    3482.8424 are superseded — see the module docstring)."""
     assert BASELINE_BAND_WIDTHS == {
-        ("desay-2015", "revenue", 3): 1297.9586,
-        ("desay-2020", "revenue", 3): 5019.1557,
+        ("desay-2015", "revenue", 3): 2571.0679,
+        ("desay-2020", "revenue", 3): 8874.4008,
+        ("desay-2018", "revenue", 3): 5811.885,
         ("nokia", "market_share", 3): 0.1127,
         ("nokia", "market_share", 5): 0.1091,
     }
-    # And each equals P90-P10 of the OFF band it freezes.
+    # And each Desay value equals P90-P10 of the ON50 band it freezes.
     assert BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)] == pytest.approx(
-        DESAY_2015_OFF["p90"] - DESAY_2015_OFF["p10"], abs=1e-9
+        DESAY_2015_ON50["p90"] - DESAY_2015_ON50["p10"], abs=1e-9
     )
     assert BASELINE_BAND_WIDTHS[("desay-2020", "revenue", 3)] == pytest.approx(
-        DESAY_2020_OFF["p90"] - DESAY_2020_OFF["p10"], abs=1e-9
+        DESAY_2020_ON50["p90"] - DESAY_2020_ON50["p10"], abs=1e-9
+    )
+    assert BASELINE_BAND_WIDTHS[("desay-2018", "revenue", 3)] == pytest.approx(
+        DESAY_2018_ON50["p90"] - DESAY_2018_ON50["p10"], abs=1e-9
     )
     assert BASELINE_BAND_WIDTHS[("nokia", "market_share", 3)] == pytest.approx(
         NOKIA_YR3["p90"] - NOKIA_YR3["p10"], abs=1e-9
@@ -85,14 +110,27 @@ def test_desay_2015_off_fails_out_of_band():
     assert s.point_error == pytest.approx(0.3444, abs=1e-4)  # +34.4%, auxiliary only
 
 
-def test_desay_2015_on_fails_via_width_cap():
+def test_desay_2015_trials20_on_band_still_trips_new_cap():
+    # The trials-20 ON band (width 2664.5672) is wider than the
+    # re-frozen trials-50 ON W0 (2571.0679), so it still fails via
+    # the cap — the cap still bites for bands wider than the new W0.
     # Under the OLD rule this was a PASS (actual inside the widened band).
     assert old_rule_verdict(p10=DESAY_2015_ON["p10"], p90=DESAY_2015_ON["p90"], actual=ACTUAL_2015) == "PASS"
     s = _score(DESAY_2015_ON, ACTUAL_2015, BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)])
     assert s.verdict == "FAIL" and s.reason == "width_exceeds_baseline"
     assert s.in_band is True  # in band, yet FAIL — the cap is doing the work
-    assert s.width_ratio == pytest.approx(2.05, abs=0.01)
+    assert s.width_ratio == pytest.approx(2664.5672 / 2571.0679, abs=0.01)
     assert s.point_error == pytest.approx(0.2666, abs=1e-4)  # +26.7%, auxiliary only
+
+
+def test_desay_2015_on50_passes_under_on_caliber_w0():
+    # W0 re-determination (2026-11-25): the trials-50 ON band IS the
+    # frozen width now, so the width leg passes by construction and
+    # the verdict turns on in-band + point error: in band, +19.9%.
+    s = _score(DESAY_2015_ON50, ACTUAL_2015, BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)])
+    assert s.verdict == "PASS" and s.reason == "point_error_pass"
+    assert s.in_band is True and s.width_ratio == pytest.approx(1.0)
+    assert s.point_error == pytest.approx(0.1994, abs=1e-4)  # +19.9%
 
 
 def test_desay_2020_off_fails_out_of_band():
@@ -101,13 +139,32 @@ def test_desay_2020_off_fails_out_of_band():
     assert s.point_error == pytest.approx(0.2525, abs=1e-4)  # +25.3%
 
 
-def test_desay_2020_on_fails_via_width_cap():
-    assert old_rule_verdict(p10=DESAY_2020_ON["p10"], p90=DESAY_2020_ON["p90"], actual=ACTUAL_2020) == "PASS"
-    s = _score(DESAY_2020_ON, ACTUAL_2020, BASELINE_BAND_WIDTHS[("desay-2020", "revenue", 3)])
-    assert s.verdict == "FAIL" and s.reason == "width_exceeds_baseline"
-    assert s.in_band is True
-    assert s.width_ratio == pytest.approx(1.57, abs=0.01)
-    assert s.point_error == pytest.approx(0.1622, abs=1e-4)  # +16.2%
+def test_desay_2020_on50_passes_under_on_caliber_w0():
+    # Same re-determination consequence as 2015: the trials-50 ON
+    # band (width = new W0) passes — in band, point error +2.0%.
+    # The old trials-20 ON band (width 7894.1829) no longer trips
+    # the new cap either (ratio 0.89) — the re-determination moved
+    # the goalposts as ordered (Ho 2026-11-24 13:44), it did not
+    # change the model.
+    s = _score(DESAY_2020_ON50, ACTUAL_2020, BASELINE_BAND_WIDTHS[("desay-2020", "revenue", 3)])
+    assert s.verdict == "PASS" and s.reason == "point_error_pass"
+    assert s.in_band is True and s.width_ratio == pytest.approx(1.0)
+    assert s.point_error == pytest.approx(0.0203, abs=1e-4)  # +2.0%
+    s_old = _score(DESAY_2020_ON, ACTUAL_2020, BASELINE_BAND_WIDTHS[("desay-2020", "revenue", 3)])
+    assert s_old.verdict == "PASS" and s_old.width_ratio == pytest.approx(
+        7894.1829 / 8874.4008, abs=0.01
+    )
+
+
+def test_desay_2018_on50_fails_out_of_band():
+    # NON-INDEPENDENT case: the yr3 actual (9569) sits below the
+    # ON50 band's lower edge (12076.76) — out of band, so FAIL
+    # regardless of the width cap (width = new W0 exactly, ratio 1.0).
+    # This is the node the D2C shape fix (2026-11-25) has to move.
+    s = _score(DESAY_2018_ON50, ACTUAL_2018, BASELINE_BAND_WIDTHS[("desay-2018", "revenue", 3)])
+    assert s.verdict == "FAIL" and s.reason == "out_of_band"
+    assert s.in_band is False and s.width_ratio == pytest.approx(1.0)
+    assert s.point_error == pytest.approx(0.5861, abs=1e-4)  # +58.6%
 
 
 # --- Nokia: unchanged ---------------------------------------------------------
@@ -258,8 +315,8 @@ def test_node_score_carries_all_intermediates():
     s = _score(DESAY_2015_ON, ACTUAL_2015, BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)])
     assert (s.p10, s.p50, s.p90, s.actual) == (5157.3955, 6850.8303, 7821.9627, 5408.74)
     assert s.width == pytest.approx(2664.5672, abs=1e-9)
-    assert s.baseline_width == 1297.9586
-    assert s.width_ratio == pytest.approx(2664.5672 / 1297.9586)
+    assert s.baseline_width == 2571.0679
+    assert s.width_ratio == pytest.approx(2664.5672 / 2571.0679)
     assert s.in_band is True
 
 

@@ -42,10 +42,11 @@ def test_pack_registered_and_state_fields() -> None:
     # totals + 5 stage rates + overall conversion + satisfaction)
     # + 3 Track 7 supplier magnitude fields (market_share /
     # revenue / profit, mirroring the corporate pack so cases
-    # can score them) + 2 Track 11 order-book fields
-    # (order_backlog / order_intake) + 1 Track C1 ADAS penetration
+    # can score them) + 3 order-book fields (order_backlog /
+    # order_intake + backlog_delivery_fraction, D2C 2026-11-25)
+    # + 1 Track C1 ADAS penetration
     # field (adas_penetration, MIIT combined-assist 2025: 0.649).
-    assert len(fields) == 51
+    assert len(fields) == 52
     assert fields["production_volume"] == 287.8
     assert fields["sales_volume_retail"] == 197.9
     assert fields["sales_volume_wholesale"] == 246.3
@@ -140,11 +141,15 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # driver — the order-intake decay merge anchor, first in the
     # chain (43 -> 44, 40 -> 41). Step 1 rebase (2026-11-24): the
     # order_backlog finite-book-depletion merge anchor is an eighth
-    # chain driver (44 -> 45 formulas, 41 -> 42 tick drivers).
-    assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 45
+    # chain driver (44 -> 45 formulas, 41 -> 42 tick drivers). D2C
+    # rebase (2026-11-25): the backlog_delivery_fraction merge anchor
+    # is a ninth chain driver (45 -> 46 formulas, 42 -> 43 tick
+    # drivers), sitting between the intake-decay anchor and the
+    # adoption default.
+    assert len(TEMPLATE_VARIABLES) == 78
+    assert len(TEMPLATE_FORMULAS) == 46
     drivers = [f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]
-    assert len(drivers) == 42
+    assert len(drivers) == 43
     assert [f["output"] for f in drivers] == [
         "pull_forward_stock",
         "price_index",
@@ -183,10 +188,11 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "delivery_satisfaction",
         "funnel_overall_conversion",
         # R&D decomposition drivers, in chain order: order-intake
-        # decay anchor (Track A) -> adoption default -> revenue
-        # passthrough anchor -> gross_margin -> rd_intensity ->
-        # net_margin -> profit.
+        # decay anchor (Track A) -> delivery-fraction anchor (D2C)
+        # -> adoption default -> revenue passthrough anchor ->
+        # gross_margin -> rd_intensity -> net_margin -> profit.
         "order_intake",
+        "backlog_delivery_fraction",
         "disruptor_adoption",
         "revenue",
         "order_backlog",
@@ -199,8 +205,8 @@ def test_template_spec_counts_and_driver_flags() -> None:
     for raw in TEMPLATE_VARIABLES:
         assert raw["unit"], raw["id"]
         assert raw["evidence_ref"], raw["id"]
-    # 34 of 76 variable ids match pack state fields (the wiring: sampling
-    # applies to id-matched fields). The 42 formula parameters are the 9
+    # 34 of 78 variable ids match pack state fields (the wiring: sampling
+    # applies to id-matched fields). The 44 formula parameters are the 9
     # pre-Track-4 sensitivities/rates plus the 12 Track 4 funnel
     # parameters (7 base rates/inflow/gain + 5 attrition rates) plus
     # the 4 Track 7 NEV-chain variables (the chain's penetration is
@@ -208,7 +214,10 @@ def test_template_spec_counts_and_driver_flags() -> None:
     # variable), plus the 3 Track 11 order-book parameters
     # (order_intake_rate / backlog_conversion / order_decay — the
     # backlog stock itself is the pack's order_backlog state field,
-    # bound, not a parameter), plus the 5 Track C1 ADAS-chain
+    # bound, not a parameter), plus the 2 D2C order-book parameters
+    # (order_backlog_opening / downturn_brake — the frozen opening
+    # stock and the tick-1 brake, both fixed, not state fields),
+    # plus the 5 Track C1 ADAS-chain
     # variables (adas_ceiling / adas_rate / adas_midpoint /
     # adas_coupling / adas_penetration_monthly_drift — the penetration
     # is the pack's adas_penetration state field, reused, not a sixth
@@ -254,6 +263,8 @@ def test_template_spec_counts_and_driver_flags() -> None:
         "order_intake_rate",
         "backlog_conversion",
         "order_decay",
+        "order_backlog_opening",
+        "downturn_brake",
         "gross_base",
         "gross_longrun",
         "gross_reversion",
@@ -274,8 +285,11 @@ def test_builtin_automotive_template_validates() -> None:
     # (C1 +6/+1, R&D +8/+6, transmission +1/+0, Track A intake
     # anchor +0/+1; the revenue-passthrough merge anchor is one of
     # the seven chain formulas; see the template docstring).
-    assert len(template.variables) == 76
-    assert len(template.formulas) == 45
+    # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas
+    # (order_backlog_opening + downturn_brake; the delivery-fraction
+    # merge anchor).
+    assert len(template.variables) == 78
+    assert len(template.formulas) == 46
     assert validate_template(template).is_valid is True
     # The tax-level factor is an initial formula; the retail driver is a
     # tick driver. Both exist exactly once.

@@ -106,14 +106,17 @@ def test_adas_chain_variables_match_spec() -> None:
     # order-intake decay merge anchor (43 -> 44, 40 -> 41). Step 1
     # rebase (2026-11-24): +1 formula / +1 tick driver — the
     # order_backlog finite-book-depletion merge anchor (44 -> 45,
-    # 41 -> 42). (This test
+    # 41 -> 42). D2C rebase (2026-11-25): +2 variables /
+    # +1 formula / +1 tick driver — order_backlog_opening +
+    # downturn_brake and the backlog_delivery_fraction merge anchor
+    # (76 -> 78, 45 -> 46, 42 -> 43). (This test
     # was written at the C1 merge, when the counts were 67/37/34;
     # the pin below was missed in the merge batch and caught by the
     # hub full suite on cb9ffd7 — deliberate update, same as the
     # registry pin.)
-    assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 45
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 42
+    assert len(TEMPLATE_VARIABLES) == 78
+    assert len(TEMPLATE_FORMULAS) == 46
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
     expected = {
         "adas_ceiling": (0.50, 0.65, 0.80),
         "adas_rate": (0.50, 0.70, 1.00),
@@ -139,8 +142,9 @@ def test_adas_chain_variables_match_spec() -> None:
     assert "NOT a fitted trend" in drift["evidence_ref"]
     template = builtin_template("automotive")
     # Merge (2026-11-23): see the count comment above.
-    assert len(template.variables) == 76
-    assert len(template.formulas) == 45
+    # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
+    assert len(template.variables) == 78
+    assert len(template.formulas) == 46
 
 
 def test_adas_chain_planning_path_values() -> None:

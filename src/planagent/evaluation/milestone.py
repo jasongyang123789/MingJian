@@ -17,12 +17,22 @@ yr3 node error 2015: -4.1% -> -9.4%; 2020: -24.6% -> -28.7%). The two
 New rule (Ho, 2026-11-20: "milestone band rule made robust to bandwidth")
 ---------------------------------------------------------------------------
 Per node, with W0 the frozen baseline width of the same case / field /
-tick under the e047f50 OFF run (seed 42, trials 20; see
-``BASELINE_BAND_WIDTHS``):
+tick (see ``BASELINE_BAND_WIDTHS``):
 
 1. actual outside [P10, P90] -> FAIL (``out_of_band``);
 2. else (P90 - P10) > W0 -> FAIL (``width_exceeds_baseline``);
 3. else |P50 - actual| / actual <= 35% -> PASS, otherwise PARTIAL.
+
+W0 re-determination (Ho, 2026-11-24 13:44: "W0 on the ON caliber",
+executed 2026-11-25): W0 was first frozen under the e047f50 OFF run
+(seed 42, trials 20). It is now re-frozen on the ON caliber —
+downside ON, trials 50, seed 42, FBOOK model (mainline b14527f) — for
+the three Desay cases together; Nokia's share widths are unchanged
+(share is untouched by downside shocks, so its OFF widths already are
+its ON widths). Old and new W0s are not interchangeable: a verdict
+scored under the old W0 and one scored under the new W0 are not
+directly comparable (same convention as the rule-change
+incomparability below).
 
 The case verdict is the worst node verdict (FAIL > PARTIAL > PASS).
 Huawei keeps its qualitative verdict and is NOT scored by this rule
@@ -89,24 +99,33 @@ POINT_ERROR_THRESHOLD = 0.35
 _WIDTH_TOLERANCE = 1e-9
 
 #: Frozen baseline widths W0: the P90-P10 width of the anchor ensemble
-#: band for the same case / field / tick under the e047f50 OFF run
-#: (seed 42, trials 20). Source DB: ``backtest-e047f50.db``
-#: (~/workspace/research/strategy-engine/backtest-rerun-2026-11-19-e047f50/),
-#: ``state_snapshots`` of the 20 baseline trial runs of the anchor
-#: Monte Carlo ensembles (share: ``03-anchor-monte-carlo.json``,
-#: revenue: ``03b-anchor-monte-carlo-revenue.json``), percentile =
-#: linear interpolation, the same definition as the re-run analyze
-#: scripts. Key: (case, state field, anchor tick).
+#: band for the same case / field / tick. First frozen under the e047f50
+#: OFF run (seed 42, trials 20); RE-FROZEN 2026-11-25 on the ON caliber
+#: (Ho 2026-11-24 13:44) — downside ON, trials 50, seed 42, FBOOK model
+#: (mainline b14527f). Source: the trials50 merge rerun
+#: (``research/strategy-engine/merge-trials50-harness-2026-11-25/REPORT.md``
+#: §5; bands in ``~/.cache/mingjian-backtest/trials50-fbook/
+#: milestone-scores.json``) for desay-2015 / desay-2020; the desay-2018
+#: case DB (``research/strategy-engine/desay-2018-case-2026-11-24/
+#: desay-2018-2026-11-24.db``, ``score_2018.json``) for desay-2018 —
+#: built on 734ffdd, value-identical to b14527f (the merge changed no
+#: product code). Percentile = linear interpolation, the same
+#: definition as the re-run analyze scripts. Key: (case, state field,
+#: anchor tick). Do not recompute them from later runs.
 #:
-#: - desay-2015 revenue tick 3: ensemble 5119b81b-e552-41be-990a-20d590ee847c
-#:   (base run eb32fb20-e4cd-4bcb-b8cf-a171e0f9d77c).
-#: - desay-2020 revenue tick 3: ensemble ca3d9e0d-4986-449f-a598-de1f6f09c0a8
-#:   (base run fc7550f4-2b1d-49f5-a859-10a98036d8de).
+#: - desay-2015 revenue tick 3: ON band P10 5222.3945 / P90 7793.4624
+#:   (old OFF W0 1297.9586, superseded).
+#: - desay-2020 revenue tick 3: ON band P10 17510.4529 / P90 26384.8537
+#:   (old OFF W0 5019.1557, superseded).
+#: - desay-2018 revenue tick 3: ON band P10 12076.7565 / P90 17888.6415
+#:   (old OFF W0 3482.8424, superseded; NON-INDEPENDENT case).
 #: - nokia market_share ticks 3/5: ensemble ed7e3435-3c16-4c77-8d23-186b2f4dfd8b
-#:   (base run 453f8429-86bc-4d2b-bbd8-99894c28f1ac).
+#:   (base run 453f8429-86bc-4d2b-bbd8-99894c28f1ac) — unchanged by the
+#:   ON re-determination (share untouched by downside shocks).
 BASELINE_BAND_WIDTHS: dict[tuple[str, str, int], float] = {
-    ("desay-2015", "revenue", 3): 1297.9586,
-    ("desay-2020", "revenue", 3): 5019.1557,
+    ("desay-2015", "revenue", 3): 2571.0679,
+    ("desay-2020", "revenue", 3): 8874.4008,
+    ("desay-2018", "revenue", 3): 5811.885,
     ("nokia", "market_share", 3): 0.1127,
     ("nokia", "market_share", 5): 0.1091,
 }

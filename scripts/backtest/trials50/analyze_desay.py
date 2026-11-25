@@ -42,10 +42,15 @@ REALIZED = {
     "desay-2020": "B aggressive intelligent driving push",
 }
 
-# Scoring actuals (REPORT.md): year-3 and year-5 revenue, RMB m.
+# Scoring actuals (REPORT.md): year-3, year-4 and year-5 revenue, RMB m.
+# ALIGNED-YEAR normal value (D2C, 2026-11-25, Ho-approved): the normal
+# value is the B tick-4 P50 compared to the YEAR-4 actual (the horizon's
+# last simulated year), replacing the one-year-ahead convention that
+# compared tick-4 P50 to the year-5 actual. yr5 errors are kept below
+# as legacy lines (labeled one-year-ahead), not scored.
 ACTUALS = {
-    "desay-2015": {"yr3": 5408.74, "yr5": 6799.06},
-    "desay-2020": {"yr3": 21908.0, "yr5": 32557.18},
+    "desay-2015": {"yr3": 5408.74, "yr4": 5337.0, "yr5": 6799.06},
+    "desay-2020": {"yr3": 21908.0, "yr4": 27618.0, "yr5": 32557.18},
 }
 
 # BEFORE baseline — merged-tip rerun (backtest-rerun-merged-2026-11-23/
@@ -184,6 +189,15 @@ def main():
         print(f"  SHAPE yr3 replay error: BEFORE {err3_before:.1f}% -> AFTER {err3_after:.1f}%")
         print(f"  SHAPE yr5 P50 error:    BEFORE {err5_before:.1f}% -> AFTER {err5_after:.1f}% (B P50 {b_p50['p50']})")
         print(f"  SHAPE yr5 replay error: BEFORE {err5r_before:.1f}% -> AFTER {err5r_after:.1f}%")
+        # ALIGNED-YEAR normal value (D2C, 2026-11-25): B tick-4 P50 vs
+        # the YEAR-4 actual. The yr5 lines above are the legacy
+        # one-year-ahead convention (kept for the record, not scored).
+        # No BEFORE aligned value is recorded (the before run's tick-4
+        # P50 was never saved), so only the AFTER aligned error prints.
+        err4_after = 100 * (b_p50["p50"] / act["yr4"] - 1)
+        err4r_after = 100 * (traj_r[4] / act["yr4"] - 1)
+        print(f"  NORMAL-VALUE (aligned yr4) P50 error: {err4_after:.1f}% (B P50 {b_p50['p50']} vs yr4 actual {act['yr4']})")
+        print(f"  NORMAL-VALUE (aligned yr4) replay error: {err4r_after:.1f}%")
         print(f"  SHAPE signed gap |e3-e5| P50: BEFORE {abs(err3_before - err5_before):.1f}pp -> AFTER {abs(err3_after - err5_after):.1f}pp")
         print(f"  SHAPE yr3/yr5 replay ratio: BEFORE {before['replay_yr3'] / before['replay_yr5']:.3f} -> AFTER {traj_r[2] / traj_r[4]:.3f} (actual {act['yr3'] / act['yr5']:.3f})")
     con.close()

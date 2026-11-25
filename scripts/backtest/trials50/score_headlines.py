@@ -11,21 +11,20 @@ Inputs (all from THIS trials50 run, downside ON, seed 42):
 - category / required_depth: from the mode-path growth factors via
   planagent.services.simulation.downside_headline (imported from the
   trials50 worktree). The mode path is the deterministic NO-SHOCK
-  trajectory: the seam-fix method uses OFF replay packages, because
-  the ON replay carries the shock (verified below: this run's ON
-  profit factors differ from the OFF factors). This run has no OFF
-  batch, so the OFF factors are reused from the seam-fix fixed-code
-  OFF replays (reference/seamfix/raw-*_off, committed in this harness dir) — legitimate
-  because a replay package never depends on the trial count, and the
-  simulation code path is unchanged (this run's ON replays are
-  value-identical to the seam-fix ON replays — the immediate
-  predecessor on the same code lineage, mainline 0dc3193 — checked
-  below; milestone.py is scoring-only; the two newly merged branches
-  are report-only / redteam-check-only). If the ON-vs-seam-fix check
-  fails, the script stops instead of silently reusing the OFF factors.
-  (Note: the A/C ON replays differ in tick-0 profit ONLY — the seam
-  fix, which landed after A/C and is already in mainline — so A/C is
-  the wrong reference here; the seam-fix ON batch is the right one.)
+  trajectory.
+
+D2C (2026-11-25): the seam-fix OFF reference no longer licenses the
+mode path — D2C moved the simulation path, so the seam-fix OFF
+factors (2015 B monotonically rising [1.0785, 1.2587, 1.2653, 1.2774])
+are stale for this model. The OFF mode factors now come from the D2C
+OFF probe (research/strategy-engine/
+desay-2018-d2c-implementation-2026-11-25/rerun-2018/off-probe/
+mode-paths.json), which re-derived them on the D2C backend (:8024,
+same worktree, same code): anchor with downside None, B arm forked
+at step 1, B child replay read back. The probe's Huawei/Nokia
+categories reproduce the seam-fix values exactly (informative 0.2881
+/ structural), validating the probe methodology; only the Desay
+factors moved (the D2C schedule exposes the tick-1 margin dip).
 
 Trials=20 ON decline_p values are hardcoded from the A/C + seam-fix
 reports for the side-by-side.
@@ -46,10 +45,12 @@ from planagent.services.simulation.downside_headline import (  # noqa: E402
 )
 
 HERE = str(backtest_common.get_run_dir())
-SEAMFIX = str(backtest_common.get_seamfix_ref())
-# Reference ON batch: the seam-fix rerun (mainline 0dc3193 lineage),
-# NOT A/C — A/C predates the seam fix and differs in tick-0 profit only.
-REF_ON = SEAMFIX
+# D2C OFF probe (same backend, same code — the mode-path source for
+# this model). The seam-fix reference is retained only as history.
+PROBE = os.path.expanduser(
+    "~/workspace/research/strategy-engine/desay-2018-d2c-implementation-2026-11-25"
+    "/rerun-2018/off-probe/mode-paths.json"
+)
 
 # (case, raw subdir, B arm name, trials=20 ON decline_p)
 B_ARMS = [
@@ -95,6 +96,7 @@ def main() -> None:
     print(f"engine default: depth {tuple(DOWNSIDE_DEFAULT_DEPTH)}, "
           f"duration {tuple(DOWNSIDE_DEFAULT_DURATION)}, "
           f"depth_high={depth_high}, max_window_rise={max_rise:.3f}")
+    probe = json.load(open(PROBE))
     out: dict = {}
     for case, sub, arm, dp20 in B_ARMS:
         case_dir = os.path.join(HERE, f"raw-{sub}", case)
@@ -102,22 +104,21 @@ def main() -> None:
             case_dir, f"06c-mc-profit-{tag_of(arm)}.json")))["body"]
         assert mc["seed"] == 42 and mc["trials"] == 50, (case, mc["seed"], mc["trials"])
         dp50 = mc["baseline"].get("decline_probability")
-        # Mode-path factors: this run's ON replays must be value-identical
-        # to the seam-fix ON replays (same simulation code path, replays
-        # are trials-independent) — that is the check that licenses
-        # reusing the seam-fix OFF factors for the no-shock mode path.
-        # The ON factors carry the shock and are NOT the mode path; the
-        # OFF factors are, exactly as in the seam-fix report.
+        # Mode-path factors: the D2C OFF probe (same backend, same
+        # code). The ON factors carry the shock and are NOT the mode
+        # path; they are printed only as a cross-check that this run's
+        # replays are the ones the probe's anchors were forked from
+        # (same case specs, same seed).
         f_on = replay_factors(case_dir, arm)
-        ref_dir = os.path.join(REF_ON, f"raw-{sub}", case)
-        f_ref = replay_factors(ref_dir, arm)
-        if [round(x, 4) for x in f_on] != [round(x, 4) for x in f_ref]:
-            raise SystemExit(
-                f"{case}/{arm}: trials50 ON replay factors {f_on} != "
-                f"seam-fix ON factors {f_ref} — simulation path moved; stop.")
-        off_dir = os.path.join(SEAMFIX, f"raw-{sub}_off", case)
-        f_off = replay_factors(off_dir, arm)
+        f_off = probe[case]["mode_profit_factors"]
         dec = assess_decline_saturation(f_off, depth_high, max_rise)
+        assert dec.category == probe[case]["category"], (case, dec.category)
+        assert (dec.required_depth is None) == (probe[case]["required_depth"] is None), case
+        if dec.required_depth is not None:
+            # The probe saved factors rounded to 4dp; recomputing from
+            # them shifts the depth in the last digit — tolerance, not
+            # bit equality.
+            assert abs(dec.required_depth - probe[case]["required_depth"]) <= 5e-4, case
         rd = None if dec.required_depth is None else round(dec.required_depth, 4)
         headline = bool(dp50 is not None and dp50 >= 0.35
                         and dec.category == "informative"
@@ -127,11 +128,12 @@ def main() -> None:
             "category": dec.category, "required_depth": rd,
             "headline": headline,
             "mode_growth_factors": [round(g, 4) for g in f_off],
+            "on_growth_factors": [round(g, 4) for g in f_on],
         }
         print(f"{case} B profit: decline_p {dp20} (t20) -> {dp50} (t50) | "
               f"category={dec.category} required_depth={rd} | "
               f"HEADLINE {'IN' if headline else 'OUT'} "
-              f"(ON factors checked == seam-fix ON; OFF mode factors used)")
+              f"(OFF mode factors from the D2C probe; ON factors {[round(g, 4) for g in f_on]})")
     json.dump(out, open(os.path.join(HERE, "headline-check.json"), "w"),
               indent=2, ensure_ascii=False)
     print("\nwrote headline-check.json")

@@ -502,7 +502,14 @@ TEMPLATE_VARIABLES: list[dict] = [
         "unit": "RMB m (same units as the case's revenue)",
         "distribution": {"type": "fixed", "value": 0.0},
         "evidence_ref": "assumption:pending-calibration — the order stock is a case-level quantity (a case binds it directly, e.g. one year of intake at mode revenue); 0.0 is the no-book generic default, never a market estimate",
-        "description": "Stock of unfulfilled orders at run start. Lever handle: a case overrides it with its decision-time order book (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed). The template tick driver updates it as backlog * (1 - backlog_conversion), floored at 0 (finite-book depletion; the intake flow does not replenish it).",
+        "description": "Stock of unfulfilled orders at run start. Lever handle: a case overrides it with its decision-time order book (one year of intake at mode revenue is the labeled stock proxy — the stock itself was never disclosed). The template tick driver updates it by the scheduled delivery (D2C, 2026-11-25): B' = max(0, B - backlog_delivery_fraction * order_backlog_opening), floored at 0 (finite-book depletion; the intake flow does not replenish it).",
+    },
+    {
+        "id": "order_backlog_opening",
+        "unit": "RMB m (same units as the case's revenue)",
+        "distribution": {"type": "fixed", "value": 0.0},
+        "evidence_ref": "assumption:pending-calibration — the opening order-book stock, the same labeled proxy as order_backlog (one year of intake at mode revenue; the stock itself was never disclosed). Bound by the case to the same value as order_backlog; 0.0 is the no-book generic default.",
+        "description": "Opening order-book stock (tick-0 level), frozen for the horizon: the D2C delivery schedule delivers fractions of THIS value each tick (backlog_delivery_fraction * order_backlog_opening), and the stock update drains the same amount. Unlike order_backlog (which depletes), this never changes after tick 0. A case binds it alongside order_backlog.",
     },
     {
         "id": "order_intake",
@@ -522,15 +529,22 @@ TEMPLATE_VARIABLES: list[dict] = [
         "id": "backlog_conversion",
         "unit": "fraction of backlog converted per tick",
         "distribution": {"type": "triangular", "min": 0.30, "mode": 0.40, "max": 0.60},
-        "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (lag-implied range check — design-in to start-of-production ~1-2 years (IPU04 2020 cooperation -> 2022 SOP target) implies conversion 0.33-1.00; current (0.30, 0.40, 0.60) implies lags 3.33/2.5/1.67y, i.e. conservative. Upward revision (mode 0.50) held by the 2015 headroom red line.)",
-        "description": "Fraction of the pre-tick backlog converted to revenue each tick: the revenue driver gains + backlog_conversion * (order_backlog / revenue), and the same amount leaves the backlog (the book depletes geometrically at this rate — finite-book depletion, step 1 2026-11-24; the intake flow does not replenish the book, so the total backlog uplift is finite and front-loaded). Mode 0.40.",
+        "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (lag-implied range check — design-in to start-of-production ~1-2 years implies conversion 0.33-1.00; current (0.30, 0.40, 0.60) implies lags 3.33/2.5/1.67y, i.e. conservative. Upward revision (mode 0.50) held by the 2015 headroom red line.) D2C (2026-11-25): the geometric rate is SUPERSEDED by the lag-shaped schedule; this variable is now the leg's on/off gate (1 on its support, 0 frozen off). Retained sampled so the stream is unchanged.",
+        "description": "Leg gate for the order-book channel (D2C, 2026-11-25): the delivery schedule applies at full rate whenever conversion is active — the gate min(1, backlog_conversion / 0.30) is 1 on the whole calibrated support (0.30-0.60) and 0 exactly when the leg is frozen off (backlog_conversion=0). The geometric per-tick rate it used to be (step 1, 2026-11-24) is superseded by the lag-shaped delivery schedule (backlog_delivery_fraction). Mode 0.40.",
     },
     {
         "id": "order_decay",
         "unit": "fraction of the order flow lost per tick",
         "distribution": {"type": "triangular", "min": 0.10, "mode": 0.25, "max": 0.40},
         "evidence_ref": "generated:calibration-simulated-generation-2026-11-20 (fit attempted and failed — only two disclosed new-orders points (2019/2020 ~7.0bn, flat); revenue-growth decay unstable (0.894 / 2.721). Mode 0.25 is the centre of the plausible range; low sensitivity.)",
-        "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). Under finite-book depletion (step 1 2026-11-24) the flow is a decaying diagnostic: the backlog term shrinks because the BOOK depletes geometrically at backlog_conversion, so per-tick growth falls even while penetration and adoption keep rising.",
+        "description": "Per-tick decay of the new-orders flow: order_intake(t) = order_intake(t-1) * (1 - order_decay). Under finite-book depletion the flow is a decaying diagnostic: the backlog term shrinks because the BOOK depletes on the D2C delivery schedule, so per-tick growth falls even while penetration and adoption keep rising.",
+    },
+    {
+        "id": "downturn_brake",
+        "unit": "per-year (additive growth points)",
+        "distribution": {"type": "fixed", "value": 0.0},
+        "evidence_ref": "rule: D2C downturn brake (2026-11-25, Ho-approved Option A) — when the anchor-year realized revenue growth is negative, the brake is (anchor-year growth − revenue_growth mode), applied to tick-1 growth only; 0 otherwise. Decision-point data only (last print / mode); never fitted to post-decision actuals. 2018: −0.1001 − 0.05 = −0.1501; 2015/2020 anchor years positive, brake 0.",
+        "description": "Downturn brake on tick-1 revenue growth (D2C): added to the revenue driver's growth sum at tick 1 only, as downturn_brake * (tick == 1). Negative when the anchor year printed negative growth (the growth distribution's mode is recentered on the anchor-year print for the first tick); 0 for growth-year anchors. Bound per case (fixed); the template default 0.0 is the no-brake generic value.",
     },
     # --- Lever handles: C4 scenario ids, fixed at pack defaults ---
     {
@@ -923,6 +937,72 @@ TEMPLATE_VARIABLES: list[dict] = [
     # The income LEVEL (income_index) and penetration LEVEL
     # (nev_penetration) remain sampled lever handles.
 ]
+
+
+# --- D2C delivery schedule (2026-11-25, Ho-approved Option A) -----------
+# The order book no longer depletes geometrically. Orders won in a
+# year need at least 1-2 years to convert to revenue (SOP lag; Ho
+# confirmed 2026-11-25), so delivery is a lag-shaped profile of
+# fractions of the OPENING book delivered per tick:
+#
+#   BACKLOG_DELIVERY_SCHEDULE = (0.00, 0.15, 0.45, 0.30, 0.10)  # ticks 1..5
+#
+# Tick 1 delivers NOTHING (the hard floor: minimum SOP lag 1.67y > 1y);
+# the bulk delivers in ticks 2-4 with the mode at tick 3, matching the
+# 1.67-3.33y SOP-lag evidence widened by the book's vintage mix and the
+# production/acceptance spread; the book is exhausted by tick 5. The
+# schedule is DETERMINISTIC (not sampled): the desay-2018
+# counterfactual that validated it (D2C) used fixed fractions, and
+# sampled fractions would widen the band and break the width leg it
+# was validated against. The formula language has no conditionals
+# (eight ops only), so the per-tick fractions are built from min/max
+# tick indicators below.
+BACKLOG_DELIVERY_SCHEDULE: tuple[float, ...] = (0.0, 0.15, 0.45, 0.30, 0.10)
+
+
+def _tick_le(k: int) -> dict:
+    """Indicator (tick <= k): 1 at ticks 1..k, 0 after — min/max only."""
+    return {
+        "op": "max",
+        "args": [0, {"op": "min", "args": [1, {"op": "subtract", "args": [k + 1, {"ref": "tick"}]}]}],
+    }
+
+
+def _tick_eq(k: int) -> dict:
+    """Indicator (tick == k): 1 exactly at tick k, 0 elsewhere."""
+    if k == 1:
+        return _tick_le(1)
+    return {"op": "subtract", "args": [_tick_le(k), _tick_le(k - 1)]}
+
+
+def _delivery_fraction_expr() -> dict:
+    """backlog_delivery_fraction: the fraction of the opening book
+    delivered this tick, gated by backlog_conversion.
+
+    The gate min(1, backlog_conversion / 0.30) is 1 on the whole
+    calibrated support of backlog_conversion (triangular 0.30-0.60)
+    and 0 exactly when the leg is frozen off (backlog_conversion=0):
+    it exists so the leg-freeze interface — the frozen-baseline
+    decomposition (B with backlog_conversion=0) and the two-value
+    opportunity module, both of which zero that variable — keeps
+    working after the geometric rate is replaced by the schedule.
+    0.30 is the distribution's minimum; if the distribution is ever
+    recalibrated, the gate denominator must track its minimum.
+    """
+    terms = [
+        {"op": "multiply", "args": [f, _tick_eq(t)]}
+        for t, f in enumerate(BACKLOG_DELIVERY_SCHEDULE, start=1)
+        if f
+    ]
+    frac: dict = terms[0]
+    for term in terms[1:]:
+        frac = {"op": "add", "args": [frac, term]}
+    gate = {
+        "op": "min",
+        "args": [1, {"op": "divide", "args": [{"ref": "backlog_conversion"}, 0.30]}],
+    }
+    return {"op": "multiply", "args": [gate, frac]}
+
 
 TEMPLATE_FORMULAS: list[dict] = [
     {
@@ -1792,13 +1872,16 @@ TEMPLATE_FORMULAS: list[dict] = [
     # on the R&D leg (rd_adoption). Order inside this block is
     # load-bearing: the order-intake decay driver first (the decay
     # must precede the revenue driver; a case intake driver replaces
-    # it in place), then disruptor_adoption
+    # it in place), then the backlog_delivery_fraction driver (D2C
+    # 2026-11-25: the lag-shaped delivery fraction; the revenue term
+    # and the backlog update both read it, so it must precede them),
+    # then disruptor_adoption
     # (rd_intensity reads it; a case adoption curve replaces it in
     # place), then the revenue
     # passthrough (a case revenue driver replaces it in place, so it
     # evaluates BEFORE gross_margin / rd_intensity / net_margin and
-    # profit), then the order_backlog update (step 1 finite-book
-    # depletion: it drains exactly what the revenue term converted,
+    # profit), then the order_backlog update (D2C scheduled depletion:
+    # it drains exactly what the revenue term converted,
     # after revenue has read the pre-tick book), then gross_margin,
     # rd_intensity, net_margin, then
     # profit — profit reads SAME-TICK revenue, exactly the Track B
@@ -1813,6 +1896,13 @@ TEMPLATE_FORMULAS: list[dict] = [
     # anchor the case intake driver appends AFTER the revenue anchor
     # and the revenue term reads the undecayed flow. Generic runs are
     # unaffected (order_intake defaults to 0.0, decay of 0 is 0).
+    # D2C (2026-11-25, lag-shaped delivery): the delivery-fraction
+    # driver sits between the intake-decay driver and the revenue
+    # passthrough, so the load-bearing order is now decay -> delivery
+    # fraction -> revenue -> backlog update; the fraction driver must
+    # precede both readers. A case must NOT supply its own driver on
+    # backlog_delivery_fraction — one on the same output would replace
+    # this anchor in place and silently reintroduce its own schedule.
     # Step 1 (2026-11-24, finite-book depletion): the backlog-update
     # driver sits right AFTER the revenue passthrough, so it runs
     # after the case revenue driver (which replaces the passthrough
@@ -1836,6 +1926,12 @@ TEMPLATE_FORMULAS: list[dict] = [
         "description": "Tick driver (Track 11 order-book mechanism, restated Track A 2026-11-20): new-orders flow decays by (1 - order_decay) per tick. MERGE ANCHOR, not a new model: a case intake driver replaces this driver in place, so the decay runs BEFORE the revenue driver reads the pool (pre-tick book + this tick's decayed intake). Generic runs keep the 0.0 default and the driver is a no-op.",
     },
     {
+        "output": "backlog_delivery_fraction",
+        "tick_driver": True,
+        "expression": _delivery_fraction_expr(),
+        "description": "Tick driver (D2C, 2026-11-25, Ho-approved Option A): the fraction of the OPENING order book delivered this tick — the lag-shaped schedule (0, 0.15, 0.45, 0.30, 0.10) for ticks 1..5, gated by backlog_conversion (1 on its calibrated support, 0 when frozen off). MERGE ANCHOR: it runs before the revenue passthrough (which a case revenue driver replaces in place) and before the order_backlog update, so both read this tick's fraction; a case must not supply its own driver on this output. Generic runs keep the 0.0 book default, so the fraction has no effect (the revenue term multiplies it by a zero opening book).",
+    },
+    {
         "output": "disruptor_adoption",
         "tick_driver": True,
         "expression": 0.0,
@@ -1855,15 +1951,21 @@ TEMPLATE_FORMULAS: list[dict] = [
             "args": [
                 0,
                 {
-                    "op": "multiply",
+                    "op": "subtract",
                     "args": [
                         {"ref": "order_backlog"},
-                        {"op": "subtract", "args": [1, {"ref": "backlog_conversion"}]},
+                        {
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "backlog_delivery_fraction"},
+                                {"ref": "order_backlog_opening"},
+                            ],
+                        },
                     ],
                 },
             ],
         },
-        "description": "Tick driver (step 1, 2026-11-24, finite-book depletion): the order book depletes geometrically at the conversion rate — B' = B * (1 - backlog_conversion), floored at 0. MERGE ANCHOR, not a case override: it runs right after the revenue passthrough (which a case revenue driver replaces in place), so revenue reads the pre-tick book and the update drains exactly what the term converted. The intake flow does NOT replenish the book (its delivery is carried by revenue_growth, calibrated on total historical growth); the book is the finite decision-time stock, so the total backlog uplift is finite and front-loaded. A case must not supply its own backlog-update driver. Generic runs keep the 0.0 default and the driver is a no-op.",
+        "description": "Tick driver (D2C, 2026-11-25, supersedes the step-1 geometric form): the order book depletes by the scheduled delivery — B' = max(0, B - backlog_delivery_fraction * order_backlog_opening), floored at 0. MERGE ANCHOR, not a case override: it runs right after the revenue passthrough (which a case revenue driver replaces in place), so revenue reads the pre-tick book and the update drains exactly what the term converted (the term is backlog_delivery_fraction * order_backlog_opening / revenue). The intake flow does NOT replenish the book (its delivery is carried by revenue_growth, calibrated on total historical growth); the book is the finite decision-time stock, fully delivered by tick 5. A case must not supply its own backlog-update driver. Generic runs keep the 0.0 default and the driver is a no-op.",
     },
     {
         "output": "gross_margin",

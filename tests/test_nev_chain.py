@@ -106,10 +106,14 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # chain driver (43 -> 44 formulas, 40 -> 41 tick drivers).
     # Step 1 rebase (2026-11-24): the order_backlog finite-book
     # depletion merge anchor is another chain driver (44 -> 45
-    # formulas, 41 -> 42 tick drivers).
-    assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 45
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 42
+    # formulas, 41 -> 42 tick drivers). D2C rebase (2026-11-25):
+    # the backlog_delivery_fraction merge anchor is another chain
+    # driver (45 -> 46 formulas, 42 -> 43 tick drivers), and
+    # order_backlog_opening + downturn_brake take the variables
+    # 76 -> 78.
+    assert len(TEMPLATE_VARIABLES) == 78
+    assert len(TEMPLATE_FORMULAS) == 46
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
     expected = {
         "nev_ceiling": (0.30, 0.40, 0.60),
         "nev_rate": (0.50, 0.70, 1.00),
@@ -126,8 +130,9 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     template = builtin_template("automotive")
     # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
     # (see the count comment above).
-    assert len(template.variables) == 76
-    assert len(template.formulas) == 45
+    # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
+    assert len(template.variables) == 78
+    assert len(template.formulas) == 46
 
 
 def test_nev_chain_planning_path_values() -> None:
