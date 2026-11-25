@@ -60,14 +60,20 @@ def test_registry_status_counts():
     # 2026-11-23: margin-profit transmission merged (item 3) added 1
     # simulated template entry (tier1_pass_through, fixed):
     # simulated 63 -> 64, total 73 -> 74.
+    # 2026-11-25: D2C merged (fix/desay-2018-d2c) added 1 simulated
+    # template entry (template/order_backlog_opening, fixed 0.0):
+    # simulated 64 -> 65, total 74 -> 75. The new template variable
+    # is the frozen tick-0 book the delivery schedule delivers
+    # fractions of; its evidence_ref labels it assumption:
+    # pending-calibration (the stock itself was never disclosed).
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 64
+    assert counts["simulated"] == 65
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 74
+    assert sum(counts.values()) == 75
 
 
 def test_registry_transmission_values_are_live():
