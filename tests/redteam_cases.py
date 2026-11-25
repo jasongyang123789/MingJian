@@ -250,12 +250,130 @@ def complete_case_snapshot_dict() -> dict:
     return complete_case_snapshot().model_dump(mode="json")
 
 
+HUAWEI_2000_SITUATION = (
+    "2000-12-31, 任正非《华为的冬天》；220亿人民币，利润29亿，中国电子百强第一；"
+    "海外合同销售额仅1亿多美元，1999年海外收入<4%；互联网泡沫破裂，全球IT投资下滑；"
+    "2000年引入IBM ISC；10月校招10000人"
+)
+
+HUAWEI_2000_TREE = {
+    "topic": "华为2000：冬天来了，收缩过冬还是坚持投入？",
+    "root": {
+        "name": "华为2000：冬天来了，怎么过冬",
+        "scope": ["growth", "survival"],
+        "children": [
+            {"name": "增长", "scope": ["growth"]},
+            {"name": "生存", "scope": ["survival"]},
+        ],
+    },
+}
+
+
+def huawei_2000_snapshot() -> CaseSnapshot:
+    """The Huawei-2000 case, copied from the trials50 harness
+    (``scripts/backtest/trials50/run_classic.py`` CASES["huawei"]) with
+    the situation joined exactly as the Step 4 live probe built it
+    (``probe_redteam_live.py``: decision_point + sales_2000 +
+    overseas_2000 + context). Formulas are [] as in the probe
+    construction — the red-team structure checks do not depend on
+    them here (the situation names no catalog driver).
+
+    Revenue is a single undifferentiated total: six variables, no
+    region / product / customer split anywhere — the
+    missing_segment_split check MUST fire on this snapshot, and only
+    on it (desay-2020's situation + tree name three product segments).
+    """
+    return CaseSnapshot(
+        case_id="huawei-2000",
+        decision_question="华为2000：冬天来了，收缩过冬还是坚持投入？",
+        decision_time="2000-12-31T00:00:00Z",
+        domain="corporate",
+        mece_tree=HUAWEI_2000_TREE,  # type: ignore[arg-type]
+        variables=[
+            _var(
+                "market_share",
+                0.02,
+                0.03,
+                0.05,
+                [
+                    "estimate: labeled assumption — 2000 global share not publicly "
+                    "disclosed; 2000 contract sales $2.65B"
+                ],
+                description="2000年全球电信设备市场份额（起始值）",
+            ),
+            _var(
+                "share_growth",
+                -0.05,
+                0.08,
+                0.25,
+                [
+                    "estimate: 1995-2000 sales grew ~70%/yr (RMB 1.5B→22B); "
+                    "Dec 2000 bubble burst + winter warning; wide distribution, mode 8%"
+                ],
+                description="年均份额增长率（锚定run的不确定性范围）",
+            ),
+            _var(
+                "revenue",
+                180,
+                220,
+                260,
+                [
+                    "evidence: 2000 sales RMB 22B (220亿), profit RMB 2.9B; "
+                    "decision-time internal figure"
+                ],
+                description="年销售收入，单位亿人民币（起始值）",
+            ),
+            _var(
+                "revenue_growth",
+                0.0,
+                0.15,
+                0.35,
+                [
+                    "estimate: 1995-2000 sales ~70%/yr, bubble burst moderates; "
+                    "own targets 2001 400亿 (+82%) / 2002 600亿 (+50%) show high "
+                    "ambition, mode 15% conservative"
+                ],
+                description="年均收入增长率（锚定run的不确定性范围）",
+            ),
+            _var(
+                "profit",
+                24,
+                29,
+                35,
+                ["evidence: 2000 profit RMB 2.9B (29亿)"],
+                description="年利润，单位亿人民币（起始值）",
+            ),
+            _var(
+                "profit_growth",
+                0.0,
+                0.12,
+                0.30,
+                [
+                    "estimate: labeled assumption, tracks revenue growth at a lower "
+                    "mode (margin pressure in a downturn)"
+                ],
+                description="年均利润增长率（锚定run的不确定性范围）",
+            ),
+        ],
+        formulas=[],
+        internal_situation=HUAWEI_2000_SITUATION,
+    )
+
+
+def huawei_2000_snapshot_dict() -> dict:
+    return huawei_2000_snapshot().model_dump(mode="json")
+
+
 __all__ = [
     "DESAY_2020_SITUATION",
     "DESAY_2020_TREE",
+    "HUAWEI_2000_SITUATION",
+    "HUAWEI_2000_TREE",
     "complete_case_snapshot",
     "complete_case_snapshot_dict",
     "desay_2020_snapshot",
     "desay_2020_snapshot_dict",
     "desay_2020_variables",
+    "huawei_2000_snapshot",
+    "huawei_2000_snapshot_dict",
 ]

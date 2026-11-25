@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass
 from string import Formatter
 
-_TEMPLATE_VERSION = "1"
+_TEMPLATE_VERSION = "2"
 
 _PLACEHOLDER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -86,6 +86,13 @@ def _template() -> RedTeamTemplate:
         "- overconfident_parameter: a distribution so tight, or a point "
         "estimate so precise, that the evidence cannot support it.\n"
         "\n"
+        "EXPLICIT PROBE — revenue split: check whether the revenue in "
+        "this case is split by region, product, or customer. If it is a "
+        "single undifferentiated total, say so as a missing_driver finding "
+        "on the revenue variable, and name the most likely source of the "
+        "growth the case would then miss. A single segment level mentioned "
+        "in the situation (e.g. \"overseas <4%\") is a level, not a split.\n"
+        "\n"
         "Severity: high = the gap can change the direction of the "
         "decision; medium = it can move the magnitude materially; low = "
         "it weakens auditability. Be strict with high: reserve it for gaps "
@@ -130,7 +137,10 @@ def _template() -> RedTeamTemplate:
             "Original prompt written for Phase 4 Track 8 (2026-11-19); "
             "no external source. Informed by the desay-2020 backtest miss "
             "(REPORT.md): a generic corporate template with no NEV variable "
-            "and no domain-controller-substitution variable."
+            "and no domain-controller-substitution variable. v2 (2026-11-25): "
+            "added the explicit revenue-split probe (Huawei rethink): "
+            "check whether revenue is split by region/product/customer, "
+            "and if not, name the most likely missed growth source."
         ),
         system_prompt=system_prompt,
         user_template=user_template,

@@ -139,3 +139,123 @@ def test_two_value_rejects_mismatched_pairs(monkeypatch, tmp_path: Path) -> None
         response = client.post("/opportunities/two-value", json=payload)
     assert response.status_code == 422
     assert "seed" in response.json()["detail"]
+
+
+def _huawei_satellite_payload() -> dict:
+    """Huawei-2000 with the satellite leg (A): the main model has no
+    legs (full == stripped_all), the whole (b) is the out-of-model
+    satellite leg. P50-only satellite records (replay null) — no clean
+    value is fabricated."""
+
+    def rec(p50: float, replay: float | None) -> dict:
+        return {
+            "metric": "revenue",
+            "unit": "RMB 100M",
+            "horizon_tick": 10,
+            "horizon_label": "yr10",
+            "p50": p50,
+            "replay": replay,
+            "seed": 42,
+            "trials": 50,
+        }
+
+    return {
+        "case_id": "huawei-2000",
+        "metric": "revenue",
+        "unit": "RMB 100M",
+        "horizon_tick": 10,
+        "horizon_label": "yr10",
+        "full": rec(926.4655, 926.4655),
+        "stripped_all": rec(926.4655, 926.4655),
+        "legs": [
+            {
+                "leg_id": "overseas_expansion",
+                "label": "overseas expansion (3G/NGN cycle)",
+                "stripped": rec(37.05862, None),
+                "source": "satellite",
+                "scenario": rec(1204.1, None),
+                "sizing": "retrospective",
+                "satellite_params": {
+                    "market_source": "Gartner 2010 global carrier network infrastructure market ($78.6B) via China Daily 2011-04-28",
+                    "share_source": "Gartner via China Daily 2011-04-28: Huawei 15.7% of the 2010 global carrier network infrastructure market",
+                    "market_basis": "implied: realized overseas 1204.1 / share 0.157 = 7669.43 — DERIVED, not observed",
+                    "share_basis": "Gartner 2010 share 15.7%",
+                },
+            }
+        ],
+        "actual": 1852,
+        "sizing": "retrospective",
+    }
+
+
+def test_two_value_accepts_satellite_leg(monkeypatch, tmp_path: Path) -> None:
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        response = client.post("/opportunities/two-value", json=_huawei_satellite_payload())
+    assert response.status_code == 200, response.text
+    body = response.json()
+    # (a) normal, (b) opportunity — separate fields, never merged.
+    assert body["normal_frozen_p50"] == pytest.approx(926.47, abs=0.01)
+    assert body["opportunity_total_apparent"] == pytest.approx(1167.04, abs=0.01)
+    assert body["opportunity_total_clean"] is None
+    assert body["combined_reference_p50"] == pytest.approx(2093.51, abs=0.01)
+    assert body["sizing"] == "retrospective"
+    assert body["legs_stripped"] == ["overseas_expansion"]
+    assert body["contributions"][0]["leg_id"] == "overseas_expansion"
+    assert body["contributions"][0]["apparent_contribution"] == pytest.approx(
+        1167.04, abs=0.01
+    )
+    assert any("Out-of-model" in note for note in body["notes"])
+    assert "merged_value" not in body
+    assert "forecast" not in body
+
+
+def test_two_value_rejects_mislabeled_retrospective_leg(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    payload = _huawei_satellite_payload()
+    payload["sizing"] = "decision_time"  # the leg stays retrospective
+    with TestClient(create_app()) as client:
+        response = client.post("/opportunities/two-value", json=payload)
+    assert response.status_code == 422
+    assert "decision_time" in response.json()["detail"]
+
+
+def test_two_value_rejects_mixed_satellite_and_attribution(
+    monkeypatch, tmp_path: Path
+) -> None:
+    setup_app(monkeypatch, tmp_path)
+    payload = _huawei_satellite_payload()
+    payload["legs"].append(
+        {
+            "leg_id": "overseas",
+            "label": "overseas",
+            "stripped": {
+                "metric": "revenue",
+                "unit": "RMB 100M",
+                "horizon_tick": 10,
+                "horizon_label": "yr10",
+                "p50": 37.05862,
+                "replay": None,
+                "seed": 42,
+                "trials": 50,
+            },
+            "source": "attribution",
+            "scenario": {
+                "metric": "revenue",
+                "unit": "RMB 100M",
+                "horizon_tick": 10,
+                "horizon_label": "yr10",
+                "p50": 1204.1,
+                "replay": None,
+                "seed": 42,
+                "trials": 50,
+            },
+            "sizing": "retrospective",
+        }
+    )
+    with TestClient(create_app()) as client:
+        response = client.post("/opportunities/two-value", json=payload)
+    assert response.status_code == 422
+    assert "must not mix" in response.json()["detail"]

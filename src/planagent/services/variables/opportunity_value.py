@@ -47,6 +47,24 @@ is always ``full - all-legs-off``; per-leg values are single-leg
 conditionals (that leg off, the others on). ``interaction_clean``
 reports the difference explicitly.
 
+Satellite / attribution legs (Huawei rethink, 2026-11-25): a leg whose
+opportunity lives OUTSIDE the model — the model has no variable for
+it, so there is no leg to freeze. Such a leg carries
+``source="satellite"`` or ``"attribution"`` plus its own ``scenario``
+record (the out-of-model outcome at scenario caliber) and its
+``sizing``. Its contribution is ``scenario - stripped``, where
+``stripped`` is the out-of-model outcome at NORMAL caliber; the total
+(b) is then the in-model leg difference PLUS the out-of-model leg
+contributions, and ``combined_reference`` is the full outcome of the
+AUGMENTED model (main model + out-of-model legs) — for frozen-only
+requests it is exactly ``full.p50``, as before. A and B are two views
+of the SAME opportunity, never additive legs: a request must not mix
+satellite and attribution legs (ValueError), and a retrospective (b)
+must never be labeled ``decision_time`` (ValueError). The satellite
+leg's ``stripped``/``scenario`` records are P50-only (no seeded
+replay), so clean contributions are unavailable and reported as None,
+never fabricated.
+
 ``sizing`` is REQUIRED on every output and is part of the hindsight
 firewall: ``decision_time`` means the opportunity-leg values come from
 decision-time evidence; ``retrospective`` means they were sized from
@@ -63,7 +81,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .opportunities import KeyOpportunityPrompt
 
@@ -93,14 +111,81 @@ class OutcomeRecord(BaseModel):
     trials: int | None = None
 
 
+class SatelliteParams(BaseModel):
+    """Provenance of a satellite leg's market / share inputs.
+
+    All four fields are free text, but they must NAME the source and
+    the basis: a retrospective calibration MUST say when a number is
+    derived (implied market = realized overseas / share) rather than
+    observed — an implied market is not market data.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_source: str = ""
+    share_source: str = ""
+    market_basis: str = ""
+    share_basis: str = ""
+
+
 class LegInput(BaseModel):
-    """One opportunity leg + its leg-off outcome record."""
+    """One opportunity leg + its leg-off outcome record.
+
+    ``source="frozen"`` (default) is the original in-model leg: the
+    leg is a variable the model has, and ``stripped`` is the outcome
+    with exactly that leg zeroed. ``source="satellite"`` /
+    ``"attribution"`` is an out-of-model leg (Huawei rethink): the
+    model has no variable for it, so ``stripped`` is the out-of-model
+    outcome at NORMAL caliber and ``scenario`` is the same outcome at
+    scenario caliber; the leg's contribution is scenario - stripped.
+    Out-of-model legs MUST carry ``sizing`` (which must equal the
+    request's sizing — a retrospective (b) is never labeled
+    decision_time), and satellite legs MUST carry ``satellite_params``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     leg_id: str
     label: str = ""
     stripped: OutcomeRecord
+    source: Literal["frozen", "satellite", "attribution"] = "frozen"
+    scenario: OutcomeRecord | None = None
+    sizing: Sizing | None = None
+    satellite_params: SatelliteParams | None = None
+
+    @model_validator(mode="after")
+    def _check_source_consistency(self) -> LegInput:
+        if self.source == "frozen":
+            if self.scenario is not None:
+                raise ValueError(
+                    f"leg {self.leg_id!r}: a frozen leg must not carry 'scenario'"
+                )
+            if self.sizing is not None:
+                raise ValueError(
+                    f"leg {self.leg_id!r}: a frozen leg must not carry 'sizing'"
+                )
+            if self.satellite_params is not None:
+                raise ValueError(
+                    f"leg {self.leg_id!r}: a frozen leg must not carry 'satellite_params'"
+                )
+            return self
+        if self.scenario is None:
+            raise ValueError(
+                f"leg {self.leg_id!r}: a {self.source} leg requires 'scenario'"
+            )
+        if self.sizing is None:
+            raise ValueError(
+                f"leg {self.leg_id!r}: a {self.source} leg requires 'sizing'"
+            )
+        if self.source == "satellite" and self.satellite_params is None:
+            raise ValueError(
+                f"leg {self.leg_id!r}: a satellite leg requires 'satellite_params'"
+            )
+        if self.source == "attribution" and self.satellite_params is not None:
+            raise ValueError(
+                f"leg {self.leg_id!r}: an attribution leg must not carry 'satellite_params'"
+            )
+        return self
 
 
 class TwoValueRequest(BaseModel):
@@ -220,6 +305,23 @@ def compute_two_value_output(request: TwoValueRequest) -> TwoValueOutput:
     _check_paired(full, stripped, "stripped_all")
     for leg in request.legs:
         _check_paired(full, leg.stripped, f"leg {leg.leg_id!r}")
+        if leg.source != "frozen":
+            assert leg.scenario is not None  # enforced by the LegInput validator
+            _check_paired(leg.stripped, leg.scenario, f"leg {leg.leg_id!r} scenario")
+            if leg.sizing != request.sizing:
+                raise ValueError(
+                    f"leg {leg.leg_id!r}: sizing {leg.sizing!r} != request sizing "
+                    f"{request.sizing!r} — a retrospective (b) must never be "
+                    "labeled decision_time."
+                )
+    # A and B are two views of the same opportunity, never additive
+    # legs: one request carries one out-of-model source at most.
+    out_of_model_sources = {leg.source for leg in request.legs if leg.source != "frozen"}
+    if len(out_of_model_sources) > 1:
+        raise ValueError(
+            "a request must not mix satellite and attribution legs: they are "
+            "two views of the same opportunity, never additive legs"
+        )
 
     notes: list[str] = []
     if request.legs_note:
@@ -229,21 +331,45 @@ def compute_two_value_output(request: TwoValueRequest) -> TwoValueOutput:
             "Frozen MC is degenerate (stripped P50 equals stripped replay): "
             "the stripped outcome is a single pinned path, not an ensemble median."
         )
+    if out_of_model_sources:
+        notes.append(
+            "Out-of-model legs present ("
+            + ", ".join(sorted(out_of_model_sources))
+            + "): their (b) is scenario minus normal-caliber outcome, "
+            "outside the main model; combined_reference is the full "
+            "outcome of the augmented model (main + out-of-model legs) — "
+            "a reference, never a forecast, never scored."
+        )
 
     # (a) normal, frozen level: the leg-stripped outcome itself.
     normal_frozen_p50 = stripped.p50
     normal_frozen_replay = stripped.replay
 
-    # Per-leg contributions, both levels.
+    # Per-leg contributions, both levels. Frozen legs are full minus
+    # leg-off (in-model); out-of-model legs are scenario minus
+    # normal-caliber (outside the model). Clean contributions need
+    # replays on both records of the pair; P50-only records report
+    # None, never a fabricated clean value.
     overshoot = full.p50 - request.actual if request.actual is not None else None
     contributions: list[LegContribution] = []
-    clean_values: list[float | None] = []
+    frozen_clean_values: list[float | None] = []
+    out_of_model_apparent: list[float] = []
+    out_of_model_clean_values: list[float | None] = []
     for leg in request.legs:
-        clean: float | None = None
-        if full.replay is not None and leg.stripped.replay is not None:
-            clean = full.replay - leg.stripped.replay
-        clean_values.append(clean)
-        apparent = full.p50 - leg.stripped.p50
+        if leg.source == "frozen":
+            clean: float | None = None
+            if full.replay is not None and leg.stripped.replay is not None:
+                clean = full.replay - leg.stripped.replay
+            frozen_clean_values.append(clean)
+            apparent = full.p50 - leg.stripped.p50
+        else:
+            assert leg.scenario is not None  # enforced by the LegInput validator
+            clean = None
+            if leg.scenario.replay is not None and leg.stripped.replay is not None:
+                clean = leg.scenario.replay - leg.stripped.replay
+            out_of_model_clean_values.append(clean)
+            apparent = leg.scenario.p50 - leg.stripped.p50
+            out_of_model_apparent.append(apparent)
         contributions.append(
             LegContribution(
                 leg_id=leg.leg_id,
@@ -261,21 +387,36 @@ def compute_two_value_output(request: TwoValueRequest) -> TwoValueOutput:
             )
         )
 
-    # (b) opportunity total, both levels.
-    total_clean: float | None = None
+    # (b) opportunity total, both levels: the in-model leg difference
+    # plus the out-of-model leg contributions.
+    base_clean: float | None = None
     if full.replay is not None and stripped.replay is not None:
-        total_clean = full.replay - stripped.replay
-    total_apparent = full.p50 - stripped.p50
+        base_clean = full.replay - stripped.replay
+    base_apparent = full.p50 - stripped.p50
+    total_apparent = base_apparent + sum(out_of_model_apparent)
+    total_clean: float | None = None
+    if base_clean is not None and all(
+        value is not None for value in out_of_model_clean_values
+    ):
+        total_clean = base_clean + sum(
+            value for value in out_of_model_clean_values if value is not None
+        )
 
-    # Interaction: total clean minus the single-leg clean sum. Negative
-    # means sub-additive (legs overlap); positive means super-additive.
-    # Unavailable when any leg lacks a replay value.
-    clean_sum: float | None = None
-    if clean_values and all(v is not None for v in clean_values):
-        clean_sum = sum(v for v in clean_values if v is not None)
+    # Interaction: total in-model clean minus the single-leg frozen
+    # clean sum. Negative means sub-additive (legs overlap); positive
+    # means super-additive. Computed over frozen legs only — an
+    # out-of-model leg has no single-path interaction with in-model
+    # legs. Unavailable when any frozen leg lacks a replay value.
+    frozen_clean_sum: float | None = None
+    if frozen_clean_values and all(
+        value is not None for value in frozen_clean_values
+    ):
+        frozen_clean_sum = sum(
+            value for value in frozen_clean_values if value is not None
+        )
     interaction: float | None = None
-    if total_clean is not None and clean_sum is not None:
-        interaction = total_clean - clean_sum
+    if base_clean is not None and frozen_clean_sum is not None:
+        interaction = base_clean - frozen_clean_sum
 
     # Ensemble-vs-path gap on the full run.
     ensemble_gap: float | None = None
@@ -304,7 +445,10 @@ def compute_two_value_output(request: TwoValueRequest) -> TwoValueOutput:
         contributions=contributions,
         interaction_clean=interaction,
         ensemble_gap=ensemble_gap,
-        combined_reference_p50=full.p50,
+        # Combined reference: the full outcome of the augmented model
+        # (main + out-of-model legs). Frozen-only requests: exactly
+        # full.p50, as before.
+        combined_reference_p50=full.p50 + sum(out_of_model_apparent),
         sizing=request.sizing,
         actual=request.actual,
         overshoot_p50=overshoot,
@@ -365,6 +509,7 @@ __all__ = [
     "LegContribution",
     "LegInput",
     "OutcomeRecord",
+    "SatelliteParams",
     "Sizing",
     "TwoValueOutput",
     "TwoValueRequest",

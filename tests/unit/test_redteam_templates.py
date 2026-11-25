@@ -14,7 +14,17 @@ from planagent.services.redteam.templates import (
 def test_registry_has_exactly_one_template() -> None:
     templates = list_templates()
     assert [t.id for t in templates] == ["redteam.challenge"]
-    assert templates[0].version == "1"
+    assert templates[0].version == "2"
+
+
+def test_template_carries_revenue_split_probe() -> None:
+    """Huawei rethink (2026-11-25): v2 adds the explicit revenue-split
+    probe — the LLM is asked directly whether revenue is split by
+    region/product/customer, and what growth a missing split would hide."""
+    template = get_template("redteam.challenge")
+    assert "EXPLICIT PROBE" in template.user_template
+    assert "split by region, product, or customer" in template.user_template
+    assert "overseas <4%" in template.user_template
 
 
 def test_template_carries_provenance() -> None:

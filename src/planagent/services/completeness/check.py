@@ -170,6 +170,13 @@ def _check_note(entry: DriverRegistryEntry) -> str:
     )
 
 
+def _missing_summary_prefix(kind: FindingKind) -> str:
+    """The summary prefix for a missing-driver finding of this kind."""
+    if kind is FindingKind.MISSING_SEGMENT_SPLIT:
+        return "Missing segment split"
+    return "Missing driver"
+
+
 def _registry_findings(
     entries: list[DriverRegistryEntry],
     elements: set[str],
@@ -219,12 +226,12 @@ def _registry_findings(
             findings.append(
                 RedTeamFinding(
                     id=f"completeness:{entry.id}",
-                    kind=FindingKind.MISSING_DRIVER,
+                    kind=entry.finding_kind,
                     target=target,
                     severity=FindingSeverity(entry.severity),
                     summary=(
-                        f"Missing driver: {entry.name} — {target} has no "
-                        f"{entry.name} driver in the model."
+                        f"{_missing_summary_prefix(entry.finding_kind)}: {entry.name} — "
+                        f"{target} has no {entry.name} driver in the model."
                     ),
                     evidence=[*entry.evidence, _check_note(entry)],
                     suggested_fix=entry.suggested_fix,
@@ -258,10 +265,10 @@ def _checklist_findings(
         findings.append(
             RedTeamFinding(
                 id=f"completeness:checklist:{item.id}",
-                kind=FindingKind.MISSING_DRIVER,
+                kind=item.finding_kind,
                 target=target,
                 severity=FindingSeverity.MEDIUM,
-                summary=f"Missing driver: {item.question}",
+                summary=f"{_missing_summary_prefix(item.finding_kind)}: {item.question}",
                 evidence=[
                     (
                         "General guided checklist (no driver registry for this domain): "
@@ -270,11 +277,18 @@ def _checklist_findings(
                 ],
                 suggested_fix=item.suggested_fix,
                 source=FindingSource.COMPLETENESS_CHECK,
-                # The checklist cannot judge encodability: it does not
-                # know the domain or the decision-time evidence. Leave
-                # it unclassified rather than forcing a verdict (§6).
-                boundary_class=BoundaryClass.UNCLASSIFIED,
-                boundary_basis=UNCLASSIFIED_BASIS,
+                # The checklist cannot judge encodability in general: it
+                # does not know the domain or the decision-time evidence.
+                # Leave it unclassified rather than forcing a verdict
+                # (§6) — unless the item declares its verdict, as the
+                # revenue-split item does (a split is encodable from
+                # decision-time published segment data).
+                boundary_class=(
+                    item.boundary_class
+                    if item.boundary_class is not None
+                    else BoundaryClass.UNCLASSIFIED
+                ),
+                boundary_basis=item.boundary_basis or UNCLASSIFIED_BASIS,
             )
         )
     return findings, {target: bucket}, present_count

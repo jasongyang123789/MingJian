@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .findings import BoundaryClass
+from .findings import BoundaryClass, FindingKind
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,9 @@ class DriverRegistryEntry:
     never a registry finding — it is carried by residual-gap findings
     (see check.py), which is exactly where the unknowable magnitude
     lives.
+    ``finding_kind``: the kind the check emits for a missing entry
+    (default ``missing_driver``). The revenue-split entry uses
+    ``missing_segment_split`` instead, so the finding names the gap.
     """
 
     id: str
@@ -71,6 +74,7 @@ class DriverRegistryEntry:
     suggested_fix: str
     boundary_class: BoundaryClass
     boundary_basis: str
+    finding_kind: FindingKind = FindingKind.MISSING_DRIVER
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,15 @@ class ChecklistItem:
     about this"; no match means the question is still open. Deliberately
     coarse: the checklist cannot know the domain, so it asks instead of
     asserting.
+
+    ``finding_kind`` / ``boundary_class`` / ``boundary_basis`` are
+    overrides for the rare item whose kind and §6 verdict ARE
+    determinable: the default (``missing_driver`` /
+    ``unclassified`` + the shared basis) stays for every question the
+    checklist genuinely cannot judge. The revenue-split item overrides
+    both — a split is encodable from decision-time published segment
+    data, so its absence is a classifiable defect, not an open
+    question.
     """
 
     id: str
@@ -89,6 +102,9 @@ class ChecklistItem:
     keywords: list[str]
     drives: list[str]
     suggested_fix: str
+    finding_kind: FindingKind = FindingKind.MISSING_DRIVER
+    boundary_class: BoundaryClass | None = None
+    boundary_basis: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +605,61 @@ AUTOMOTIVE_DRIVER_REGISTRY: list[DriverRegistryEntry] = [
         ],
         suggested_fix="Add `capacity_utilization` as a variable if capacity constraints bind the decision.",
     ),
+    # Huawei opportunity rethink (2026-11-25): revenue is a single
+    # undifferentiated total — no region / product / customer split —
+    # so growth cannot be located and opportunity has nowhere to sit.
+    # The carrier is the split structure, not a formula: the automotive
+    # template's model×trim×product fitment lookup (`fitment_lookup`)
+    # is the split, and an explicit per-segment revenue variable
+    # counts the same way. Presence alone passes (empty link_outputs),
+    # like the domain-controller entry whose carrier is the same
+    # lookup. The full automotive template satisfies this entry; the
+    # old desay-2020 corporate table (no lookup, no segment variable)
+    # genuinely does not — the split lived in the workbook, not the
+    # model. Huawei-2000 (corporate domain) is caught by the
+    # checklist item below instead.
+    DriverRegistryEntry(
+        id="segment_split",
+        name="revenue segment split (region / product / customer)",
+        description=(
+            "Revenue split into region, product, or customer segments, so "
+            "growth can be located instead of arriving as one "
+            "undifferentiated total. Without a split there is nowhere for "
+            "an opportunity leg to sit: the Huawei-2000 miss is a missing "
+            "overseas/3G leg in a model whose revenue was a single number."
+        ),
+        weight=0.60,
+        severity="medium",
+        boundary_class=BoundaryClass.FIXABLE_DEFECT,
+        boundary_basis="§6 fixable defect: segment disclosures are published in annual reports at decision time — a split could have been encoded then.",
+        drives=["revenue"],
+        model_elements=[
+            # The template's split structure: model×trim×product fitment.
+            "fitment_lookup",
+            # Explicit per-segment revenue variables count the same way.
+            "revenue_by_product",
+            "revenue_by_region",
+            "revenue_by_customer",
+            "revenue_by_segment",
+            "overseas_revenue",
+            "domestic_revenue",
+            "segment_revenue",
+            "revenue_split",
+            "product_mix_revenue",
+        ],
+        link_outputs=[],
+        evidence=[
+            "Huawei 2000: revenue a single total (220亿); overseas <4% (1999), no overseas/3G leg in the model — the ~926亿 gap had nowhere to sit (huawei-opportunity-rethink-2026-11-25 §1)",
+            "Desay revenue is split model×trim×product in the workbook structure (split complete); the full automotive template carries it via fitment_lookup",
+        ],
+        suggested_fix=(
+            "Split revenue into region / product / customer segments — one "
+            "variable per segment, or bind the template's split structure "
+            "— so growth can be located and an opportunity leg has somewhere "
+            "to sit. An undifferentiated total leaves opportunity unquantifiable."
+        ),
+        finding_kind=FindingKind.MISSING_SEGMENT_SPLIT,
+    ),
 ]
 
 #: Domains with a registry, by domain id.
@@ -687,6 +758,47 @@ GENERAL_DRIVER_CHECKLIST: list[ChecklistItem] = [
             "Add a variable for the technology shift (platform, generation, "
             "process) and link it to share or cost."
         ),
+    ),
+    # Huawei opportunity rethink (2026-11-25): the general-path twin of
+    # the registry's segment_split entry. A corporate-domain case (no
+    # registry) whose revenue is a single total gets this finding; a
+    # case with per-segment revenue variables (overseas / domestic /
+    # by-region / by-product / ...) is covered. Unlike the other
+    # checklist questions this one carries its kind + §6 verdict
+    # explicitly: a split is encodable from decision-time published
+    # segment data, so its absence is a classifiable defect.
+    ChecklistItem(
+        id="segment_split",
+        question="Is revenue split into regions, products, or customers — or is it a single undifferentiated total?",
+        keywords=[
+            "overseas",
+            "domestic",
+            "region",
+            "segment",
+            "split",
+            "by_product",
+            "by_region",
+            "by_customer",
+            "product_line",
+            "customer_segment",
+            "海外",
+            "国内",
+            "地区",
+            "分拆",
+            "分地区",
+            "分产品",
+            "分客户",
+        ],
+        drives=["revenue"],
+        suggested_fix=(
+            "Split revenue into region / product / customer segments — one "
+            "variable per segment, or bind the template's split structure "
+            "— so growth can be located and an opportunity leg has somewhere "
+            "to sit. An undifferentiated total leaves opportunity unquantifiable."
+        ),
+        finding_kind=FindingKind.MISSING_SEGMENT_SPLIT,
+        boundary_class=BoundaryClass.FIXABLE_DEFECT,
+        boundary_basis="§6 fixable defect: segment disclosures are published in annual reports at decision time — a split could have been encoded then.",
     ),
 ]
 

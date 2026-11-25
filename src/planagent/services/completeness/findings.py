@@ -33,6 +33,14 @@ class FindingKind(str, Enum):
     UNJUSTIFIED_DISCOUNT = "unjustified_discount"
     MISSING_LINK = "missing_link"
     OVERCONFIDENT_PARAMETER = "overconfident_parameter"
+    # Huawei opportunity rethink (2026-11-25): revenue is a single
+    # undifferentiated total — no region / product / customer split —
+    # so growth cannot be located and opportunity has nowhere to sit.
+    # The deterministic missing-segment-split check (Track 10 registry
+    # + checklist, Track 8 snapshot rule) emits this kind; the LLM
+    # red-team contract does NOT accept it (the LLM is instructed to
+    # use only the five kinds above).
+    MISSING_SEGMENT_SPLIT = "missing_segment_split"
 
 
 class FindingSeverity(str, Enum):

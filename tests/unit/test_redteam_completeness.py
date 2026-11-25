@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from planagent.services.redteam.completeness import run_completeness_checks
 from planagent.services.redteam.models import CaseSnapshot, RedTeamVariable
-from tests.redteam_cases import complete_case_snapshot, desay_2020_snapshot
+from tests.redteam_cases import (
+    complete_case_snapshot,
+    desay_2020_snapshot,
+    huawei_2000_snapshot,
+)
 
 
 def _by_kind_target(findings):
@@ -427,6 +431,71 @@ def test_evidence_mention_does_not_count_as_coverage() -> None:
     findings = run_completeness_checks(snapshot)
     by_key = _by_kind_target(findings)
     assert ("missing_driver", "nev_penetration") in by_key
+
+
+# --- Missing segment split (Huawei opportunity rethink, 2026-11-25).
+# Regression: fires on Huawei's undifferentiated revenue, not on
+# Desay's split revenue. ---
+
+
+def test_huawei_snapshot_flags_missing_segment_split() -> None:
+    """Huawei-2000: revenue is a single total — no per-segment revenue
+    variable, no split on the revenue variable, MECE children (增长 /
+    生存) name no segments, the situation names only one segment
+    keyword (海外). The check fires, and it is the ONLY deterministic
+    finding on this snapshot."""
+    findings = run_completeness_checks(huawei_2000_snapshot())
+    assert [(f.kind, f.target) for f in findings] == [
+        ("missing_segment_split", "revenue")
+    ]
+    split = findings[0]
+    assert split.severity == "medium"
+    assert split.source == "completeness_check"
+    assert split.boundary_class == "fixable_defect"
+    assert "§6" in split.boundary_basis
+    assert split.id == "rt-missing_segment_split-revenue"
+    assert "海外" in " ".join(split.evidence)
+
+
+def test_desay_snapshots_do_not_flag_missing_segment_split() -> None:
+    """Desay's revenue is split: the situation states three product
+    segments with values (智能座舱 / 智能驾驶 / 网联服务) and the MECE
+    tree decomposes by the same three. Neither snapshot fires."""
+    for snapshot in (desay_2020_snapshot(), complete_case_snapshot()):
+        findings = run_completeness_checks(snapshot)
+        by_key = _by_kind_target(findings)
+        assert ("missing_segment_split", "revenue") not in by_key, snapshot.case_id
+
+
+def test_segment_revenue_variable_silences_missing_segment_split() -> None:
+    """Per-segment revenue variables are a split: adding overseas /
+    domestic revenue to the Huawei snapshot silences the finding."""
+    snapshot = huawei_2000_snapshot()
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="overseas_revenue",
+            description="Overseas revenue (segment of total revenue)",
+            distribution="triangular(5, 8.3, 12)",
+            low=5.0,
+            mode=8.3,
+            high=12.0,
+            evidence=["1999 overseas revenue <4% of total"],
+        )
+    )
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="domestic_revenue",
+            description="Domestic revenue (segment of total revenue)",
+            distribution="triangular(180, 211.7, 250)",
+            low=180.0,
+            mode=211.7,
+            high=250.0,
+            evidence=["2000 domestic revenue ≈ 211.7亿"],
+        )
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("missing_segment_split", "revenue") not in by_key
 
 
 __all__ = []

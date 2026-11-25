@@ -217,3 +217,199 @@ def test_discounted_prompt_without_level_pair_has_no_contribution() -> None:
     contrib = discounted_growth_contribution(prompts[0])
     assert contrib.contribution is None
     assert contrib.projected_observed is None
+
+
+# ---------------------------------------------------------------------------
+# Satellite / attribution legs (Huawei opportunity rethink, 2026-11-25).
+# Goldens are the rethink report §4/§10 numbers (RMB 100M, i.e. 亿):
+# normal B P50 926.4655, overseas 1204.1, domestic 647.7, actual 1852.
+# ---------------------------------------------------------------------------
+
+#: Huawei B-arm normal value (trials50 rerun baseline, 2026-11-24).
+HUAWEI_NORMAL = 926.4655
+#: Normal-caliber overseas = normal x 4% (2000 overseas share).
+HUAWEI_NORMAL_OVERSEAS = 37.05862
+#: Normal-caliber domestic = normal x 96%.
+HUAWEI_NORMAL_DOMESTIC = 889.40688
+#: Huawei 2010 actual revenue.
+HUAWEI_ACTUAL = 1852.0
+
+
+def _huawei_rec(p50: float, replay: float | None) -> OutcomeRecord:
+    return OutcomeRecord(
+        metric="revenue",
+        unit="RMB 100M",
+        horizon_tick=10,
+        horizon_label="yr10",
+        p50=p50,
+        replay=replay,
+        seed=42,
+        trials=50,
+    )
+
+
+def _satellite_params() -> dict:
+    return {
+        "market_source": "Gartner 2010 global carrier network infrastructure market ($78.6B) via China Daily 2011-04-28",
+        "share_source": "Gartner via China Daily 2011-04-28: Huawei 15.7% of the 2010 global carrier network infrastructure market",
+        "market_basis": "implied: realized overseas 1204.1 / share 0.157 = 7669.43 — DERIVED, not observed",
+        "share_basis": "Gartner 2010 share 15.7%",
+    }
+
+
+def _huawei_satellite_request() -> TwoValueRequest:
+    """Huawei with the satellite leg (A): the main model has NO legs
+    (empty in-model leg set), so full ≡ stripped_all and the whole
+    (b) is the out-of-model satellite leg."""
+    return TwoValueRequest(
+        case_id="huawei-2000",
+        metric="revenue",
+        unit="RMB 100M",
+        horizon_tick=10,
+        horizon_label="yr10",
+        full=_huawei_rec(HUAWEI_NORMAL, HUAWEI_NORMAL),
+        stripped_all=_huawei_rec(HUAWEI_NORMAL, HUAWEI_NORMAL),
+        legs=[
+            LegInput(
+                leg_id="overseas_expansion",
+                label="overseas expansion (3G/NGN cycle)",
+                stripped=_huawei_rec(HUAWEI_NORMAL_OVERSEAS, None),
+                source="satellite",
+                scenario=_huawei_rec(1204.1, None),
+                sizing="retrospective",
+                satellite_params=_satellite_params(),
+            )
+        ],
+        actual=HUAWEI_ACTUAL,
+        sizing="retrospective",
+    )
+
+
+def test_huawei_satellite_leg_gives_b_1167() -> None:
+    out = compute_two_value_output(_huawei_satellite_request())
+    leg = out.contributions[0]
+    assert leg.leg_id == "overseas_expansion"
+    assert leg.apparent_contribution == pytest.approx(1167.04, abs=0.01)
+    # P50-only satellite records: no clean value is fabricated.
+    assert leg.clean_contribution is None
+    assert out.opportunity_total_apparent == pytest.approx(1167.04, abs=0.01)
+    assert out.opportunity_total_clean is None
+    assert out.normal_adjusted_p50 is None
+    assert out.interaction_clean is None  # no frozen legs to interact
+    assert out.normal_frozen_p50 == pytest.approx(HUAWEI_NORMAL, abs=0.01)
+    # Combined reference = normal + satellite (b) = 2093.51 — the
+    # augmented model's full outcome, a reference, never a forecast.
+    assert out.combined_reference_p50 == pytest.approx(2093.51, abs=0.01)
+    assert out.sizing == "retrospective"
+    assert out.legs_stripped == ["overseas_expansion"]
+    assert any("Out-of-model" in note for note in out.notes)
+    # The normal value undershoots the actual by the gap: the model
+    # was wrong in both directions, not just missing the overseas leg.
+    assert out.residual_frozen_p50 == pytest.approx(-925.53, abs=0.01)
+
+
+def test_huawei_attribution_legs_reconcile_to_the_gap() -> None:
+    """Huawei with the attribution legs (B): overseas + domestic, both
+    retrospective. The two legs sum to the net +925.33 ≈ the gap
+    +925.53 (residual -0.20 is source rounding) and the combined
+    reference reconciles to the realized total within that rounding."""
+    request = TwoValueRequest(
+        case_id="huawei-2000",
+        metric="revenue",
+        unit="RMB 100M",
+        horizon_tick=10,
+        horizon_label="yr10",
+        full=_huawei_rec(HUAWEI_NORMAL, HUAWEI_NORMAL),
+        stripped_all=_huawei_rec(HUAWEI_NORMAL, HUAWEI_NORMAL),
+        legs=[
+            LegInput(
+                leg_id="overseas",
+                label="overseas",
+                stripped=_huawei_rec(HUAWEI_NORMAL_OVERSEAS, None),
+                source="attribution",
+                scenario=_huawei_rec(1204.1, None),
+                sizing="retrospective",
+            ),
+            LegInput(
+                leg_id="domestic",
+                label="domestic",
+                stripped=_huawei_rec(HUAWEI_NORMAL_DOMESTIC, None),
+                source="attribution",
+                scenario=_huawei_rec(647.7, None),
+                sizing="retrospective",
+            ),
+        ],
+        actual=HUAWEI_ACTUAL,
+        sizing="retrospective",
+    )
+    out = compute_two_value_output(request)
+    by_id = {c.leg_id: c for c in out.contributions}
+    assert by_id["overseas"].apparent_contribution == pytest.approx(1167.04, abs=0.01)
+    assert by_id["domestic"].apparent_contribution == pytest.approx(-241.71, abs=0.01)
+    assert out.opportunity_total_apparent == pytest.approx(925.33, abs=0.01)
+    assert out.combined_reference_p50 == pytest.approx(1851.80, abs=0.01)
+    assert out.sizing == "retrospective"
+    assert out.legs_stripped == ["overseas", "domestic"]
+
+
+def test_retrospective_leg_mislabeled_decision_time_raises() -> None:
+    """A retrospective (b) must never be labeled decision_time — the
+    firewall is enforced at compute time, not by convention."""
+    request = _huawei_satellite_request()
+    request = request.model_copy(update={"sizing": "decision_time"})
+    with pytest.raises(ValueError, match="must never be labeled decision_time"):
+        compute_two_value_output(request)
+
+
+def test_satellite_and_attribution_legs_must_not_mix() -> None:
+    """A and B are two views of the same opportunity, never additive
+    legs: one request carries one out-of-model source at most."""
+    request = _huawei_satellite_request()
+    attribution_leg = LegInput(
+        leg_id="overseas",
+        label="overseas",
+        stripped=_huawei_rec(HUAWEI_NORMAL_OVERSEAS, None),
+        source="attribution",
+        scenario=_huawei_rec(1204.1, None),
+        sizing="retrospective",
+    )
+    request = request.model_copy(update={"legs": [*request.legs, attribution_leg]})
+    with pytest.raises(ValueError, match="must not mix"):
+        compute_two_value_output(request)
+
+
+def test_leg_source_consistency_is_validated() -> None:
+    """The LegInput validator rejects: a satellite leg without
+    scenario / sizing / satellite_params, and a frozen leg carrying
+    any of them."""
+    from pydantic import ValidationError
+
+    base = {
+        "leg_id": "overseas_expansion",
+        "stripped": _huawei_rec(HUAWEI_NORMAL_OVERSEAS, None),
+    }
+    with pytest.raises(ValidationError, match="requires 'scenario'"):
+        LegInput(**base, source="satellite")
+    with pytest.raises(ValidationError, match="requires 'sizing'"):
+        LegInput(
+            **base, source="satellite", scenario=_huawei_rec(1204.1, None)
+        )
+    with pytest.raises(ValidationError, match="requires 'satellite_params'"):
+        LegInput(
+            **base,
+            source="satellite",
+            scenario=_huawei_rec(1204.1, None),
+            sizing="retrospective",
+        )
+    with pytest.raises(ValidationError, match="must not carry 'scenario'"):
+        LegInput(**base, scenario=_huawei_rec(1204.1, None))
+    with pytest.raises(ValidationError, match="must not carry 'satellite_params'"):
+        LegInput(**base, satellite_params=_satellite_params())
+    with pytest.raises(ValidationError, match="must not carry 'satellite_params'"):
+        LegInput(
+            **base,
+            source="attribution",
+            scenario=_huawei_rec(1204.1, None),
+            sizing="retrospective",
+            satellite_params=_satellite_params(),
+        )
