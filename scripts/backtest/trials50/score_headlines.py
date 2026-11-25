@@ -13,18 +13,19 @@ Inputs (all from THIS trials50 run, downside ON, seed 42):
   trials50 worktree). The mode path is the deterministic NO-SHOCK
   trajectory.
 
-D2C (2026-11-25): the seam-fix OFF reference no longer licenses the
-mode path — D2C moved the simulation path, so the seam-fix OFF
-factors (2015 B monotonically rising [1.0785, 1.2587, 1.2653, 1.2774])
-are stale for this model. The OFF mode factors now come from the D2C
+Adjustment (2026-11-25): the D2C OFF probe no longer licenses the
+mode path — the fast schedule for desay-2020 moves the 2020 mode
+path, and the lone-first-tick rule changes the category
+determination. The OFF mode factors now come from the adjustment
 OFF probe (research/strategy-engine/
-desay-2018-d2c-implementation-2026-11-25/rerun-2018/off-probe/
-mode-paths.json), which re-derived them on the D2C backend (:8024,
-same worktree, same code): anchor with downside None, B arm forked
-at step 1, B child replay read back. The probe's Huawei/Nokia
-categories reproduce the seam-fix values exactly (informative 0.2881
-/ structural), validating the probe methodology; only the Desay
-factors moved (the D2C schedule exposes the tick-1 margin dip).
+desay-2018-d2c-adjustment-2026-11-25/rerun/off-probe/
+mode-paths.json), which re-derived them on the adjustment backend
+(:8031, same worktree, same code): anchor with downside None, B arm
+forked at step 1, B child replay read back. The probe's Huawei/Nokia
+categories reproduce the D2C values exactly (informative 0.2881 /
+structural), validating the probe methodology; only the 2020 factors
+moved (the fast schedule), and only the 2015 category moved (the
+lone-first-tick rule forgives its tick-1 dip).
 
 Trials=20 ON decline_p values are hardcoded from the A/C + seam-fix
 reports for the side-by-side.
@@ -45,11 +46,13 @@ from planagent.services.simulation.downside_headline import (  # noqa: E402
 )
 
 HERE = str(backtest_common.get_run_dir())
-# D2C OFF probe (same backend, same code — the mode-path source for
-# this model). The seam-fix reference is retained only as history.
+# Adjustment OFF probe (same backend, same code — the mode-path source for
+# this model). The D2C probe is retained only as history: the fast
+# schedule for desay-2020 moves the 2020 mode path, and the
+# lone-first-tick rule changes the category determination.
 PROBE = os.path.expanduser(
-    "~/workspace/research/strategy-engine/desay-2018-d2c-implementation-2026-11-25"
-    "/rerun-2018/off-probe/mode-paths.json"
+    "~/workspace/research/strategy-engine/desay-2018-d2c-adjustment-2026-11-25"
+    "/rerun/off-probe/mode-paths.json"
 )
 
 # (case, raw subdir, B arm name, trials=20 ON decline_p)
