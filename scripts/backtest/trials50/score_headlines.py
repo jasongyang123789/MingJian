@@ -136,7 +136,7 @@ def main() -> None:
         print(f"{case} B profit: decline_p {dp20} (t20) -> {dp50} (t50) | "
               f"category={dec.category} required_depth={rd} | "
               f"HEADLINE {'IN' if headline else 'OUT'} "
-              f"(OFF mode factors from the D2C probe; ON factors {[round(g, 4) for g in f_on]})")
+              f"(OFF mode factors from the adjustment probe; ON factors {[round(g, 4) for g in f_on]})")
     json.dump(out, open(os.path.join(HERE, "headline-check.json"), "w"),
               indent=2, ensure_ascii=False)
     print("\nwrote headline-check.json")
