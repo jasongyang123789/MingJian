@@ -111,7 +111,9 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # driver (45 -> 46 formulas, 42 -> 43 tick drivers), and
     # order_backlog_opening + downturn_brake take the variables
     # 76 -> 78.
-    assert len(TEMPLATE_VARIABLES) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(TEMPLATE_VARIABLES) == 79
     assert len(TEMPLATE_FORMULAS) == 46
     assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
     expected = {
@@ -131,7 +133,9 @@ def test_nev_chain_variables_match_diagnostic_spec() -> None:
     # Merge (2026-11-23): 61 -> 76 variables, 36 -> 44 formulas
     # (see the count comment above).
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
-    assert len(template.variables) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(template.variables) == 79
     assert len(template.formulas) == 46
 
 

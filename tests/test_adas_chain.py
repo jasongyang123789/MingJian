@@ -114,7 +114,9 @@ def test_adas_chain_variables_match_spec() -> None:
     # the pin below was missed in the merge batch and caught by the
     # hub full suite on cb9ffd7 — deliberate update, same as the
     # registry pin.)
-    assert len(TEMPLATE_VARIABLES) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(TEMPLATE_VARIABLES) == 79
     assert len(TEMPLATE_FORMULAS) == 46
     assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
     expected = {
@@ -143,7 +145,9 @@ def test_adas_chain_variables_match_spec() -> None:
     template = builtin_template("automotive")
     # Merge (2026-11-23): see the count comment above.
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
-    assert len(template.variables) == 78
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(template.variables) == 79
     assert len(template.formulas) == 46
 
 
