@@ -1,0 +1,1027 @@
+{
+  "http_status": 200,
+  "body": {
+    "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+    "domain_id": "automotive",
+    "package": {
+      "run": {
+        "id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+        "company_id": "backtest-desay-2015",
+        "force_id": null,
+        "domain_id": "automotive",
+        "actor_template": "tier1_supplier",
+        "status": "COMPLETED",
+        "execution_mode": "INLINE",
+        "tick_count": 4,
+        "seed": 7,
+        "parent_run_id": "c798bb82-14d9-4b9a-b227-c99b02d16c47",
+        "summary": {
+          "scenario_id": "af218908-159c-46db-8eba-4ab81264066d",
+          "ticks_completed": 4,
+          "evidence_count": 0,
+          "shock_count": 0,
+          "evidence_ids": [],
+          "evidence_statements": [],
+          "evidence_audit": {
+            "accepted_claim_count": 0,
+            "accepted_evidence_count": 0,
+            "provisional_claim_count": 0,
+            "provisional_claim_ids": [],
+            "provisional_evidence_count": 0,
+            "provisional_evidence_ids": [],
+            "provisional_confidence_floor": 0.62,
+            "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
+          },
+          "matched_rules": [],
+          "final_state": {
+            "production_volume": 2407.218,
+            "sales_volume_retail": 1618.9355,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2114,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.1191,
+            "adas_penetration": 0.2803,
+            "nev_production_volume": 286.6997,
+            "ice_production_volume": 2120.5183,
+            "nev_retail_volume": 192.8152,
+            "ice_retail_volume": 1426.1203,
+            "income_index": 1.0184,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1060.7234,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.2181,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 16.4705,
+            "funnel_leads": 10.9432,
+            "funnel_rfqs": 15.9343,
+            "funnel_contracts": 4.5617,
+            "funnel_projects": 3.1592,
+            "funnel_deliveries_total": 22.4093,
+            "funnel_prospects_total": 136.9432,
+            "funnel_prospect_to_lead_rate": 0.2637,
+            "funnel_lead_to_rfq_rate": 0.4503,
+            "funnel_rfq_win_rate": 0.2864,
+            "funnel_contract_to_project_rate": 0.8771,
+            "funnel_project_to_delivery_rate": 0.9581,
+            "funnel_overall_conversion": 0.1636,
+            "delivery_satisfaction": 0.8828,
+            "market_share": 0.5035,
+            "revenue": 9858.7436,
+            "profit": 764.0526,
+            "order_backlog": 995.6733,
+            "order_intake": 425.5709,
+            "generation_transition_index": 0.25
+          },
+          "determinism": {
+            "input_hash": "sha256:74509a4ff72a0a1e8d5589e561677e02ad63ea9e2c9655b0c3c7a363bf2c90fb",
+            "state_hashes": {
+              "0": "sha256:ee36e4a7d784ecbd9e882a4ee128d6bf2ccf926340a873026f0ada14c29c641f",
+              "1": "sha256:49be1961d48de40a8c56f72e98ac4cbbf0a9b07908536b5b38247cb6a9ec1cc4",
+              "2": "sha256:57affad7ae710b494a7f15496b976f32549f9253e9a8bd867bd68f6eeae31896",
+              "3": "sha256:637ea046502e0b513f79e3ae040d4bfe8bfce205646db0ea3544d9af6f931f8b",
+              "4": "sha256:ba99317dd49246bf569487995c2b3f07310869ab05ead9fac804cc46726cbce3"
+            },
+            "sampled_values": {
+              "consumer_confidence_proxy": 0.9609553391057687,
+              "income_index": 1.0,
+              "income_growth_rate_annual": 0.055,
+              "lpr_proxy": 1.0,
+              "policy_tax_rate": 0.05,
+              "trade_in_support": 1.0,
+              "pull_forward_stock": 1150.0,
+              "chip_lead_time_weeks": 26.2,
+              "chip_supply_index": 1.0,
+              "material_cost_index": 1.0,
+              "annual_cut_rate": 0.03549270741846863,
+              "payment_terms_months": 6.292533275151277,
+              "tier1_gross_margin": 0.21805445346732885,
+              "nev_penetration": 0.013912427634284722,
+              "nev_penetration_monthly_drift": 0.0068,
+              "nev_ceiling": 0.3049136986222639,
+              "nev_rate": 0.4417129205791348,
+              "nev_midpoint": 5.00746358574551,
+              "nev_coupling": 0.25,
+              "adas_penetration": 0.0027384542516531067,
+              "adas_penetration_monthly_drift": 0.0081,
+              "adas_ceiling": 0.6396927190830194,
+              "adas_rate": 0.5835795570547122,
+              "adas_midpoint": 4.425941341839144,
+              "adas_coupling": 0.1,
+              "order_backlog": 917.06,
+              "order_intake": 917.06,
+              "order_intake_rate": 0.25309686726568514,
+              "backlog_conversion": 0.49807418129012787,
+              "order_decay": 0.17463972301485353,
+              "promo_rate": 0.1,
+              "price_index": 1.0,
+              "price_cut_expectation": 0.45,
+              "dealer_inventory_coef": 1.2,
+              "production_volume": 2409.988505961706,
+              "dms_mandate": 0.0,
+              "export_volume": 59.2,
+              "sales_volume_retail": 1691.4,
+              "sales_volume_wholesale": 1691.4,
+              "capacity_utilization": 0.662,
+              "confidence_sensitivity": 0.05,
+              "income_sensitivity": 0.05,
+              "tax_sensitivity": 1.25,
+              "lpr_sensitivity": 0.1,
+              "material_passthrough": 0.3,
+              "price_sensitivity": 0.2,
+              "margin_material_sensitivity": 0.02,
+              "prospect_inflow_monthly": 4.0,
+              "funnel_prospect_to_lead_base": 0.2636788811941816,
+              "funnel_lead_to_rfq_base": 0.40571778395492963,
+              "funnel_rfq_win_base": 0.2580329350927734,
+              "funnel_contract_to_project_base": 0.8771375856490318,
+              "funnel_project_to_delivery_base": 0.958063946781181,
+              "satisfaction_feedback_gain": 1.0,
+              "funnel_prospect_attrition": 0.1,
+              "funnel_lead_attrition": 0.1,
+              "funnel_rfq_attrition": 0.05,
+              "funnel_contract_attrition": 0.05,
+              "funnel_project_attrition": 0.02,
+              "funnel_prospects": 40.0,
+              "funnel_leads": 12.0,
+              "funnel_rfqs": 4.0,
+              "funnel_contracts": 2.0,
+              "funnel_projects": 6.0,
+              "funnel_deliveries_total": 12.0,
+              "funnel_prospects_total": 120.0,
+              "delivery_satisfaction": 0.75,
+              "gross_base": 0.2696,
+              "gross_longrun": 0.255,
+              "gross_reversion": 0.25,
+              "rd_base": 0.076,
+              "rd_longrun": 0.076,
+              "rd_reversion": 0.25,
+              "rd_adoption": -0.01389539972691045,
+              "other_share": 0.0958,
+              "tier1_pass_through": 0.5,
+              "market_share": 0.3233981635078214,
+              "base_growth": 0.03,
+              "disruptor_ceiling": 0.8042129945709164,
+              "disruptor_rate": 0.7074262848124006,
+              "disruptor_midpoint": 3.485370452496582,
+              "share_coupling": 0.25,
+              "revenue": 3560.5578354746403,
+              "revenue_growth": 0.1,
+              "revenue_coupling": 0.15,
+              "profit": 383.2736677567839,
+              "profit_growth": 0.08,
+              "profit_coupling": 0.1,
+              "adas_share_coupling": 0.1
+            },
+            "sampled_applied": [
+              "consumer_confidence_proxy",
+              "income_index",
+              "lpr_proxy",
+              "policy_tax_rate",
+              "trade_in_support",
+              "pull_forward_stock",
+              "chip_lead_time_weeks",
+              "chip_supply_index",
+              "material_cost_index",
+              "annual_cut_rate",
+              "payment_terms_months",
+              "tier1_gross_margin",
+              "nev_penetration",
+              "adas_penetration",
+              "order_backlog",
+              "order_intake",
+              "promo_rate",
+              "price_index",
+              "price_cut_expectation",
+              "dealer_inventory_coef",
+              "production_volume",
+              "dms_mandate",
+              "export_volume",
+              "sales_volume_retail",
+              "sales_volume_wholesale",
+              "capacity_utilization",
+              "funnel_prospects",
+              "funnel_leads",
+              "funnel_rfqs",
+              "funnel_contracts",
+              "funnel_projects",
+              "funnel_deliveries_total",
+              "funnel_prospects_total",
+              "delivery_satisfaction",
+              "market_share",
+              "revenue"
+            ],
+            "derived_values": {
+              "demand_growth_rate": -0.0019522330447115654,
+              "demand_level_factor": 1.0,
+              "pull_forward_stock_initial": 1150.0
+            },
+            "derived_applied": [],
+            "profit_initial_derivation": {
+              "revenue": 3560.5578354746403,
+              "margin": 0.0978,
+              "margin_source": "rd_identity",
+              "profit": 348.2225563094198
+            },
+            "decision_time": "2015-12-31T00:00:00.000000Z",
+            "cutoff_source": "explicit",
+            "firewall_active": true
+          },
+          "military_tick_summaries": [],
+          "objective_network": {},
+          "enemy_posture": {},
+          "enemy_order_of_battle": [],
+          "report_id": "dbfcfaf7-c021-4e6d-bce6-564cf68cb533",
+          "monte_carlo": {
+            "ensemble_id": "56715496-fa7c-4974-99c5-1260fe979f75",
+            "base_run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+            "trials": 20,
+            "seed": 42,
+            "metric": "revenue",
+            "loss_threshold": 3668.25,
+            "strategy_levers": {},
+            "baseline": {
+              "n": 20,
+              "mean": 9101.902,
+              "min": 8035.562,
+              "max": 10065.1767,
+              "p10": 8577.164,
+              "p50": 9070.8974,
+              "p90": 9817.2997,
+              "stddev": 515.6098,
+              "p_loss": 0.0,
+              "decline_probability": 0.0
+            },
+            "strategy": {
+              "n": 20,
+              "mean": 9101.902,
+              "min": 8035.562,
+              "max": 10065.1767,
+              "p10": 8577.164,
+              "p50": 9070.8974,
+              "p90": 9817.2997,
+              "stddev": 515.6098,
+              "p_loss": 0.0,
+              "decline_probability": 0.0
+            },
+            "paired": {
+              "n": 20,
+              "mean_delta": 0.0,
+              "p10": 0.0,
+              "p50": 0.0,
+              "p90": 0.0,
+              "p_strategy_better": 0.0
+            },
+            "trial_run_ids": {
+              "baseline": [
+                "72aea73c-8050-4617-ae36-2bdd874c5e1d",
+                "78125b5b-73d8-4d7b-88ba-f825dbb42af3",
+                "c7a7d943-4124-4a3f-ae43-4af4ffb09377",
+                "023fe2bc-e831-4e65-9c6c-d60c54acf20b",
+                "ab875fd9-39ab-4515-ab7e-06c3a82cdf70",
+                "b0c55aba-a945-4bd2-836b-1150fad7df40",
+                "d7d78f43-70ab-47e4-9f6e-ea4c55df3c3e",
+                "6fb076d3-7b12-4b5c-8a4b-451bd16f3d4d",
+                "4a2f914a-bb84-49f9-b8a3-0e26c1aa2a5d",
+                "28aa0970-d31c-4962-a7ec-cd98c9bd3034",
+                "a36c7a72-8950-49ba-acc1-6bcac399a564",
+                "7f3483ca-f1aa-40ad-b9f5-28990b0b3613",
+                "a93185f0-b15c-486e-b5d7-027fad179a0f",
+                "0f4dd41d-95cc-40e9-91fb-3537dec20c44",
+                "c91b7430-4db7-46ea-ba99-5f41d4dd43d6",
+                "fecc0c35-6fbb-4289-8bdd-328853fdf00a",
+                "eee6cb7d-b3b8-4e2b-9388-fd5a55d1d927",
+                "1cd5b11f-ef75-4091-bf63-068386d69ca3",
+                "37fb3478-df5e-4437-b527-7c4725780e09",
+                "31837607-cb1d-4383-a1d5-9167ebef84a0"
+              ],
+              "strategy": [
+                "2899ef7a-0f0e-4640-96dc-7af1c2eab276",
+                "b3594147-30f8-4462-8595-51f6c6e7e56f",
+                "fa50c4ad-6b08-4328-9a8d-02539231d825",
+                "2b6501c4-f787-4ee5-99bd-00f14a1f31e5",
+                "7fe6bc28-3c66-4f6c-95f8-80e4ae41ba20",
+                "7f553848-7492-46c2-beb2-eef9f867f264",
+                "10502e8f-efe5-4ebc-9050-ff5bd25af470",
+                "7aefd07a-094d-40bf-b60f-cf338e706b0c",
+                "b4065e40-03e3-4743-867d-50d1648db86e",
+                "acdb4387-ae3c-4dce-87a1-739c621158d6",
+                "fe33ed11-9be9-4ddc-87fb-868e057beeaa",
+                "6320cd73-25d0-47bb-8d9d-8108876e7c51",
+                "99dbb0a2-acbd-41e6-b5bf-0bb2ba3642d2",
+                "bc6ba05d-72a7-4e6c-8e1a-73ca4a338c8b",
+                "d57062c4-806a-469f-84ec-cfe9f313b20f",
+                "da7e279b-7a30-4580-a8ff-b1d82eaefbdd",
+                "8bab9032-7cec-4a8b-be5d-3ad1a10a4e92",
+                "ac31af02-5d43-4998-ad60-ecb130d5d09d",
+                "0f0292b8-0686-4f51-80aa-46a0c35196b0",
+                "ad5127c1-bc78-4393-9e67-af3d2f90f022"
+              ]
+            },
+            "protocol": "sprint3-v1"
+          },
+          "robustness": {
+            "expected_shortfall": {
+              "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+              "ensemble_id": "56715496-fa7c-4974-99c5-1260fe979f75",
+              "metric": "revenue",
+              "alpha": 0.05,
+              "tail": "lower",
+              "baseline": {
+                "value": 8035.562,
+                "threshold": 8035.562,
+                "tail_count": 1,
+                "n": 20
+              },
+              "strategy": {
+                "value": 8035.562,
+                "threshold": 8035.562,
+                "tail_count": 1,
+                "n": 20
+              },
+              "paired": {
+                "value": 0.0,
+                "threshold": 0.0,
+                "tail_count": 1,
+                "n": 20
+              },
+              "trial_values_hash": "sha256:3942241c238791a84db72256671d21e78f1219f013f577b9d6157ca6052fd57d",
+              "protocol": "sprint3-v1"
+            }
+          }
+        },
+        "created_at": "2026-11-23T07:32:33.489275",
+        "updated_at": "2026-11-23T07:32:45.398764",
+        "completed_at": "2026-11-23T07:32:33.518383",
+        "tenant_id": null,
+        "preset_id": null,
+        "military_use_mode": null,
+        "key_opportunities": [],
+        "breakout_prompts": []
+      },
+      "snapshots": [
+        {
+          "tick": 0,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "state": {
+            "production_volume": 2409.988505961706,
+            "sales_volume_retail": 1691.4,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.013912427634284722,
+            "adas_penetration": 0.0027384542516531067,
+            "nev_production_volume": 113.7127,
+            "ice_production_volume": 2447.3849,
+            "nev_retail_volume": 74.2329,
+            "ice_retail_volume": 1597.6784,
+            "income_index": 1.0,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1150.0,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.21805445346732885,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 40.0,
+            "funnel_leads": 12.0,
+            "funnel_rfqs": 4.0,
+            "funnel_contracts": 2.0,
+            "funnel_projects": 6.0,
+            "funnel_deliveries_total": 12.0,
+            "funnel_prospects_total": 120.0,
+            "funnel_prospect_to_lead_rate": 0.258,
+            "funnel_lead_to_rfq_rate": 0.2996,
+            "funnel_rfq_win_rate": 0.3282,
+            "funnel_contract_to_project_rate": 0.8264,
+            "funnel_project_to_delivery_rate": 0.9409,
+            "funnel_overall_conversion": 0.1423,
+            "delivery_satisfaction": 0.75,
+            "market_share": 0.3233981635078214,
+            "revenue": 3560.5578354746403,
+            "profit": 348.2225563094198,
+            "order_backlog": 917.06,
+            "order_intake": 917.06,
+            "generation_transition_index": 0.05
+          }
+        },
+        {
+          "tick": 1,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "state": {
+            "production_volume": 2409.8439,
+            "sales_volume_retail": 1671.9113,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2012,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.0444,
+            "adas_penetration": 0.0763,
+            "nev_production_volume": 106.9971,
+            "ice_production_volume": 2302.8468,
+            "nev_retail_volume": 74.2329,
+            "ice_retail_volume": 1597.6784,
+            "income_index": 1.0046,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1127.0,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.2181,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 29.452,
+            "funnel_leads": 16.4796,
+            "funnel_rfqs": 7.6364,
+            "funnel_contracts": 1.1778,
+            "funnel_projects": 1.8856,
+            "funnel_deliveries_total": 17.7486,
+            "funnel_prospects_total": 124.0,
+            "funnel_prospect_to_lead_rate": 0.2637,
+            "funnel_lead_to_rfq_rate": 0.4057,
+            "funnel_rfq_win_rate": 0.258,
+            "funnel_contract_to_project_rate": 0.8771,
+            "funnel_project_to_delivery_rate": 0.9581,
+            "funnel_overall_conversion": 0.1431,
+            "delivery_satisfaction": 0.795,
+            "market_share": 0.3451,
+            "revenue": 4503.1955,
+            "profit": 375.5665,
+            "order_backlog": 1217.201,
+            "order_intake": 756.9049,
+            "generation_transition_index": 0.1
+          }
+        },
+        {
+          "tick": 2,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "state": {
+            "production_volume": 2409.4222,
+            "sales_volume_retail": 1653.3594,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2035,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.0639,
+            "adas_penetration": 0.125,
+            "nev_production_volume": 153.9621,
+            "ice_production_volume": 2255.4601,
+            "nev_retail_volume": 105.6497,
+            "ice_retail_volume": 1547.7097,
+            "income_index": 1.0092,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1104.46,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.2181,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 22.9203,
+            "funnel_leads": 15.6107,
+            "funnel_rfqs": 12.1832,
+            "funnel_contracts": 2.1447,
+            "funnel_projects": 1.0743,
+            "funnel_deliveries_total": 19.5552,
+            "funnel_prospects_total": 128.18,
+            "funnel_prospect_to_lead_rate": 0.2637,
+            "funnel_lead_to_rfq_rate": 0.424,
+            "funnel_rfq_win_rate": 0.2696,
+            "funnel_contract_to_project_rate": 0.8771,
+            "funnel_project_to_delivery_rate": 0.9581,
+            "funnel_overall_conversion": 0.1526,
+            "delivery_satisfaction": 0.831,
+            "market_share": 0.3777,
+            "revenue": 5828.7698,
+            "profit": 472.7132,
+            "order_backlog": 1235.6638,
+            "order_intake": 624.7192,
+            "generation_transition_index": 0.15
+          }
+        },
+        {
+          "tick": 3,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "state": {
+            "production_volume": 2408.5909,
+            "sales_volume_retail": 1635.7112,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2069,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.089,
+            "adas_penetration": 0.1939,
+            "nev_production_volume": 214.3646,
+            "ice_production_volume": 2194.2263,
+            "nev_retail_volume": 145.5783,
+            "ice_retail_volume": 1490.1329,
+            "income_index": 1.0138,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1082.3708,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.2181,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 18.9082,
+            "funnel_leads": 13.2468,
+            "funnel_rfqs": 15.023,
+            "funnel_contracts": 3.5543,
+            "funnel_projects": 1.9046,
+            "funnel_deliveries_total": 20.5845,
+            "funnel_prospects_total": 132.504,
+            "funnel_prospect_to_lead_rate": 0.2637,
+            "funnel_lead_to_rfq_rate": 0.4386,
+            "funnel_rfq_win_rate": 0.2789,
+            "funnel_contract_to_project_rate": 0.8771,
+            "funnel_project_to_delivery_rate": 0.9581,
+            "funnel_overall_conversion": 0.1554,
+            "delivery_satisfaction": 0.8598,
+            "market_share": 0.4279,
+            "revenue": 7561.5681,
+            "profit": 598.12,
+            "order_backlog": 1135.83,
+            "order_intake": 515.6184,
+            "generation_transition_index": 0.2
+          }
+        },
+        {
+          "tick": 4,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "state": {
+            "production_volume": 2407.218,
+            "sales_volume_retail": 1618.9355,
+            "sales_volume_wholesale": 1691.4,
+            "export_volume": 59.2,
+            "capacity_utilization": 0.662,
+            "dealer_inventory_coef": 1.2114,
+            "inventory_warning": 0.577,
+            "price_index": 1.0,
+            "promo_rate": 0.1,
+            "price_cut_expectation": 0.45,
+            "nev_penetration": 0.1191,
+            "adas_penetration": 0.2803,
+            "nev_production_volume": 286.6997,
+            "ice_production_volume": 2120.5183,
+            "nev_retail_volume": 192.8152,
+            "ice_retail_volume": 1426.1203,
+            "income_index": 1.0184,
+            "consumer_confidence_proxy": 0.9609553391057687,
+            "lpr_proxy": 1.0,
+            "policy_tax_rate": 0.05,
+            "trade_in_support": 1.0,
+            "pull_forward_stock": 1060.7234,
+            "dms_mandate": 0.0,
+            "chip_lead_time_weeks": 26.2,
+            "chip_supply_index": 1.0,
+            "material_cost_index": 1.0,
+            "annual_cut_rate": 0.03549270741846863,
+            "payment_terms_months": 6.292533275151277,
+            "tier1_gross_margin": 0.2181,
+            "replacement_demand": 1.0,
+            "cash": 100.0,
+            "funnel_prospects": 16.4705,
+            "funnel_leads": 10.9432,
+            "funnel_rfqs": 15.9343,
+            "funnel_contracts": 4.5617,
+            "funnel_projects": 3.1592,
+            "funnel_deliveries_total": 22.4093,
+            "funnel_prospects_total": 136.9432,
+            "funnel_prospect_to_lead_rate": 0.2637,
+            "funnel_lead_to_rfq_rate": 0.4503,
+            "funnel_rfq_win_rate": 0.2864,
+            "funnel_contract_to_project_rate": 0.8771,
+            "funnel_project_to_delivery_rate": 0.9581,
+            "funnel_overall_conversion": 0.1636,
+            "delivery_satisfaction": 0.8828,
+            "market_share": 0.5035,
+            "revenue": 9858.7436,
+            "profit": 764.0526,
+            "order_backlog": 995.6733,
+            "order_intake": 425.5709,
+            "generation_transition_index": 0.25
+          }
+        }
+      ],
+      "decisions": [
+        {
+          "id": "3b7abae9-d5ab-4398-8ee3-eb32d0434269",
+          "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+          "tick": 1,
+          "sequence": 1,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "action_id": "hold_and_monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {},
+          "actual_effect": {},
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:32:33.523984"
+        },
+        {
+          "id": "776b1f16-8e87-42a4-96eb-458cd8404d22",
+          "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+          "tick": 2,
+          "sequence": 1,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "action_id": "hold_and_monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {},
+          "actual_effect": {},
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:32:33.523998"
+        },
+        {
+          "id": "2601b284-962a-4ea6-bab0-96978b80eebc",
+          "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+          "tick": 3,
+          "sequence": 1,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "action_id": "hold_and_monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {},
+          "actual_effect": {},
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:32:33.524005"
+        },
+        {
+          "id": "9b33b6d9-ba9c-4b34-8352-d6b129ec094f",
+          "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+          "tick": 4,
+          "sequence": 1,
+          "actor_id": "backtest-desay-2015:tier1_supplier",
+          "action_id": "hold_and_monitor",
+          "why_selected": "No rule crossed the action threshold, so the baseline policy held position.",
+          "evidence_ids": [],
+          "policy_rule_ids": [],
+          "expected_effect": {},
+          "actual_effect": {},
+          "debate_verdict_id": null,
+          "decision_method": "fallback_random",
+          "created_at": "2026-11-23T07:32:33.524012"
+        }
+      ],
+      "external_shocks": [],
+      "reports": [
+        {
+          "id": "dbfcfaf7-c021-4e6d-bce6-564cf68cb533",
+          "run_id": "77edaf51-8f58-4a63-a4f9-5e05e9facf89",
+          "company_id": "backtest-desay-2015",
+          "force_id": null,
+          "scenario_id": "af218908-159c-46db-8eba-4ab81264066d",
+          "tenant_id": null,
+          "preset_id": null,
+          "title": "Desay SV (2015 retrospective) automotive scenario report",
+          "summary": "Desay SV (2015 retrospective) completed 4 automotive ticks (months) with 4 recorded decisions. Final production is 2407.218 (10k vehicles/month), retail is 1618.9355, the dealer inventory coefficient is 1.2114, and Tier-1 gross margin is 0.2181.",
+          "report_format": "markdown",
+          "sections": {
+            "executive_summary": "Desay SV (2015 retrospective) completed 4 automotive ticks (months) with 4 recorded decisions. Final production is 2407.218 (10k vehicles/month), retail is 1618.9355, the dealer inventory coefficient is 1.2114, and Tier-1 gross margin is 0.2181.",
+            "evidence_summary": [],
+            "audit": {
+              "accepted_claim_count": 0,
+              "accepted_evidence_count": 0,
+              "provisional_claim_count": 0,
+              "provisional_claim_ids": [],
+              "provisional_evidence_count": 0,
+              "provisional_evidence_ids": [],
+              "provisional_confidence_floor": 0.62,
+              "provisional_evidence_disclaimer": "Provisional evidence met the simulation safety floor but is not accepted or fully reviewed evidence."
+            },
+            "timeline": [
+              {
+                "tick": 1,
+                "action_id": "hold_and_monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 2,
+                "action_id": "hold_and_monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 3,
+                "action_id": "hold_and_monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              },
+              {
+                "tick": 4,
+                "action_id": "hold_and_monitor",
+                "why_selected": "No rule crossed the action threshold, so the baseline policy held position."
+              }
+            ],
+            "current_signals": [],
+            "scenario_tree": {
+              "baseline_only": false,
+              "branch_id": "af218908-159c-46db-8eba-4ab81264066d",
+              "parent_run_id": "c798bb82-14d9-4b9a-b227-c99b02d16c47",
+              "child_branch_ids": []
+            },
+            "decision_chain": [
+              {
+                "tick": 1,
+                "action_id": "hold_and_monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {},
+                "actual_effect": {}
+              },
+              {
+                "tick": 2,
+                "action_id": "hold_and_monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {},
+                "actual_effect": {}
+              },
+              {
+                "tick": 3,
+                "action_id": "hold_and_monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {},
+                "actual_effect": {}
+              },
+              {
+                "tick": 4,
+                "action_id": "hold_and_monitor",
+                "evidence_ids": [],
+                "policy_rule_ids": [],
+                "expected_effect": {},
+                "actual_effect": {}
+              }
+            ],
+            "leading_indicators": [
+              {
+                "metric": "production_volume",
+                "start": 2409.988505961706,
+                "end": 2407.218
+              },
+              {
+                "metric": "sales_volume_retail",
+                "start": 1691.4,
+                "end": 1618.9355
+              },
+              {
+                "metric": "sales_volume_wholesale",
+                "start": 1691.4,
+                "end": 1691.4
+              },
+              {
+                "metric": "export_volume",
+                "start": 59.2,
+                "end": 59.2
+              },
+              {
+                "metric": "capacity_utilization",
+                "start": 0.662,
+                "end": 0.662
+              },
+              {
+                "metric": "dealer_inventory_coef",
+                "start": 1.2,
+                "end": 1.2114
+              },
+              {
+                "metric": "inventory_warning",
+                "start": 0.577,
+                "end": 0.577
+              },
+              {
+                "metric": "price_index",
+                "start": 1.0,
+                "end": 1.0
+              },
+              {
+                "metric": "promo_rate",
+                "start": 0.1,
+                "end": 0.1
+              },
+              {
+                "metric": "price_cut_expectation",
+                "start": 0.45,
+                "end": 0.45
+              },
+              {
+                "metric": "nev_penetration",
+                "start": 0.013912427634284722,
+                "end": 0.1191
+              },
+              {
+                "metric": "chip_supply_index",
+                "start": 1.0,
+                "end": 1.0
+              },
+              {
+                "metric": "material_cost_index",
+                "start": 1.0,
+                "end": 1.0
+              },
+              {
+                "metric": "annual_cut_rate",
+                "start": 0.03549270741846863,
+                "end": 0.03549270741846863
+              },
+              {
+                "metric": "payment_terms_months",
+                "start": 6.292533275151277,
+                "end": 6.292533275151277
+              },
+              {
+                "metric": "tier1_gross_margin",
+                "start": 0.21805445346732885,
+                "end": 0.2181
+              },
+              {
+                "metric": "generation_transition_index",
+                "start": 0.05,
+                "end": 0.25
+              },
+              {
+                "metric": "cash",
+                "start": 100.0,
+                "end": 100.0
+              }
+            ],
+            "scenario_compare": [
+              {
+                "metric": "market_share",
+                "baseline_end": 0.4741,
+                "scenario_end": 0.5035
+              },
+              {
+                "metric": "revenue",
+                "baseline_end": 13106.234,
+                "scenario_end": 9858.7436
+              },
+              {
+                "metric": "profit",
+                "baseline_end": 920.0576,
+                "scenario_end": 764.0526
+              }
+            ],
+            "strategy_recommendations": [
+              "Capacity utilization is below the 2021-24 range; consolidate scheduling before adding capacity."
+            ],
+            "why_this_happened": {
+              "key_evidence": [],
+              "rules_hit": [],
+              "actions_taken": [
+                "hold_and_monitor",
+                "hold_and_monitor",
+                "hold_and_monitor",
+                "hold_and_monitor"
+              ],
+              "metric_changes": {
+                "production_volume": {
+                  "start": 2409.988505961706,
+                  "end": 2407.218
+                },
+                "sales_volume_retail": {
+                  "start": 1691.4,
+                  "end": 1618.9355
+                },
+                "sales_volume_wholesale": {
+                  "start": 1691.4,
+                  "end": 1691.4
+                },
+                "export_volume": {
+                  "start": 59.2,
+                  "end": 59.2
+                },
+                "capacity_utilization": {
+                  "start": 0.662,
+                  "end": 0.662
+                },
+                "dealer_inventory_coef": {
+                  "start": 1.2,
+                  "end": 1.2114
+                },
+                "inventory_warning": {
+                  "start": 0.577,
+                  "end": 0.577
+                },
+                "price_index": {
+                  "start": 1.0,
+                  "end": 1.0
+                },
+                "promo_rate": {
+                  "start": 0.1,
+                  "end": 0.1
+                },
+                "price_cut_expectation": {
+                  "start": 0.45,
+                  "end": 0.45
+                },
+                "nev_penetration": {
+                  "start": 0.013912427634284722,
+                  "end": 0.1191
+                },
+                "chip_supply_index": {
+                  "start": 1.0,
+                  "end": 1.0
+                },
+                "material_cost_index": {
+                  "start": 1.0,
+                  "end": 1.0
+                },
+                "annual_cut_rate": {
+                  "start": 0.03549270741846863,
+                  "end": 0.03549270741846863
+                },
+                "payment_terms_months": {
+                  "start": 6.292533275151277,
+                  "end": 6.292533275151277
+                },
+                "tier1_gross_margin": {
+                  "start": 0.21805445346732885,
+                  "end": 0.2181
+                },
+                "generation_transition_index": {
+                  "start": 0.05,
+                  "end": 0.25
+                },
+                "cash": {
+                  "start": 100.0,
+                  "end": 100.0
+                }
+              },
+              "scenario_assumptions": [
+                "Direction 'B invest smart cockpit ADAS': override adas_coupling=0.1, adas_share_coupling=0.1, base_growth=0.03, nev_coupling=0.25, profit_coupling=0.1, profit_growth=0.08, revenue_coupling=0.15, revenue_growth=0.1, share_coupling=0.25."
+              ],
+              "decision_deltas": [
+                "Scenario followed the baseline action sequence after the fork point."
+              ]
+            },
+            "startup_kpi_pack": null
+          },
+          "created_at": "2026-11-23T07:32:33.563016"
+        }
+      ]
+    },
+    "created_at": "2026-11-23T07:32:45.487179"
+  }
+}
