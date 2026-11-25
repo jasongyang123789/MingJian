@@ -59,10 +59,12 @@ DESAY_2020_VARIABLE_IDS = [
     # profit_coupling variables are DELETED (the pack chain replaces
     # them) and the eight R&D decomposition variables take their
     # place — this is the new case variable table, synced from the
-    # pack rerun harness. drivers_missing is UNCHANGED at 16: no
-    # registry entry's model_elements names profit_growth,
-    # profit_coupling, or any gross_*/rd_*/other_share id, so the
-    # count is identical before and after.
+    # pack rerun harness. drivers_missing is UNCHANGED by the R&D
+    # sync at 17 (before the order-book entry): no registry entry's
+    # model_elements names profit_growth, profit_coupling, or any
+    # gross_*/rd_*/other_share id, so the count is identical before
+    # and after. The order-book entry (step 4, 2026-11-24) brings it
+    # to 18: the old corporate table carries no order-book variable.
     "gross_base",
     "gross_longrun",
     "gross_reversion",
@@ -143,10 +145,10 @@ def full_automotive_case() -> CompletenessCase:
 # ---------------------------------------------------------------------------
 
 
-def test_registry_has_seventeen_entries_with_unique_ids() -> None:
+def test_registry_has_nineteen_entries_with_unique_ids() -> None:
     ids = [e.id for e in AUTOMOTIVE_DRIVER_REGISTRY]
-    assert len(ids) == 17
-    assert len(set(ids)) == 17
+    assert len(ids) == 19
+    assert len(set(ids)) == 19
 
 
 def test_registry_entries_are_complete_and_valid() -> None:
@@ -242,9 +244,9 @@ def test_registry_every_entry_has_a_real_model_element() -> None:
         assert set(entry.model_elements) & real, entry.id
 
 
-def test_general_checklist_has_eight_questions() -> None:
-    assert len(GENERAL_DRIVER_CHECKLIST) == 8
-    assert len({item.id for item in GENERAL_DRIVER_CHECKLIST}) == 8
+def test_general_checklist_has_nine_questions() -> None:
+    assert len(GENERAL_DRIVER_CHECKLIST) == 9
+    assert len({item.id for item in GENERAL_DRIVER_CHECKLIST}) == 9
     for item in GENERAL_DRIVER_CHECKLIST:
         assert item.question and item.keywords and item.suggested_fix
 
@@ -288,9 +290,9 @@ def test_finding_shape_matches_the_shared_contract() -> None:
 def test_desay_2020_flags_nev_chain_as_top_risk() -> None:
     report = run_completeness_check(desay_2020_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 17
+    assert report.drivers_checked == 19
     assert report.drivers_present == 0
-    assert report.drivers_missing == 17
+    assert report.drivers_missing == 19
 
     top = report.top_finding
     assert top is not None
@@ -305,6 +307,60 @@ def test_desay_2020_flags_nev_chain_as_top_risk() -> None:
     assert any("52.3%" in line for line in top.evidence)
     assert top.suggested_fix
 
+    # Step 4 (2026-11-24): the order book is the SECOND risk — high,
+    # weight 0.95, just behind NEV (1.00). The frozen decomposition
+    # names the backlog leg the largest single contributor to the
+    # anchor overshoot, so the old corporate table must flag it next.
+    second = report.findings[1]
+    assert second.id == "completeness:order_backlog"
+    assert second.kind is FindingKind.MISSING_DRIVER
+    assert second.severity is FindingSeverity.HIGH
+    assert second.target == "revenue"
+    assert second.boundary_class is BoundaryClass.FIXABLE_DEFECT
+    assert "§6" in second.boundary_basis
+    assert "2020-12-31" in second.boundary_basis
+
+
+def test_order_backlog_present_but_unlinked_is_missing_link() -> None:
+    """Backlog variables with no revenue link are a missing link, not
+    a pass: the stock exists but no formula carries it to revenue."""
+    case = CompletenessCase(
+        domain_id="automotive",
+        variable_ids=[*DESAY_2020_VARIABLE_IDS, "order_backlog", "backlog_conversion"],
+        formula_outputs=["market_share"],
+        key_variables=list(DESAY_2020_KEY_VARIABLES),
+    )
+    report = run_completeness_check(case)
+    by_id = {f.id: f for f in report.findings}
+    link = by_id["completeness:order_backlog:link"]
+    assert link.kind is FindingKind.MISSING_LINK
+    assert link.severity is FindingSeverity.HIGH
+    assert link.target == "revenue"
+
+
+def test_order_backlog_present_and_linked_passes() -> None:
+    """Backlog variables + a revenue output: the entry is present and
+    linked, so it drops out of the findings (drivers_present 1)."""
+    case = CompletenessCase(
+        domain_id="automotive",
+        variable_ids=[
+            *DESAY_2020_VARIABLE_IDS,
+            "order_backlog",
+            "order_intake",
+            "order_intake_rate",
+            "backlog_conversion",
+            "order_decay",
+        ],
+        formula_outputs=["revenue"],
+        key_variables=list(DESAY_2020_KEY_VARIABLES),
+    )
+    report = run_completeness_check(case)
+    assert report.drivers_present == 1
+    assert report.drivers_missing == 18
+    by_id = {f.id: f for f in report.findings}
+    assert "completeness:order_backlog" not in by_id
+    assert "completeness:order_backlog:link" not in by_id
+
 
 def test_desay_2020_also_flags_domain_controller_substitution() -> None:
     report = run_completeness_check(desay_2020_case())
@@ -313,8 +369,9 @@ def test_desay_2020_also_flags_domain_controller_substitution() -> None:
     assert dc.kind is FindingKind.MISSING_DRIVER
     assert dc.severity is FindingSeverity.HIGH
     assert dc.target == "revenue"
-    # Ranked second: NEV first, domain-controller substitution second.
-    assert report.findings[1].id == "completeness:domain_controller_substitution"
+    # Ranked third: NEV first, order book second (step 4), domain-controller
+    # substitution third.
+    assert report.findings[2].id == "completeness:domain_controller_substitution"
     # Only the TOP finding carries the meta-check phrasing.
     assert not dc.summary.startswith(META_CHECK_PREFIX)
 
@@ -383,6 +440,14 @@ def test_checklist_findings_are_unclassified_not_forced() -> None:
     report = run_completeness_check(case)
     assert report.findings
     for finding in report.findings:
+        if finding.id == "completeness:checklist:segment_split":
+            # The one classifiable exception: a revenue split is
+            # encodable from decision-time published segment data, so
+            # the segment_split item declares its §6 verdict instead of
+            # leaving it unclassified (registry.py).
+            assert finding.boundary_class is BoundaryClass.FIXABLE_DEFECT, finding.id
+            assert "§6" in finding.boundary_basis, finding.id
+            continue
         assert finding.boundary_class is BoundaryClass.UNCLASSIFIED, finding.id
         assert finding.boundary_basis == UNCLASSIFIED_BASIS
 
@@ -427,8 +492,8 @@ def test_no_residual_input_means_no_residual_finding() -> None:
 def test_full_automotive_template_flags_nothing() -> None:
     report = run_completeness_check(full_automotive_case())
     assert report.registry == "automotive"
-    assert report.drivers_checked == 17
-    assert report.drivers_present == 17
+    assert report.drivers_checked == 19
+    assert report.drivers_present == 19
     assert report.drivers_missing == 0
     assert report.findings == []
     assert report.top_finding is None
@@ -438,11 +503,15 @@ def test_full_automotive_template_without_assumption_data_flags_dc() -> None:
     """Documents the carrier: DC substitution lives in the template's
     assumption data (`fitment_lookup`), not in a variable. A case that
     binds the variables but drops the assumption data is genuinely
-    missing the DC driver."""
+    missing the DC driver. The revenue split rides the same carrier,
+    so it flags too (medium, ranked after the high-severity DC)."""
     case = full_automotive_case()
     case.assumption_data_keys = []
     report = run_completeness_check(case)
-    assert [f.id for f in report.findings] == ["completeness:domain_controller_substitution"]
+    assert [f.id for f in report.findings] == [
+        "completeness:domain_controller_substitution",
+        "completeness:segment_split",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +563,9 @@ def test_checklist_flags_open_questions_for_bare_corporate_case() -> None:
     assert "completeness:checklist:external_demand" in flagged
     assert "completeness:checklist:substitution" in flagged
     assert "completeness:checklist:policy" in flagged
+    # Huawei rethink (2026-11-25): the bare corporate table has no
+    # revenue split either — the segment_split question stays open.
+    assert "completeness:checklist:segment_split" in flagged
     assert all(f.severity is FindingSeverity.MEDIUM for f in report.findings)
     assert all(f.source is FindingSource.COMPLETENESS_CHECK for f in report.findings)
 
@@ -510,6 +582,7 @@ def test_checklist_passes_when_every_question_is_covered() -> None:
             "competitor_share",
             "interest_rate",
             "technology_platform",
+            "overseas_revenue",
         ],
         key_variables=["revenue"],
     )
@@ -552,6 +625,7 @@ def test_ranking_is_severity_then_weight() -> None:
     highs = [f for f in report.findings if f.severity is FindingSeverity.HIGH]
     assert [f.id for f in highs] == [
         "completeness:nev_penetration",
+        "completeness:order_backlog",
         "completeness:domain_controller_substitution",
         "completeness:income",
         "completeness:lpr_financing",
@@ -589,7 +663,7 @@ def test_api_check_desay_2020_flags_nev_top(monkeypatch, tmp_path: Path) -> None
     assert body["top_finding"]["severity"] == "high"
     assert body["top_finding"]["summary"].startswith(META_CHECK_PREFIX)
     assert body["top_finding"]["source"] == "completeness_check"
-    assert body["drivers_missing"] == 17
+    assert body["drivers_missing"] == 19
 
 
 def test_api_check_desay_2020_with_residual_shows_both_verdicts(
@@ -633,7 +707,7 @@ def test_api_drivers_lists_automotive_registry(monkeypatch, tmp_path: Path) -> N
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["registry"] == "automotive"
-    assert len(body["drivers"]) == 17
+    assert len(body["drivers"]) == 19
     assert body["drivers"][0]["id"] == "nev_penetration"
     assert body["drivers"][0]["boundary_class"] == "fixable_defect"
     assert "§6" in body["drivers"][0]["boundary_basis"]
@@ -648,5 +722,98 @@ def test_api_drivers_falls_back_to_checklist(monkeypatch, tmp_path: Path) -> Non
     body = response.json()
     assert body["registry"] == "general-checklist"
     assert body["drivers"] == []
-    assert len(body["checklist"]) == 8
+    assert len(body["checklist"]) == 9
     assert body["checklist"][0]["id"] == "external_demand"
+
+
+# ---------------------------------------------------------------------------
+# Missing segment split (Huawei opportunity rethink, 2026-11-25).
+# Regression: fires on Huawei's undifferentiated revenue, not on
+# Desay's split revenue.
+# ---------------------------------------------------------------------------
+
+#: The Huawei-2000 variable table, verbatim from the trials50 harness
+#: (scripts/backtest/trials50/run_classic.py CASES["huawei"]): six
+#: variables, revenue a single total, no segment anywhere.
+HUAWEI_2000_VARIABLE_IDS = [
+    "market_share",
+    "share_growth",
+    "revenue",
+    "revenue_growth",
+    "profit",
+    "profit_growth",
+]
+
+
+def huawei_2000_case() -> CompletenessCase:
+    """Huawei-2000 as a completeness case (corporate domain: no
+    registry, so the general checklist is the path)."""
+    return CompletenessCase(
+        domain_id="corporate",
+        variable_ids=list(HUAWEI_2000_VARIABLE_IDS),
+        key_variables=["revenue"],
+    )
+
+
+def test_huawei_like_case_flags_missing_segment_split() -> None:
+    """Huawei-2000 (corporate path): revenue is a single total, so the
+    checklist's segment_split question fires — kind
+    missing_segment_split, medium, fixable defect (the one checklist
+    item whose §6 verdict is determinable)."""
+    report = run_completeness_check(huawei_2000_case())
+    assert report.registry == "general-checklist"
+    by_id = {f.id: f for f in report.findings}
+    split = by_id["completeness:checklist:segment_split"]
+    assert split.kind is FindingKind.MISSING_SEGMENT_SPLIT
+    assert split.target == "revenue"
+    assert split.severity is FindingSeverity.MEDIUM
+    assert split.source is FindingSource.COMPLETENESS_CHECK
+    assert split.boundary_class is BoundaryClass.FIXABLE_DEFECT
+    assert "§6" in split.boundary_basis
+    assert split.summary.startswith("Missing segment split")
+
+
+def test_segment_split_checklist_passes_with_segment_variables() -> None:
+    """Per-segment revenue variables cover the question: no finding."""
+    case = CompletenessCase(
+        domain_id="corporate",
+        variable_ids=[
+            *HUAWEI_2000_VARIABLE_IDS,
+            "overseas_revenue",
+            "domestic_revenue",
+        ],
+        key_variables=["revenue"],
+    )
+    report = run_completeness_check(case)
+    assert "completeness:checklist:segment_split" not in {f.id for f in report.findings}
+
+
+def test_desay_2020_old_table_flags_segment_split() -> None:
+    """The OLD desay-2020 corporate table (automotive domain, no
+    assumption data, no segment variable) genuinely lacks the split in
+    the MODEL — the split lived in the workbook, not the variable
+    table — so the registry entry fires on it. This is the correct
+    distinction, not a contradiction of the rethink: the rethink's
+    'Desay does not fire' is the CURRENT case, i.e. the full
+    automotive template (next test), which carries the split via
+    fitment_lookup."""
+    report = run_completeness_check(desay_2020_case())
+    by_id = {f.id: f for f in report.findings}
+    split = by_id["completeness:segment_split"]
+    assert split.kind is FindingKind.MISSING_SEGMENT_SPLIT
+    assert split.target == "revenue"
+    assert split.severity is FindingSeverity.MEDIUM
+    assert split.boundary_class is BoundaryClass.FIXABLE_DEFECT
+    assert "§6" in split.boundary_basis
+    assert split.summary.startswith("Missing segment split")
+
+
+def test_full_template_covers_segment_split() -> None:
+    """The full automotive template (the current Desay structure)
+    carries the split via the fitment_lookup assumption-data key, so
+    the registry entry is present — and present-and-linked, since it
+    has no link outputs (the split structure is the carrier)."""
+    report = run_completeness_check(full_automotive_case())
+    assert "segment_split" in report.coverage["revenue"].present
+    assert "completeness:segment_split" not in {f.id for f in report.findings}
+    assert "completeness:segment_split:link" not in {f.id for f in report.findings}

@@ -748,3 +748,73 @@ def detect_creation_prompts(
     """
 
     return detect_discount_prompts(variables, horizon_ticks), check_t1(variables, horizon_ticks)
+
+
+class FittedStretch(BaseModel):
+    """One diagnostic fitted value for a T3 review check."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    variable_id: str
+    fitted_value: float
+    distribution_max: float
+    target_label: str = ""
+    hypothesis: str | None = None
+    boundary_class: str | None = None
+    boundary_basis: str | None = None
+
+
+def review_breakout_prompts(
+    *,
+    period_label: str = "",
+    actual_first_year_growth: float | None = None,
+    modeled_first_year_growth: float | None = None,
+    fitted: list[FittedStretch] | None = None,
+    orders_growth: float | None = None,
+    orders_to_revenue: float | None = None,
+    orders_label: str = "",
+) -> list[BreakoutPrompt]:
+    """The review-time prompt subset: T2 + T3 + T4 (Step 4, 2026-11-24).
+
+    The creation-time subset (:func:`detect_creation_prompts`) covers
+    discount prompts + T1 only — T2 needs post-decision actuals, T3
+    needs diagnostic fitted values, T4 needs order data, so none of
+    them can run at run creation. This composer is their product
+    surface: monitoring review (T2/T4, once actuals arrive) and
+    backtest diagnosis (T3, once fitted values exist) call it instead
+    of reaching for the individual checks. Every input is optional;
+    a check with missing inputs stays silent. Returned in trigger
+    order: T2, then T3s in input order, then T4.
+    """
+
+    prompts: list[BreakoutPrompt] = []
+    if actual_first_year_growth is not None and modeled_first_year_growth is not None:
+        t2 = check_t2(
+            actual_first_year_growth=actual_first_year_growth,
+            modeled_first_year_growth=modeled_first_year_growth,
+            case_label=period_label,
+        )
+        if t2 is not None:
+            prompts.append(t2)
+    for stretch in fitted or []:
+        t3 = check_t3(
+            variable_id=stretch.variable_id,
+            fitted_value=stretch.fitted_value,
+            distribution_max=stretch.distribution_max,
+            target_label=stretch.target_label,
+            hypothesis=stretch.hypothesis,
+            boundary_class=stretch.boundary_class,
+            boundary_basis=stretch.boundary_basis,
+        )
+        if t3 is not None:
+            prompts.append(t3)
+    if orders_growth is not None or orders_to_revenue is not None:
+        t4 = check_t4(
+            period_label=period_label,
+            orders_growth=orders_growth,
+            orders_to_revenue=orders_to_revenue,
+            orders_label=orders_label,
+        )
+        if t4 is not None:
+            prompts.append(t4)
+    return prompts

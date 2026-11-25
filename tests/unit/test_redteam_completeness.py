@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from planagent.services.redteam.completeness import run_completeness_checks
 from planagent.services.redteam.models import CaseSnapshot, RedTeamVariable
-from tests.redteam_cases import complete_case_snapshot, desay_2020_snapshot
+from tests.redteam_cases import (
+    complete_case_snapshot,
+    desay_2020_snapshot,
+    huawei_2000_snapshot,
+)
 
 
 def _by_kind_target(findings):
@@ -46,6 +50,46 @@ def test_acceptance_complete_case_no_high_missing_driver() -> None:
     high_missing = [f for f in findings if f.kind == "missing_driver" and f.severity == "high"]
     assert high_missing == [], f"hallucinated drivers: {high_missing}"
     assert findings == [], f"complete case should be clean; got: {findings}"
+
+
+def test_desay2020_also_flags_order_backlog_high() -> None:
+    # Step 4 (2026-11-24): the situation names 新获项目订单年化约 70 亿
+    # and the case has no order-book variable. The frozen decomposition
+    # names the backlog leg the largest single contributor to the
+    # anchor overshoot, so desay-2020 must flag it — high, fixable
+    # defect — as the fourth deterministic finding.
+    findings = run_completeness_checks(desay_2020_snapshot())
+    by_key = _by_kind_target(findings)
+    backlog = by_key.get(("missing_driver", "order_backlog"))
+    assert backlog is not None, f"order-book finding missing; got: {findings}"
+    assert backlog.severity == "high"
+    assert backlog.source == "completeness_check"
+    assert backlog.boundary_class == "fixable_defect"
+    # The basis must name THIS driver, not another catalog entry's.
+    assert "70" in backlog.boundary_basis or "订单" in backlog.boundary_basis
+    assert "NEV" not in backlog.boundary_basis
+    assert backlog.id == "rt-missing_driver-order_backlog"
+
+
+def test_order_backlog_present_but_unlinked_is_missing_link() -> None:
+    snapshot = desay_2020_snapshot()
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="order_backlog",
+            description="Stock of booked-but-undelivered orders (order_backlog)",
+            distribution="triangular(0.0, 6799.06, 10000.0)",
+            low=0.0,
+            mode=6799.06,
+            high=10000.0,
+            evidence=["2020 年新获项目订单年化约 70 亿"],
+        )
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("missing_driver", "order_backlog") not in by_key
+    unlinked = by_key.get(("missing_link", "order_backlog"))
+    assert unlinked is not None
+    assert unlinked.severity == "medium"
 
 
 def test_desay2020_also_flags_adas_penetration_medium() -> None:
@@ -138,6 +182,35 @@ def test_unjustified_discount_fires_without_reason() -> None:
     assert discount is not None
     assert discount.severity == "medium"
     assert "27.39" in discount.evidence[0]
+
+
+def test_bubble_burst_downturn_is_a_stated_discount_reason() -> None:
+    # Step 4 (2026-11-24): Huawei-2000 share_growth cites 1995-2000
+    # ~70%/yr against mode 8%, with the stated reason "Dec 2000 bubble
+    # burst + winter warning" — a downturn reason, the same family as
+    # A4's "margin pressure". It must not fire as unjustified.
+    snapshot = CaseSnapshot(
+        case_id="huawei-2000-share",
+        decision_question="华为2000：冬天来了，收缩过冬还是坚持投入？",
+        variables=[
+            RedTeamVariable(
+                name="share_growth",
+                distribution="triangular(-0.05, 0.08, 0.25)",
+                low=-0.05,
+                mode=0.08,
+                high=0.25,
+                evidence=[
+                    "1995-2000 sales grew ~70%/yr (RMB 1.5B→22B); "
+                    "Dec 2000 bubble burst + winter warning; wide "
+                    "distribution, mode 8%"
+                ],
+            )
+        ],
+        internal_situation="互联网泡沫破裂，全球IT投资下滑。",
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("unjustified_discount", "share_growth") not in by_key
 
 
 # --- Audit A4 (2026-11-20): the discount check read shares and margin
@@ -358,6 +431,71 @@ def test_evidence_mention_does_not_count_as_coverage() -> None:
     findings = run_completeness_checks(snapshot)
     by_key = _by_kind_target(findings)
     assert ("missing_driver", "nev_penetration") in by_key
+
+
+# --- Missing segment split (Huawei opportunity rethink, 2026-11-25).
+# Regression: fires on Huawei's undifferentiated revenue, not on
+# Desay's split revenue. ---
+
+
+def test_huawei_snapshot_flags_missing_segment_split() -> None:
+    """Huawei-2000: revenue is a single total — no per-segment revenue
+    variable, no split on the revenue variable, MECE children (增长 /
+    生存) name no segments, the situation names only one segment
+    keyword (海外). The check fires, and it is the ONLY deterministic
+    finding on this snapshot."""
+    findings = run_completeness_checks(huawei_2000_snapshot())
+    assert [(f.kind, f.target) for f in findings] == [
+        ("missing_segment_split", "revenue")
+    ]
+    split = findings[0]
+    assert split.severity == "medium"
+    assert split.source == "completeness_check"
+    assert split.boundary_class == "fixable_defect"
+    assert "§6" in split.boundary_basis
+    assert split.id == "rt-missing_segment_split-revenue"
+    assert "海外" in " ".join(split.evidence)
+
+
+def test_desay_snapshots_do_not_flag_missing_segment_split() -> None:
+    """Desay's revenue is split: the situation states three product
+    segments with values (智能座舱 / 智能驾驶 / 网联服务) and the MECE
+    tree decomposes by the same three. Neither snapshot fires."""
+    for snapshot in (desay_2020_snapshot(), complete_case_snapshot()):
+        findings = run_completeness_checks(snapshot)
+        by_key = _by_kind_target(findings)
+        assert ("missing_segment_split", "revenue") not in by_key, snapshot.case_id
+
+
+def test_segment_revenue_variable_silences_missing_segment_split() -> None:
+    """Per-segment revenue variables are a split: adding overseas /
+    domestic revenue to the Huawei snapshot silences the finding."""
+    snapshot = huawei_2000_snapshot()
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="overseas_revenue",
+            description="Overseas revenue (segment of total revenue)",
+            distribution="triangular(5, 8.3, 12)",
+            low=5.0,
+            mode=8.3,
+            high=12.0,
+            evidence=["1999 overseas revenue <4% of total"],
+        )
+    )
+    snapshot.variables.append(
+        RedTeamVariable(
+            name="domestic_revenue",
+            description="Domestic revenue (segment of total revenue)",
+            distribution="triangular(180, 211.7, 250)",
+            low=180.0,
+            mode=211.7,
+            high=250.0,
+            evidence=["2000 domestic revenue ≈ 211.7亿"],
+        )
+    )
+    findings = run_completeness_checks(snapshot)
+    by_key = _by_kind_target(findings)
+    assert ("missing_segment_split", "revenue") not in by_key
 
 
 __all__ = []

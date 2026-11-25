@@ -43,6 +43,17 @@ transmission-chain gap is captured by the specific checks above
 A generic no-chain flag would fire on simple exogenous-growth cases
 with no evidence anchor — exactly the hallucination the acceptance
 tests forbid.
+6. ``missing_segment_split``: revenue is a single undifferentiated
+total — no region / product / customer split anywhere the check can
+see (no per-segment revenue variable, no split stated on the revenue
+variable, no MECE tree children naming segments, no segment breakdown
+in the internal situation). Without a split, growth cannot be located
+and opportunity has nowhere to sit (Huawei-2000: the overseas/3G leg
+is missing from a model whose revenue is one number). A split counts
+only when it is structural: the situation must name at least two
+distinct segment names, and the tree must have at least two children
+naming segments — one mention (Huawei's "overseas <4%") is a level,
+not a split.
 """
 
 from __future__ import annotations
@@ -51,6 +62,7 @@ import hashlib
 import re
 from dataclasses import dataclass
 
+from planagent.services.completeness.findings import FindingKind
 from planagent.services.redteam.models import CaseSnapshot, RedTeamFinding
 
 # A cited recent rate more than this many times the variable's mode,
@@ -91,6 +103,17 @@ _JUSTIFICATION_KEYWORDS = (
     "降价压力",
     "cost pressure",
     "成本压力",
+    # Step 4 (2026-11-24): the same family on Huawei-2000 — share_growth
+    # DID state its reason ("Dec 2000 bubble burst + winter warning"),
+    # but the table had no downturn term, so the justified discount
+    # fired as unjustified. A burst / winter warning is a stated reason
+    # to discount a pre-burst growth rate, like margin pressure is for
+    # a profit rate.
+    "bubble burst",
+    "泡沫破裂",
+    "泡沫破灭",
+    "winter warning",
+    "冬天",
     # A stated scope difference is a justification too: the cited rate
     # covers a quantity this variable deliberately excludes.
     "adoption effect",
@@ -297,6 +320,46 @@ DRIVER_CATALOG: tuple[DriverCheck, ...] = (
             "({mentions}), but no variable in the case represents it."
         ),
     ),
+    DriverCheck(
+        id="order_backlog",
+        kind="missing_driver",
+        target="order_backlog",
+        label="order-book / backlog",
+        situation_keywords=(
+            "order backlog",
+            "order book",
+            "订单簿",
+            "在手订单",
+            "未交付订单",
+            "新获订单",
+            "新获项目订单",
+            "backlog",
+        ),
+        variable_keywords=(
+            "order_backlog",
+            "backlog",
+            "order_intake",
+            "订单簿",
+            "在手订单",
+        ),
+        severity="high",
+        suggested_fix=(
+            "Add an order_backlog variable (+ order_intake_rate / "
+            "backlog_conversion / order_decay) with a tick driver "
+            "updating backlog + intake - converted (floored at 0), and "
+            "gain + backlog_conversion * order_backlog / revenue in the "
+            "revenue driver, so the booked-but-undelivered stock — not "
+            "a bare growth rate — carries the front-loaded growth. Bind "
+            "the opening book from the decision-time announced "
+            "annualized orders."
+        ),
+        evidence_template=(
+            "The internal situation names the order book as a live driver "
+            "({mentions}), but no variable in the case represents it: the "
+            "booked-but-undelivered stock that front-loads revenue is "
+            "invisible to the model."
+        ),
+    ),
 )
 
 
@@ -383,6 +446,114 @@ def _has_justification(text: str) -> list[str]:
         if pattern.search(normalized):
             found.append(label)
     return found
+
+
+# Segment names (region / product / customer) that count as a revenue
+# split when they structure the case. These are segment NAMES, not the
+# words "revenue" / "share" / "level": a share ("86.95% of revenue")
+# is not a split, and a single mention ("overseas <4%") is a level,
+# not a breakdown — hence the >= 2 thresholds below.
+_SEGMENT_KEYWORDS = (
+    # product segments
+    "智能座舱",
+    "智能驾驶",
+    "网联",
+    "显示屏",
+    "摄像头",
+    "域控制器",
+    "座舱",
+    "域控",
+    # region segments
+    "海外",
+    "国内",
+    # customer segments
+    "大客户",
+    "运营商",
+    "消费者业务",
+    "企业业务",
+    # English
+    "overseas",
+    "domestic",
+    "by_region",
+    "by_product",
+    "by_customer",
+    "product line",
+    "customer segment",
+)
+# A split counts in prose only when at least this many DISTINCT
+# segment names appear, and in the tree only when at least this many
+# children name segments. One mention is a level, not a split.
+_SEGMENT_MIN_DISTINCT = 2
+
+# Total-revenue variable names (a single undifferentiated total).
+_TOTAL_REVENUE_NAMES = ("revenue", "sales", "收入")
+# Tokens that mark a variable as a revenue quantity at all.
+_REVENUE_TOKENS = ("revenue", "sales", "收入")
+
+
+def _count_distinct_keywords(text: str, keywords: tuple[str, ...]) -> list[str]:
+    """Distinct segment keywords present in `text`, longest first so a
+    long keyword (智能座舱) does not also count its substring (座舱)
+    on the same span."""
+    haystack = _normalize(text)
+    found: list[str] = []
+    for keyword in sorted(keywords, key=len, reverse=True):
+        lowered = keyword.lower()
+        if lowered in haystack:
+            found.append(keyword)
+            haystack = haystack.replace(lowered, " ")
+    return found
+
+
+def _is_total_revenue_variable(name: str) -> bool:
+    return name.strip().lower() in _TOTAL_REVENUE_NAMES
+
+
+def _is_segment_revenue_variable(name: str) -> bool:
+    """A revenue variable qualified by a segment: overseas_revenue,
+    revenue_by_region, ... A bare growth/coupling variable
+    (revenue_growth) has no segment qualifier and does not count."""
+    lowered = name.strip().lower()
+    if _is_total_revenue_variable(lowered):
+        return False
+    if not any(token in lowered for token in _REVENUE_TOKENS):
+        return False
+    return bool(_mentions(lowered, _SEGMENT_KEYWORDS))
+
+
+def _tree_segment_children(snapshot: CaseSnapshot) -> list[str]:
+    """Root children whose name matches a segment keyword."""
+    if snapshot.mece_tree is None:
+        return []
+    return [
+        child.name
+        for child in snapshot.mece_tree.root.children
+        if _mentions(child.name, _SEGMENT_KEYWORDS)
+    ]
+
+
+def _revenue_split_present(snapshot: CaseSnapshot) -> tuple[bool, list[str], list[str]]:
+    """Whether the case's revenue carries a region / product / customer
+    split somewhere the check can see. Returns (present, tree segment
+    children, situation segment keywords) for the finding's evidence.
+    """
+    for variable in snapshot.variables:
+        if _is_segment_revenue_variable(variable.name):
+            return True, [], []
+    for variable in snapshot.variables:
+        if _is_total_revenue_variable(variable.name) and _mentions(
+            variable.description, _SEGMENT_KEYWORDS
+        ):
+            return True, [], []
+    tree_children = _tree_segment_children(snapshot)
+    if len(tree_children) >= _SEGMENT_MIN_DISTINCT:
+        return True, tree_children, []
+    situation_keywords = _count_distinct_keywords(
+        _situation_text(snapshot), _SEGMENT_KEYWORDS
+    )
+    if len(situation_keywords) >= _SEGMENT_MIN_DISTINCT:
+        return True, tree_children, situation_keywords
+    return False, tree_children, situation_keywords
 
 
 def _slug(text: str) -> str:
@@ -655,6 +826,70 @@ def run_completeness_checks(snapshot: CaseSnapshot) -> list[RedTeamFinding]:
                     boundary_basis=(
                         "Evidence or an explicit judgment-call label could have been "
                         "attached at decision time."
+                    ),
+                )
+            )
+
+    # 6. Missing segment split: revenue is a single undifferentiated
+    # total. No per-segment revenue variable, no split stated on the
+    # revenue variable, no MECE tree children naming segments, and the
+    # internal situation names fewer than two segment names. Without a
+    # split, growth cannot be located and opportunity has nowhere to
+    # sit — the Huawei-2000 miss. Only fires when a revenue variable
+    # exists at all: a case with no revenue variable has nothing to
+    # split, and this finding is not its job.
+    revenue_vars = [
+        variable
+        for variable in snapshot.variables
+        if _is_total_revenue_variable(variable.name)
+    ]
+    if revenue_vars:
+        split_present, tree_children, situation_keywords = _revenue_split_present(snapshot)
+        if not split_present:
+            revenue = revenue_vars[0]
+            tree_note = (
+                f"MECE tree children: {', '.join(child.name for child in snapshot.mece_tree.root.children)}"
+                if snapshot.mece_tree is not None
+                else "no MECE tree"
+            )
+            segment_note = (
+                f"internal situation names only {len(situation_keywords)} segment "
+                f"keyword(s) ({', '.join(situation_keywords) or 'none'})"
+            )
+            findings.append(
+                RedTeamFinding(
+                    id=finding_id("missing_segment_split", "revenue"),
+                    kind=FindingKind.MISSING_SEGMENT_SPLIT,
+                    target="revenue",
+                    severity="medium",
+                    summary=(
+                        "Missing segment split: revenue is a single "
+                        "undifferentiated total — no region, product, or "
+                        "customer split, so growth cannot be located and "
+                        "opportunity has nowhere to sit."
+                    ),
+                    evidence=[
+                        (
+                            f"Revenue is a single total variable "
+                            f"({revenue.name}: {revenue.description or revenue.distribution}) "
+                            "with no per-segment revenue variable (no "
+                            "overseas / domestic / by-region / by-product "
+                            "revenue variable) and no split stated on it."
+                        ),
+                        f"{tree_note}; {segment_note}.",
+                    ],
+                    suggested_fix=(
+                        "Split revenue into region / product / customer "
+                        "segments — one variable per segment, or bind the "
+                        "template's split structure — so growth can be "
+                        "located and an opportunity leg has somewhere to sit."
+                    ),
+                    source="completeness_check",
+                    boundary_class="fixable_defect",
+                    boundary_basis=(
+                        "§6 fixable defect: segment disclosures are published "
+                        "in annual reports at decision time — a split "
+                        "could have been encoded then."
                     ),
                 )
             )

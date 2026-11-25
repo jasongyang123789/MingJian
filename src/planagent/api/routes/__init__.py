@@ -6,6 +6,7 @@ from planagent.api.routes.analysis import router as analysis_router
 from planagent.api.routes.automotive import router as automotive_router
 from planagent.api.routes.agents import router as agents_router
 from planagent.api.routes.completeness import router as completeness_router
+from planagent.api.routes.opportunities import router as opportunities_router
 from planagent.api.routes.calibration import router as calibration_router
 from planagent.api.routes.debate_votes import router as debate_votes_router
 from planagent.api.routes.debate_replay import router as debate_replay_router
@@ -52,6 +53,7 @@ router.include_router(prediction_router)
 router.include_router(robustness_router, tags=["Robustness"])
 router.include_router(calibration_router, tags=["Calibration"])
 router.include_router(completeness_router, tags=["Completeness"])
+router.include_router(opportunities_router, tags=["Opportunities"])
 router.include_router(skills_router, tags=["Skills"])
 router.include_router(redteam_router, tags=["Red Team"])
 router.include_router(seminars_router, tags=["Seminars"])
