@@ -502,7 +502,7 @@ export function DeliberationRecordView({ record }: { record: SkillDeliberationRe
         </span>
         <span className="text-xs text-slate-500">模式：{record.mode}</span>
         <span className="font-mono text-[11px] text-slate-600">
-          {record.id} · {record.created_at}
+          {record.created_at}
         </span>
       </div>
       {record.result.pipeline === 'strategy_team' ? (
