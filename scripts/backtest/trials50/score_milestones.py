@@ -41,6 +41,12 @@ NODES = [
     ("desay-2020", "desay", "revenue", 3, 21908.0, "desay-2020 revenue yr3"),
     ("nokia", "classic", "market_share", 3, 0.27, "nokia share yr3"),
     ("nokia", "classic", "market_share", 5, 0.064, "nokia share yr5"),
+    # Blockbuster partial case (branch fix/blockbuster-partial-case):
+    # revenue milestones only, profit not built. Actuals are 10-K total
+    # revenues: 2003 $5,911.7M, 2005 $5,551.1M (2009 10-K reclassified
+    # series — see the case report).
+    ("blockbuster", "classic", "revenue", 3, 5.9117, "blockbuster revenue yr3"),
+    ("blockbuster", "classic", "revenue", 5, 5.5511, "blockbuster revenue yr5"),
 ]
 
 # trials=20 A/C bands (REPORT.md §0/§3-§5), for the side-by-side.
@@ -92,9 +98,13 @@ def main():
                                  actual=actual, baseline_width=w0)
         # Cross-check: helper agrees with the dataclass fields.
         assert band_edge_distance(b["p10"], b["p90"], actual) == s.band_edge_distance
-        a20 = AC20[label]
-        s20 = score_milestone_node(p10=a20["p10"], p50=a20["p50"], p90=a20["p90"],
-                                   actual=actual, baseline_width=w0)
+        # Blockbuster has no trials=20 band on this caliber (the 11-19
+        # rerun ran a different model — no template attach, trials 20);
+        # its trials=20 column stays empty.
+        a20 = AC20.get(label)
+        s20 = (score_milestone_node(p10=a20["p10"], p50=a20["p50"], p90=a20["p90"],
+                                    actual=actual, baseline_width=w0)
+               if a20 is not None else None)
         rows.append((label, actual, w0, b, s, a20, s20))
         print(f"{label}: n=50 band [{b['p10']}, {b['p50']}, {b['p90']}] "
               f"width={s.width:.4f} W/W0={s.width_ratio:.2f} "
@@ -102,20 +112,26 @@ def main():
               f"edge_dist={s.band_edge_distance} ({100 * s.band_edge_distance_rel:.2f}%) "
               f"OLD={old_rule_verdict(b['p10'], b['p90'], actual)} "
               f"NEW={s.verdict} ({s.reason})")
-        print(f"    trials=20: band [{a20['p10']}, {a20['p50']}, {a20['p90']}] "
-              f"edge_dist={s20.band_edge_distance} ({100 * s20.band_edge_distance_rel:.2f}%) "
-              f"NEW={s20.verdict} ({s20.reason})")
+        if s20 is not None:
+            print(f"    trials=20: band [{a20['p10']}, {a20['p50']}, {a20['p90']}] "
+                  f"edge_dist={s20.band_edge_distance} ({100 * s20.band_edge_distance_rel:.2f}%) "
+                  f"NEW={s20.verdict} ({s20.reason})")
     con.close()
     print("\n== case verdicts (worst node, new rule) ==")
-    for case in ("desay-2015", "desay-2020", "nokia"):
+    for case in ("desay-2015", "desay-2020", "nokia", "blockbuster"):
         nodes50 = [r[4] for r in rows if r[0].startswith(case)]
         nodes20 = [r[6] for r in rows if r[0].startswith(case)]
+        if case == "blockbuster":
+            # No trials=20 band on this caliber (the 11-19 rerun ran a
+            # different model); the trials=20 column is not scored.
+            print(f"  {case}: trials=50 {score_milestone_case(nodes50)}")
+            continue
         print(f"  {case}: trials=20 {score_milestone_case(nodes20)} "
               f"-> trials=50 {score_milestone_case(nodes50)}")
     print("  huawei: PASS (qualitative carve-out — not scored by this rule)")
     out = {}
     for label, actual, w0, b, s, a20, s20 in rows:
-        out[label] = {
+        entry = {
             "actual": actual, "w0": w0,
             "trials50": {"p10": b["p10"], "p50": b["p50"], "p90": b["p90"],
                          "width": round(s.width, 4), "width_ratio": round(s.width_ratio, 4),
@@ -125,11 +141,13 @@ def main():
                          "band_edge_distance_rel": round(s.band_edge_distance_rel, 6),
                          "old_verdict": old_rule_verdict(b["p10"], b["p90"], actual),
                          "new_verdict": s.verdict, "new_reason": s.reason},
-            "trials20": {"p10": a20["p10"], "p50": a20["p50"], "p90": a20["p90"],
-                         "band_edge_distance": s20.band_edge_distance,
-                         "band_edge_distance_rel": round(s20.band_edge_distance_rel, 6),
-                         "new_verdict": s20.verdict, "new_reason": s20.reason},
         }
+        if s20 is not None:
+            entry["trials20"] = {"p10": a20["p10"], "p50": a20["p50"], "p90": a20["p90"],
+                                 "band_edge_distance": s20.band_edge_distance,
+                                 "band_edge_distance_rel": round(s20.band_edge_distance_rel, 6),
+                                 "new_verdict": s20.verdict, "new_reason": s20.reason}
+        out[label] = entry
     json.dump(out, open(os.path.join(HERE, "milestone-scores.json"), "w"),
               indent=2, ensure_ascii=False)
     print("\nwrote milestone-scores.json")

@@ -122,12 +122,25 @@ _WIDTH_TOLERANCE = 1e-9
 #: - nokia market_share ticks 3/5: ensemble ed7e3435-3c16-4c77-8d23-186b2f4dfd8b
 #:   (base run 453f8429-86bc-4d2b-bbd8-99894c28f1ac) — unchanged by the
 #:   ON re-determination (share untouched by downside shocks).
+#: - blockbuster revenue ticks 3/5: frozen 2026-11-26 on the ON caliber
+#:   (downside ON, trials 50, seed 42, mainline 603816b; branch
+#:   fix/blockbuster-partial-case) from the case's own anchor bands —
+#:   the same ON-caliber convention as the 2026-11-25 re-determination,
+#:   so the width leg passes by construction (ratio 1.00) for this
+#:   model and the verdicts turn on in-band only. Source: the case run
+#:   dir ``~/.cache/mingjian-backtest/blockbuster-partial-2026-11-26``
+#:   (anchor 072ff4ce-126d-4431-8d08-358158a2455e), bands in
+#:   ``research/strategy-engine/blockbuster-partial-case-2026-11-26/
+#:   analyze_blockbuster.json``. PARTIAL case: revenue milestones only,
+#:   profit not built (Ho 2026-11-24).
 BASELINE_BAND_WIDTHS: dict[tuple[str, str, int], float] = {
     ("desay-2015", "revenue", 3): 2571.0679,
     ("desay-2020", "revenue", 3): 8874.4008,
     ("desay-2018", "revenue", 3): 5811.885,
     ("nokia", "market_share", 3): 0.1127,
     ("nokia", "market_share", 5): 0.1091,
+    ("blockbuster", "revenue", 3): 1.7192,
+    ("blockbuster", "revenue", 5): 3.1836,
 }
 
 #: Verdict ordering, worst first. A case verdict is the worst node verdict.

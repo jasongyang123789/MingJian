@@ -52,12 +52,21 @@ DESAY_2020_ON50 = {"p10": 17510.4529, "p50": 22353.714, "p90": 26384.8537}
 DESAY_2018_ON50 = {"p10": 12076.7565, "p50": 15177.4829, "p90": 17888.6415}
 NOKIA_YR3 = {"p10": 0.2155, "p50": 0.2553, "p90": 0.3282}
 NOKIA_YR5 = {"p10": 0.0534, "p50": 0.0955, "p90": 0.1625}
+# BLOCKBUSTER_ON50 = anchor revenue bands from the partial-case run
+# (branch fix/blockbuster-partial-case, mainline 603816b, downside ON,
+# trials 50, seed 42; anchor 072ff4ce-126d-4431-8d08-358158a2455e).
+# Actuals are Blockbuster 10-K total revenues: 2003 $5,911.7M, 2005
+# $5,551.1M (2009 10-K reclassified series — see the case report).
+BLOCKBUSTER_REV_TICK3 = {"p10": 3.9337, "p50": 4.7867, "p90": 5.6529}
+BLOCKBUSTER_REV_TICK5 = {"p10": 2.2822, "p50": 3.7822, "p90": 5.4658}
 
 ACTUAL_2015 = 5408.74
 ACTUAL_2020 = 21908.0
 ACTUAL_2018 = 9569.0
 ACTUAL_NOKIA_YR3 = 0.27
 ACTUAL_NOKIA_YR5 = 0.064
+ACTUAL_BLOCKBUSTER_YR3 = 5.9117
+ACTUAL_BLOCKBUSTER_YR5 = 5.5511
 
 
 def _score(band, actual, w0):
@@ -79,6 +88,8 @@ def test_frozen_baseline_widths_match_db_extraction():
         ("desay-2018", "revenue", 3): 5811.885,
         ("nokia", "market_share", 3): 0.1127,
         ("nokia", "market_share", 5): 0.1091,
+        ("blockbuster", "revenue", 3): 1.7192,
+        ("blockbuster", "revenue", 5): 3.1836,
     }
     # And each Desay value equals P90-P10 of the ON50 band it freezes.
     assert BASELINE_BAND_WIDTHS[("desay-2015", "revenue", 3)] == pytest.approx(
@@ -95,6 +106,12 @@ def test_frozen_baseline_widths_match_db_extraction():
     )
     assert BASELINE_BAND_WIDTHS[("nokia", "market_share", 5)] == pytest.approx(
         NOKIA_YR5["p90"] - NOKIA_YR5["p10"], abs=1e-9
+    )
+    assert BASELINE_BAND_WIDTHS[("blockbuster", "revenue", 3)] == pytest.approx(
+        BLOCKBUSTER_REV_TICK3["p90"] - BLOCKBUSTER_REV_TICK3["p10"], abs=1e-9
+    )
+    assert BASELINE_BAND_WIDTHS[("blockbuster", "revenue", 5)] == pytest.approx(
+        BLOCKBUSTER_REV_TICK5["p90"] - BLOCKBUSTER_REV_TICK5["p10"], abs=1e-9
     )
 
 
@@ -190,6 +207,28 @@ def test_nokia_case_verdict_is_worst_node_partial():
     ]
     assert [n.verdict for n in nodes] == ["PASS", "PARTIAL"]
     assert score_milestone_case(nodes) == "PARTIAL"
+
+
+# --- Blockbuster (partial case): both nodes fail out of band -----------------
+def test_blockbuster_both_nodes_fail_out_of_band():
+    # PARTIAL case (direction + magnitude + revenue milestone; profit
+    # not built). Both realized revenues sit ABOVE the anchor band's
+    # upper edge — the diffusion model front-loads the collapse while
+    # reality kept growing to the 2004 peak — so both nodes FAIL
+    # out_of_band regardless of the width cap (width = new W0 exactly,
+    # ratio 1.0). Tick 3 actual 5.9117 vs P90 5.6529; tick 5 actual
+    # 5.5511 vs P90 5.4658.
+    s3 = _score(BLOCKBUSTER_REV_TICK3, ACTUAL_BLOCKBUSTER_YR3,
+                BASELINE_BAND_WIDTHS[("blockbuster", "revenue", 3)])
+    assert s3.verdict == "FAIL" and s3.reason == "out_of_band"
+    assert s3.in_band is False and s3.width_ratio == pytest.approx(1.0)
+    assert s3.point_error == pytest.approx(0.1903, abs=1e-4)  # -19.0% (P50 below actual)
+    s5 = _score(BLOCKBUSTER_REV_TICK5, ACTUAL_BLOCKBUSTER_YR5,
+                BASELINE_BAND_WIDTHS[("blockbuster", "revenue", 5)])
+    assert s5.verdict == "FAIL" and s5.reason == "out_of_band"
+    assert s5.in_band is False and s5.width_ratio == pytest.approx(1.0)
+    assert s5.point_error == pytest.approx(0.3187, abs=1e-4)  # -31.9% (P50 below actual)
+    assert score_milestone_case([s3, s5]) == "FAIL"
 
 
 # --- Bandwidth robustness: widening can never improve a verdict -------------
