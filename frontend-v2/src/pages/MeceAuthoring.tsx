@@ -15,7 +15,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 
-const DEFAULT_DIMENSIONS = ['Demand', 'Capability', 'Economics', 'Risk']
+const DEFAULT_DIMENSIONS = ['需求', '能力', '经济性', '风险']
 
 function splitLines(text: string): string[] {
   return text
@@ -32,7 +32,7 @@ export default function MeceAuthoring() {
   const [topic, setTopic] = useState('')
   const [contextText, setContextText] = useState('')
   const [dimensionsText, setDimensionsText] = useState(DEFAULT_DIMENSIONS.join('\n'))
-  const [outputLanguage, setOutputLanguage] = useState('English')
+  const [outputLanguage, setOutputLanguage] = useState('中文')
   const [proposal, setProposal] = useState<MeceProposalRead | null>(null)
   const [proposalCount, setProposalCount] = useState(0)
   const [proposing, setProposing] = useState(false)
@@ -53,7 +53,7 @@ export default function MeceAuthoring() {
         context_lines: splitLines(contextText),
         suggested_dimensions: splitLines(dimensionsText),
         existing_tree: existingTree,
-        output_language: outputLanguage.trim() || 'English',
+        output_language: outputLanguage.trim() || '中文',
       })
       setProposal(result)
       setProposalCount((count) => count + 1)
@@ -72,7 +72,7 @@ export default function MeceAuthoring() {
     try {
       const parsed: unknown = JSON.parse(validateJson)
       if (typeof parsed !== 'object' || parsed === null || !('root' in parsed)) {
-        setValidateError('JSON 必须是一个包含 root 的分解树对象（{ topic, root: { name, scope, children } }）。')
+        setValidateError('JSON 必须是一个包含 root 的分解树对象。')
         return
       }
       const result = await meceApi.validate(parsed as DecompositionTree)
@@ -99,7 +99,7 @@ export default function MeceAuthoring() {
       <div>
         <h1 className="text-2xl font-bold text-slate-100">MECE 编写</h1>
         <p className="mt-1 text-sm text-slate-500">
-          提示词提议分解树，Sprint 1 代码校验器拍板：提议的树必须通过校验才能挂到 Run 上
+          提示词提议分解树，Sprint 1 代码校验器拍板：提议的树必须通过校验才能挂到推演上
         </p>
       </div>
 
@@ -118,7 +118,7 @@ export default function MeceAuthoring() {
               id="mece-topic"
               value={topic}
               onChange={(event) => setTopic(event.target.value)}
-              placeholder="例如：Should we launch the AI customer-service line?"
+              placeholder="例如：我们是否应该推出 AI 客服产品线？"
               className={inputClassName()}
             />
           </div>
@@ -130,7 +130,7 @@ export default function MeceAuthoring() {
               id="mece-context"
               value={contextText}
               onChange={(event) => setContextText(event.target.value)}
-              placeholder={'20-person SaaS team\n12-month horizon\nNo new funding round'}
+              placeholder={'20 人 SaaS 团队\n12 个月周期\n无新一轮融资'}
               rows={3}
               className={inputClassName()}
             />
@@ -175,12 +175,12 @@ export default function MeceAuthoring() {
                 disabled={proposing}
                 className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
               >
-                用这棵树再提议一次（existing_tree 修订）
+                用这棵树再提议一次（基于已有树修订）
               </button>
             )}
             {proposalCount > 0 && (
               <span className="text-xs text-slate-500">
-                本次会话已提议 {proposalCount} 次（修订是单步的，没有自动 revise-until-valid 循环）
+                本次会话已提议 {proposalCount} 次（修订是单步的，没有自动修订直至通过的循环）
               </span>
             )}
           </div>
@@ -211,12 +211,12 @@ export default function MeceAuthoring() {
             <MeceValidationView validation={proposal.validation} />
             {!proposal.validation.is_mece && (
               <p className="text-xs leading-5 text-slate-400">
-                这棵树未通过校验：挂到 Run 上会被创建门禁拒绝（400 mece_validation_failed，零行写入）。可以用它作为
-                existing_tree 再提议一次，或在下面手工校验修改后的 JSON。
+                这棵树未通过校验：挂到推演上会被创建门禁拒绝（错误 400，零行写入）。可以用它作为
+                已有树再提议一次，或在下面手工校验修改后的 JSON。
               </p>
             )}
             <details className="rounded-lg border border-slate-800/60 p-3">
-              <summary className="cursor-pointer text-xs text-slate-400">树 JSON（可用于 Run 创建请求）</summary>
+              <summary className="cursor-pointer text-xs text-slate-400">树 JSON（可用于推演创建请求）</summary>
               <pre className="mt-2 overflow-x-auto font-mono text-[11px] leading-5 text-slate-300">
                 {JSON.stringify(proposal.proposal, null, 2)}
               </pre>
@@ -229,7 +229,7 @@ export default function MeceAuthoring() {
         <EmptyState
           icon="🌳"
           title="尚未提议"
-          description="填写决策主题并提议，LLM 返回的树会连同校验 verdict 一起显示在这里"
+          description="填写决策主题并提议，LLM 返回的树会连同校验结果一起显示在这里"
         />
       )}
 
@@ -240,7 +240,7 @@ export default function MeceAuthoring() {
             aria-label="分解树 JSON"
             value={validateJson}
             onChange={(event) => setValidateJson(event.target.value)}
-            placeholder={'{\n  "topic": "...",\n  "root": { "name": "...", "scope": ["..."], "children": [] }\n}'}
+            placeholder="在此粘贴分解树 JSON（包含 topic 与 root；root 下有 name、scope、children）"
             rows={6}
             className={`${inputClassName()} font-mono text-xs`}
           />

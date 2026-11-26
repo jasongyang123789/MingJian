@@ -26,6 +26,7 @@ import { Card, CardBody, CardHeader } from '../components/ui/Card'
 import { EmptyState } from '../components/ui/EmptyState'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { statusLabel } from '../components/ui/dataSurfaceUtils'
 import { useApi } from '../hooks/useApi'
 
 const INPUT_CLASS =
@@ -36,7 +37,7 @@ const BUTTON_CLASS =
 function RunLauncher({ onCreated }: { onCreated: (runId: string) => void }) {
   const [tickCount, setTickCount] = useState('6')
   const [seed, setSeed] = useState('7')
-  const [companyName, setCompanyName] = useState('Auto Test OEM')
+  const [companyName, setCompanyName] = useState('汽车测试厂商')
   const [splitJson, setSplitJson] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +57,7 @@ function RunLauncher({ onCreated }: { onCreated: (runId: string) => void }) {
     try {
       const payload: Record<string, unknown> = {
         company_id: 'auto-cockpit-oem',
-        company_name: companyName || 'Auto Test OEM',
+        company_name: companyName || '汽车测试厂商',
         market: 'china-auto',
         domain_id: 'automotive',
         actor_template: 'tier1_supplier',
@@ -67,7 +68,7 @@ function RunLauncher({ onCreated }: { onCreated: (runId: string) => void }) {
       if (splitStructure !== undefined) payload.split_structure = splitStructure
       const created = (await simulationApi.createRun(payload)) as { id?: unknown }
       if (typeof created.id !== 'string') {
-        setError('创建 Run 未返回 id。')
+        setError('创建推演未返回编号。')
         return
       }
       onCreated(created.id)
@@ -121,7 +122,7 @@ function RunLauncher({ onCreated }: { onCreated: (runId: string) => void }) {
           className={`${INPUT_CLASS} min-h-24 font-mono text-xs`}
           value={splitJson}
           onChange={(event) => setSplitJson(event.target.value)}
-          placeholder='{"oems": [...]}'
+          placeholder="在此填写拆分结构：整车厂列表，每家含编号、名称与供应份额"
         />
       </label>
       {error && <ErrorBanner message={error} />}
@@ -137,15 +138,15 @@ function TrajectorySection({ runId }: { runId: string }) {
     return (
       <EmptyState
         title="暂无轨迹"
-        description="该 Run 尚未存储任何快照。先运行一次汽车模板推演，轨迹会在此出现。"
+        description="该推演尚未存储任何快照。先运行一次汽车模板推演，轨迹会在此出现。"
       />
     )
   }
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-400">
-        Run 状态：{data.run_status} · {data.points.length} 个快照点（含 tick 0 初始状态）
-        {data.multiple_actors ? ` · 多 actor（${data.actor_ids.join(', ')}），每 tick 取首个 actor` : ''}
+        推演状态：{statusLabel(data.run_status)} · {data.points.length} 个快照点（含 tick 0 初始状态）
+        {data.multiple_actors ? ` · 多个主体（${data.actor_ids.join(', ')}），每 tick 取首个 actor` : ''}
       </p>
       <TrajectoryChart trajectory={data} />
     </div>
@@ -246,9 +247,9 @@ function StructureBody({
               </label>
             ))}
             <label className="flex flex-col gap-1 text-xs text-slate-400">
-              自有供应商 id（留空则不归属）
+              自有供应商编号（留空则不归属）
               <input
-                aria-label="自有供应商 id"
+                aria-label="自有供应商编号"
                 className={INPUT_CLASS}
                 value={ownSupplierId}
                 onChange={(event) => setOwnSupplierId(event.target.value)}
@@ -334,14 +335,14 @@ function StructureSection({ runId }: { runId: string }) {
     if (error.includes('automotive_no_split_structure')) {
       return (
         <EmptyState
-          title="该 Run 未带拆分结构"
+          title="该推演未带拆分结构"
           description="S 层计算与共生提示都需要 Run 在创建时附带的拆分结构（OEM → 牌名 → 代际 → 配置 → 产品 → 供应商份额）。用上方启动器重新运行一次并粘贴拆分结构 JSON。"
         />
       )
     }
     return <ErrorBanner message={error} onRetry={reload} />
   }
-  if (data === null) return <EmptyState title="暂无拆分结构" description="该 Run 未存储拆分结构。" />
+  if (data === null) return <EmptyState title="暂无拆分结构" description="该推演未存储拆分结构。" />
 
   // Keyed by run: switching runs remounts the body, resetting the form
   // and per-run results without any set-state-in-effect.
@@ -397,12 +398,12 @@ export default function Automotive() {
           runs={runs as CockpitRun[]}
           selectedId={selectedRunId}
           onSelect={selectRun}
-          label="选择模拟 Run"
+          label="选择推演"
         />
       )}
 
       {!selectedRunId && (
-        <EmptyState title="请选择一个 Run" description="轨迹、S 层与共生提示都展示所选 Run 已存储的数据" />
+        <EmptyState title="请选择一个推演" description="轨迹、S 层与共生提示都展示所选推演已存储的数据" />
       )}
 
       {selectedRunId && (

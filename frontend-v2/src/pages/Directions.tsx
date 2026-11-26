@@ -185,7 +185,7 @@ export default function Directions() {
     const names = drafts.map((draft) => draft.name.trim())
     if (names.some((name) => name.length === 0)) return '每个方向都需要填写名称。'
     if (new Set(names).size !== names.length) return '方向名称不能重复。'
-    if (drafts.some((draft) => !draft.sourceRunId)) return '每个方向都需要选择来源 Run。'
+    if (drafts.some((draft) => !draft.sourceRunId)) return '每个方向都需要选择来源推演。'
     return null
   }
 
@@ -260,7 +260,7 @@ export default function Directions() {
       return
     }
     if (!editSourceRunId) {
-      setMappingError('映射需要选择来源 Run。')
+      setMappingError('映射需要选择来源推演。')
       return
     }
     setSavingMapping(true)
@@ -433,27 +433,27 @@ export default function Directions() {
         <p className="text-sm text-slate-400">
           从已存储的数值结果与商议输出确定性地组合决策方向：每个方向带结果分布、关键驱动、调头信号、事前验尸与
           48 小时第一步，并标注出处。方向定义由你显式给出，或由确定性规则推导、LLM
-          提案（须经你评审接受）、变量覆盖（新建分支 Run）存为映射——简报只用「可用」状态的映射，不凭空产生方向。
+          提案（须经你评审接受）、变量覆盖（新建分支推演）存为映射——简报只用「可用」状态的映射，不凭空产生方向。
         </p>
         <CockpitNav />
       </div>
 
       <Card>
         <CardBody>
-          <RunPicker runs={runList} selectedId={selectedRunId} onSelect={selectRun} label="锚定 Run" />
+          <RunPicker runs={runList} selectedId={selectedRunId} onSelect={selectRun} label="锚定推演" />
         </CardBody>
       </Card>
 
       {!selectedRunId ? (
-        <EmptyState title="请选择一个锚定 Run" description="简报围绕锚定 Run 的 MECE 结构与领域组织；各方向可引用其他 Run 的 ensemble。" />
+        <EmptyState title="请选择一个锚定推演" description="简报围绕锚定推演的 MECE 结构与领域组织；各方向可引用其他推演的模拟集合。" />
       ) : (
         <>
           <Card>
             <CardHeader title="推导方向" />
             <CardBody className="space-y-4">
               <p className="text-sm text-slate-400">
-                确定性规则（最高 P50、最稳健、基线对照）在锚定 Run 的场景家族中挑选方向并存为映射；不新建任何
-                Run，也不调用 LLM。每条规则的结果都会如实列出：选了什么、没选到、重复了，还是因你改过而跳过。
+                确定性规则（最高 P50、最稳健、基线对照）在锚定推演的场景家族中挑选方向并存为映射；不新建任何
+                推演，也不调用 LLM。每条规则的结果都会如实列出：选了什么、没选到、重复了，还是因你改过而跳过。
               </p>
               {deriveError && <ErrorBanner message={deriveError} />}
               <button
@@ -467,7 +467,7 @@ export default function Directions() {
               {derivation && (
                 <div className="space-y-2">
                   <p className="text-xs text-slate-500">
-                    规则版本 {derivation.rules_version} · 场景家族 {derivation.family_size} 个 Run ·{' '}
+                    规则版本 {derivation.rules_version} · 场景家族 {derivation.family_size} 个推演 ·{' '}
                     {derivation.candidates_considered} 个候选 · 哈希{' '}
                     <span className="break-all font-mono">{derivation.derivation_hash}</span>
                   </p>
@@ -670,7 +670,7 @@ export default function Directions() {
                                 htmlFor={`mapping-run-${mapping.id}`}
                                 className="mb-1 block text-xs text-slate-500"
                               >
-                                来源 Run
+                                来源推演
                               </label>
                               <select
                                 id={`mapping-run-${mapping.id}`}
@@ -727,8 +727,8 @@ export default function Directions() {
                       ) : reforkingId === mapping.id ? (
                         <div className="space-y-3">
                           <p className="text-xs text-slate-500">
-                            固定值已写进该映射的分支 Run：保存会新建一个分支
-                            Run 并把该映射指过去（同名、同位置），旧分支 Run 保留不动。
+                            固定值已写进该映射的分支推演：保存会新建一个分支
+                            推演并把该映射指过去（同名、同位置），旧分支推演保留不动。
                           </p>
                           {overrideRecord && overrideRecord.overrides.length > 0 ? (
                             <>
@@ -886,7 +886,7 @@ export default function Directions() {
             <CardBody className="space-y-4">
               <div>
                 <label htmlFor="narrative-topic" className="mb-1 block text-xs text-slate-500">
-                  主题（留空则使用 MECE 主题或 Run id）
+                  主题（留空则使用 MECE 主题或推演编号）
                 </label>
                 <input
                   id="narrative-topic"
@@ -910,8 +910,8 @@ export default function Directions() {
                 activeMappings.length === 0 ? (
                   <p className="text-sm text-slate-400">
                     {mappings.length === 0
-                      ? '这个 Run 还没有已存方向映射——先推导方向，或取消勾选显式定义方向。'
-                      : '这个 Run 的已存映射都不在可用状态——先在上方评审接受提案，或取消勾选显式定义方向。'}
+                      ? '这个推演还没有已存方向映射——先推导方向，或取消勾选显式定义方向。'
+                      : '这个推演的已存映射都不在可用状态——先在上方评审接受提案，或取消勾选显式定义方向。'}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -957,7 +957,7 @@ export default function Directions() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <div>
                           <label htmlFor={`direction-run-${index}`} className="mb-1 block text-xs text-slate-500">
-                            来源 Run（提供 ensemble 分布）
+                            来源推演（提供模拟集合分布）
                           </label>
                           <select
                             id={`direction-run-${index}`}
@@ -1035,7 +1035,7 @@ export default function Directions() {
               </button>
               <p className="text-xs text-slate-500">
                 生成是确定性的：相同输入产生字节相同的简报；重新生成会产生新版本，永不覆盖。来源
-                Run 必须已完成且存有 ensemble，否则生成会被拒绝并指明先运行的接口。只有「可用」状态的映射会用于生成；待评审与已拒绝的映射不会进入简报。
+                推演必须已完成且存有模拟集合，否则生成会被拒绝并指明先运行的接口。只有「可用」状态的映射会用于生成；待评审与已拒绝的映射不会进入简报。
               </p>
             </CardBody>
           </Card>
@@ -1048,7 +1048,7 @@ export default function Directions() {
           ) : narratives.length === 0 ? (
             <EmptyState
               title="尚无简报"
-              description="为这个 Run 生成第一份简报；历史版本会在这里按最新优先列出。"
+              description="为这个推演生成第一份简报；历史版本会在这里按最新优先列出。"
             />
           ) : (
             <>

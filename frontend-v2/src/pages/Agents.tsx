@@ -50,7 +50,7 @@ export default function Agents() {
         {[
           { label: '内置智能体', value: String(agents.length), icon: Bot },
           { label: '已配置 Key', value: `${ready}/${agents.length}`, icon: ShieldCheck },
-          { label: '配置方式', value: '文件/env', icon: Wifi },
+          { label: '配置方式', value: '文件 / 环境变量', icon: Wifi },
         ].map((item) => (
           <Card key={item.label} className="p-5">
             <div className="mb-3 flex items-center justify-between">
@@ -81,7 +81,7 @@ export default function Agents() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-200">{agent.name || key}</p>
                     <p className="mt-1 truncate text-xs text-slate-500">
-                      {key} · {agent.effective_model || '默认模型'} · priority {agent.priority ?? '-'}
+                      {agent.effective_model || '默认模型'}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

@@ -185,7 +185,7 @@ function CreateSeminarForm({
   const [maxRounds, setMaxRounds] = useState('3')
   const [quietRounds, setQuietRounds] = useState('2')
   const [maxConcurrency, setMaxConcurrency] = useState('3')
-  const [outputLanguage, setOutputLanguage] = useState('English')
+  const [outputLanguage, setOutputLanguage] = useState('中文')
   const [includePremortem, setIncludePremortem] = useState(true)
   const [failureDate, setFailureDate] = useState('one year from now')
   const [contextLines, setContextLines] = useState('')
@@ -291,7 +291,7 @@ function CreateSeminarForm({
       max_rounds: Number(maxRounds),
       quiet_rounds: Number(quietRounds),
       max_concurrency: Number(maxConcurrency),
-      output_language: outputLanguage.trim() || 'English',
+      output_language: outputLanguage.trim() || '中文',
       include_premortem: includePremortem,
       failure_date: failureDate,
       chair_model: chairPayload,

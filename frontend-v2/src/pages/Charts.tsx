@@ -40,8 +40,8 @@ function EnsembleSection({ runId, result }: { runId: string; result: MonteCarloR
   if (trialValues === null) {
     return (
       <EmptyState
-        title="Trial 值不可用"
-        description="该 ensemble 存在，但 trial 行缺失或不完整，无法画出分布直方图。此处不会用摘要统计量伪造分布。"
+        title="试验值不可用"
+        description="该模拟集合存在，但试验行缺失或不完整，无法画出分布直方图。此处不会用摘要统计量伪造分布。"
       />
     )
   }
@@ -59,7 +59,7 @@ function RobustnessSection({ runId, refreshSignal }: { runId: string; refreshSig
     return (
       <EmptyState
         title="暂无稳健性分析"
-        description="该 Run 尚未存储任何稳健性分析结果。先运行一次蒙特卡洛 ensemble，再运行龙卷风、bootstrap 或阈值搜索分析。"
+        description="该推演尚未存储任何稳健性分析结果。先运行一次蒙特卡洛模拟集合，再运行龙卷风、自助法或阈值搜索分析。"
       />
     )
   }
@@ -73,21 +73,21 @@ function RobustnessSection({ runId, refreshSignal }: { runId: string; refreshSig
           <>
             <EmptyState
               title="尚未运行龙卷风分析"
-              description="对该 Run 的 ensemble 运行一次龙卷风分析（POST /runs/{id}/robustness/tornado），图表会在此出现。"
+              description="对该推演的模拟集合运行一次龙卷风分析，图表会在此出现。"
             />
             <TornadoLauncher runId={runId} onLaunched={reload} />
           </>
         )}
       </div>
       <div>
-        <h4 className="mb-2 text-sm font-medium text-slate-200">Bootstrap 区间</h4>
+        <h4 className="mb-2 text-sm font-medium text-slate-200">自助法区间</h4>
         {data.bootstrap ? (
           <BootstrapChart bootstrap={data.bootstrap} />
         ) : (
           <>
             <EmptyState
-              title="尚未运行 Bootstrap 分析"
-              description="对该 Run 的 ensemble 运行一次 bootstrap 分析（POST /runs/{id}/robustness/bootstrap），图表会在此出现。"
+              title="尚未运行自助法分析"
+              description="对该推演的模拟集合运行一次自助法分析，图表会在此出现。"
             />
             <BootstrapLauncher runId={runId} onLaunched={reload} />
           </>
@@ -101,7 +101,7 @@ function RobustnessSection({ runId, refreshSignal }: { runId: string; refreshSig
           <>
             <EmptyState
               title="尚未运行阈值搜索"
-              description="对该 Run 的 ensemble 运行一次阈值搜索（POST /runs/{id}/robustness/threshold-search），图表会在此出现。"
+              description="对该推演的模拟集合运行一次阈值搜索，图表会在此出现。"
             />
             <ThresholdSearchLauncher runId={runId} onLaunched={reload} />
           </>
@@ -161,25 +161,25 @@ export default function Charts() {
           runs={runs as CockpitRun[]}
           selectedId={selectedRunId}
           onSelect={selectRun}
-          label="选择模拟 Run"
+          label="选择推演"
         />
       )}
 
       {!selectedRunId && (
-        <EmptyState title="请选择一个 Run" description="图表展示该 Run 已存储的 ensemble 与稳健性分析结果" />
+        <EmptyState title="请选择一个推演" description="图表展示该推演已存储的模拟集合与稳健性分析结果" />
       )}
 
       {selectedRunId && (
         <Card>
-          <CardHeader title={`Ensemble 分布（${selectedRun?.id ?? selectedRunId}）`} />
+          <CardHeader title={`模拟集合分布（${selectedRun?.id ?? selectedRunId}）`} />
           <CardBody>
             {ensembleLoading && <LoadingSpinner />}
             {ensembleError && <ErrorBanner message={ensembleError} onRetry={reloadEnsemble} />}
             {!ensembleLoading && !ensembleError && ensemble === null && (
               <>
                 <EmptyState
-                  title="暂无 Ensemble 结果"
-                  description="该 Run 尚未存储蒙特卡洛 ensemble 结果。先对该 Run 运行一次 ensemble（POST /runs/{id}/monte-carlo），分布图会在此出现。"
+                  title="暂无模拟集合结果"
+                  description="该推演尚未存储蒙特卡洛模拟集合结果。先对该推演运行一次模拟集合，分布图会在此出现。"
                 />
                 <MonteCarloLauncher runId={selectedRunId} onLaunched={handleEnsembleLaunched} />
               </>

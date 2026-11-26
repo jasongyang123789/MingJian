@@ -220,7 +220,7 @@ describe('ComparisonView', () => {
     render(<ComparisonView comparison={loopComparison} />)
     await waitFor(() => {
       expect(
-        screen.getByText('旧 ensemble 已不是该 Run 当前存储的 ensemble'),
+        screen.getByText('旧模拟集合已不是该推演当前存储的模拟集合'),
       ).toBeInTheDocument()
     })
     expect(screen.getAllByText(/直方图来自存储的 trial 值/)).toHaveLength(1)

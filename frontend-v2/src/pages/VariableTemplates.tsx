@@ -34,7 +34,18 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { StatusBadge } from '../components/ui/StatusBadge'
+import { domainLabel } from '../components/ui/dataSurfaceUtils'
 import { useApi } from '../hooks/useApi'
+
+/** 内置预设名 → 中文显示名；自定义模板用后端返回的名字。 */
+const BUILTIN_PRESET_NAMES: Record<string, string> = {
+  'builtin:automotive': '内置汽车预设',
+  'builtin:corporate': '内置企业预设',
+}
+
+function displayTemplateName(template: VariableTemplateRead): string {
+  return BUILTIN_PRESET_NAMES[template.id] ?? template.name
+}
 
 type Mode =
   | { kind: 'none' }
@@ -145,7 +156,7 @@ export default function VariableTemplates() {
         setConfirmingDeleteId(null)
         setDeleteError(null)
         const next = seed
-          ? { ...draftFromTemplate(seed), name: `${seed.name}（副本）` }
+          ? { ...draftFromTemplate(seed), name: `${displayTemplateName(seed)}（副本）` }
           : emptyDraft(domains[0] ?? 'corporate')
         setDraft(next)
         setBaseline(draftKey(next))
@@ -224,7 +235,7 @@ export default function VariableTemplates() {
             setSaveError(null)
             setSaveValidation(null)
           }
-          setNotice(`已删除模板「${template.name}」。已有 Run 带有该模板的快照，不受影响。`)
+          setNotice(`已删除模板「${template.name}」。已有推演带有该模板的快照，不受影响。`)
         } catch (error: unknown) {
           const info = parseApiError(error)
           setDeleteError(info.code ? `${info.code}：${info.message}` : info.message)
@@ -283,7 +294,8 @@ export default function VariableTemplates() {
             <EmptyState title="暂无模板" description="内置预设未返回——后端可能未正确注册领域包。" />
           )}
           {templates && templates.length > 0 && (
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
                   <th className="py-2 pr-3 font-medium">名称</th>
@@ -302,10 +314,9 @@ export default function VariableTemplates() {
                   return (
                     <tr key={template.id} className={isSelected ? 'bg-slate-800/30' : undefined}>
                       <td className="py-2 pr-3">
-                        <span className="font-medium text-slate-200">{template.name}</span>
-                        <span className="ml-2 font-mono text-[11px] text-slate-500">{template.id}</span>
+                        <span className="font-medium text-slate-200">{displayTemplateName(template)}</span>
                       </td>
-                      <td className="py-2 pr-3 font-mono text-xs">{template.domain_id}</td>
+                      <td className="py-2 pr-3 text-xs">{domainLabel(template.domain_id) || '默认'}</td>
                       <td className="py-2 pr-3 font-mono text-xs">{formatNumber(template.variables.length)}</td>
                       <td className="py-2 pr-3 font-mono text-xs">{formatNumber(template.formulas.length)}</td>
                       <td className="py-2 pr-3">
@@ -347,15 +358,7 @@ export default function VariableTemplates() {
                             >
                               复制为新模板
                             </button>
-                            {template.is_builtin ? (
-                              <button
-                                disabled
-                                title="内置模板只读，不可删除"
-                                className="cursor-not-allowed text-xs text-slate-600"
-                              >
-                                删除
-                              </button>
-                            ) : (
+                            {!template.is_builtin && (
                               <button
                                 onClick={() => {
                                   setDeleteError(null)
@@ -373,7 +376,8 @@ export default function VariableTemplates() {
                   )
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </CardBody>
       </Card>
@@ -381,7 +385,7 @@ export default function VariableTemplates() {
       {mode.kind === 'view' && selected && (
         <Card>
           <CardHeader
-            title={`模板详情：${selected.name}`}
+            title={`模板详情：${displayTemplateName(selected)}`}
             action={
               <button
                 onClick={() => startCreate(selected)}

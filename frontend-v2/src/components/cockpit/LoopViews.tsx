@@ -179,7 +179,7 @@ export function EvaluationHistory({ evaluations }: { evaluations: LoopEvaluation
     return (
       <EmptyState
         title="暂无监测评估"
-        description="监测 worker 定期评估触发器并记录结果；也可以手动运行一次监测。评估只记录触发状态，不创建 Run、不推进评审。"
+        description="监测任务定期评估触发器并记录结果；也可以手动运行一次监测。评估只记录触发状态，不创建推演、不推进评审。"
       />
     )
   }
@@ -262,7 +262,7 @@ export function ResimulationView({ record }: { record: ResimulationRecord }) {
         </div>
       )}
       {changes.length === 0 && (
-        <p className="text-xs text-slate-500">无显式变更：分解、模板与绑定、seed、tick 数全部继承基线 Run。</p>
+        <p className="text-xs text-slate-500">无显式变更：分解、模板与绑定、随机种子、步数全部继承基线推演。</p>
       )}
     </div>
   )
@@ -436,8 +436,8 @@ export function ComparisonHistograms({ comparison }: { comparison: EnsembleCompa
         <h5 className="mb-2 text-sm font-medium text-slate-200">旧 Ensemble 分布</h5>
         {!oldMatches ? (
           <EmptyState
-            title="旧 ensemble 已不是该 Run 当前存储的 ensemble"
-            description="该 Run 之后又运行了新的 ensemble；比较对应的是旧 ensemble，此处不以新分布代替。"
+            title="旧模拟集合已不是该推演当前存储的模拟集合"
+            description="该推演之后又运行了新的模拟集合；比较对应的是旧模拟集合，此处不以新分布代替。"
           />
         ) : oldValues === null ? (
           <EmptyState
@@ -452,8 +452,8 @@ export function ComparisonHistograms({ comparison }: { comparison: EnsembleCompa
         <h5 className="mb-2 text-sm font-medium text-slate-200">新 Ensemble 分布</h5>
         {!newMatches ? (
           <EmptyState
-            title="新 ensemble 已不是该 Run 当前存储的 ensemble"
-            description="该 Run 之后又运行了新的 ensemble；比较对应的是旧 ensemble，此处不以新分布代替。"
+            title="新模拟集合已不是该推演当前存储的模拟集合"
+            description="该推演之后又运行了新的模拟集合；比较对应的是旧模拟集合，此处不以新分布代替。"
           />
         ) : newValues === null ? (
           <EmptyState

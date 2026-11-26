@@ -269,7 +269,7 @@ describe('Directions', () => {
   }
 
   async function pickAnchorRun() {
-    fireEvent.change(await screen.findByLabelText('锚定 Run'), { target: { value: 'run-anchor' } })
+    fireEvent.change(await screen.findByLabelText('锚定推演'), { target: { value: 'run-anchor' } })
     await screen.findByRole('button', { name: '生成简报' })
   }
 
@@ -280,7 +280,7 @@ describe('Directions', () => {
 
   it('asks for a run, then shows the generate form with MECE branch checkboxes', async () => {
     renderPage()
-    expect(await screen.findByText('请选择一个锚定 Run')).toBeTruthy()
+    expect(await screen.findByText('请选择一个锚定推演')).toBeTruthy()
     await pickAnchorRun()
     expect(screen.getByLabelText('方向名称')).toBeTruthy()
     expect(screen.getByText('Demand')).toBeTruthy()
@@ -352,7 +352,7 @@ describe('Directions', () => {
     await pickAnchorRun()
     fireEvent.click(screen.getByRole('button', { name: '推导方向' }))
     expect(await screen.findByText(/规则版本 derivation-rules-v1/)).toBeTruthy()
-    expect(screen.getByText(/场景家族 2 个 Run/)).toBeTruthy()
+    expect(screen.getByText(/场景家族 2 个推演/)).toBeTruthy()
     expect(screen.getByText(/已选 run-anchor \/ strategy/)).toBeTruthy()
     expect(screen.getByText(/与规则 最高 P50 重复/)).toBeTruthy()
     expect(await screen.findByText('Highest P50')).toBeTruthy()
@@ -656,7 +656,7 @@ describe('Directions', () => {
       (posted[0].body as { directions: Record<string, unknown>[] }).directions[0],
     ).not.toHaveProperty('fork_step')
     expect(await screen.findByText(/已存入/)).toBeTruthy()
-    expect(screen.getByText(/子 Run run-child-1 · 分支 branch-1 · 分叉步 1 · 状态 COMPLETED/)).toBeTruthy()
+    expect(screen.getByText(/子推演 run-child-1 · 分支 branch-1 · 分叉步 1 · 状态 已完成/)).toBeTruthy()
     expect(screen.getByText(/No ensemble yet: run POST \/runs\/run-child-1\/monte-carlo/)).toBeTruthy()
     expect(await screen.findByText('变量覆盖：cash=80 · 分叉步 1')).toBeTruthy()
   })

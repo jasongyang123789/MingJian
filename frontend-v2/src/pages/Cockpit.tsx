@@ -89,7 +89,7 @@ export default function Cockpit() {
       <RunPicker runs={runList} selectedId={selectedRunId} onSelect={setSelectedRunId} />
 
       {!selectedRun && (
-        <EmptyState icon="🧭" title="请选择一个 Run" description="驾驶舱展示该 Run 已存储的全部 Sprint 1–5 工件" />
+        <EmptyState icon="🧭" title="请选择一个推演" description="驾驶舱展示该推演已存储的全部 Sprint 1–5 工件" />
       )}
 
       {selectedRun && (
@@ -98,7 +98,7 @@ export default function Cockpit() {
             title="MECE 分解"
             runId={selectedRun.id}
             fetcher={() => nullOn404(meceApi.getForRun(selectedRun.id))}
-            emptyText="该 Run 未挂分解树"
+            emptyText="该推演未挂分解树"
           >
             {(data) => (
               <div className="space-y-5">
@@ -112,7 +112,7 @@ export default function Cockpit() {
             title="变量绑定"
             runId={selectedRun.id}
             fetcher={() => nullOn404(variablesApi.getForRun(selectedRun.id))}
-            emptyText="该 Run 未挂变量绑定"
+            emptyText="该推演未挂变量绑定"
           >
             {(data) => <VariableBindingsView data={data} />}
           </FragmentSection>
@@ -121,7 +121,7 @@ export default function Cockpit() {
             title="分布（Monte Carlo ensemble）"
             runId={selectedRun.id}
             fetcher={() => nullOn404(distributionsApi.getMonteCarlo(selectedRun.id))}
-            emptyText="该 Run 尚未运行 Monte Carlo"
+            emptyText="该推演尚未运行蒙特卡洛"
           >
             {(data) => <EnsembleView result={data} />}
           </FragmentSection>
@@ -130,7 +130,7 @@ export default function Cockpit() {
             title="确定性审计"
             runId={selectedRun.id}
             fetcher={() => nullOn404(distributionsApi.getDeterminism(selectedRun.id))}
-            emptyText="该 Run 暂无确定性审计数据"
+            emptyText="该推演暂无确定性审计数据"
           >
             {(data) => <DeterminismView data={data} />}
           </FragmentSection>
@@ -139,7 +139,7 @@ export default function Cockpit() {
             title="稳健性评估"
             runId={selectedRun.id}
             fetcher={() => nullOn404(robustnessApi.getAll(selectedRun.id))}
-            emptyText="该 Run 尚未存储稳健性分析"
+            emptyText="该推演尚未存储稳健性分析"
           >
             {(data) => <RobustnessView data={data} />}
           </FragmentSection>
@@ -148,7 +148,7 @@ export default function Cockpit() {
             title="决策门"
             runId={selectedRun.id}
             fetcher={() => nullOn404(robustnessApi.getGates(selectedRun.id))}
-            emptyText="该 Run 尚未注册决策门"
+            emptyText="该推演尚未注册决策门"
           >
             {(data) => <DecisionGatesView data={data} />}
           </FragmentSection>
@@ -157,7 +157,7 @@ export default function Cockpit() {
             title="防后视防火墙审计"
             runId={selectedRun.id}
             fetcher={() => nullOn404(calibrationApi.getFirewall(selectedRun.id))}
-            emptyText="该 Run 暂无防火墙审计数据"
+            emptyText="该推演暂无防火墙审计数据"
           >
             {(data) => <FirewallView data={data} />}
           </FragmentSection>

@@ -118,7 +118,7 @@ describe('VariableTemplates', () => {
   it('shows a built-in template read-only with a duplicate affordance', async () => {
     renderPage()
     await waitForList()
-    fireEvent.click(within(rowFor('Corporate (built-in)')).getByText('查看'))
+    fireEvent.click(within(rowFor('内置企业预设')).getByText('查看'))
     await waitFor(() => {
       expect(screen.getByText(/内置预设，由领域包代码合成，只读/)).toBeInTheDocument()
     })
@@ -130,9 +130,9 @@ describe('VariableTemplates', () => {
   it('duplicates a built-in into a prefilled create form', async () => {
     renderPage()
     await waitForList()
-    fireEvent.click(within(rowFor('Corporate (built-in)')).getByText('复制为新模板'))
+    fireEvent.click(within(rowFor('内置企业预设')).getByText('复制为新模板'))
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Corporate (built-in)（副本）')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('内置企业预设（副本）')).toBeInTheDocument()
     })
     expect(screen.getByLabelText('状态字段 1 字段名')).toHaveValue('cash')
     expect(screen.getByLabelText('状态字段 1 默认值')).toHaveValue(100)
@@ -257,7 +257,7 @@ describe('VariableTemplates', () => {
     fireEvent.click(screen.getByText('确认删除'))
     await waitFor(() => {
       expect(
-        screen.getByText('已删除模板「AI line case」。已有 Run 带有该模板的快照，不受影响。'),
+        screen.getByText('已删除模板「AI line case」。已有推演带有该模板的快照，不受影响。'),
       ).toBeInTheDocument()
     })
     const deleted = requests.find((request) => request.method === 'DELETE')
@@ -280,12 +280,10 @@ describe('VariableTemplates', () => {
     expect(within(rowFor('AI line case')).getByText('删除')).toBeInTheDocument()
   })
 
-  it('disables delete for built-in templates', async () => {
+  it('hides delete for built-in templates', async () => {
     renderPage()
     await waitForList()
-    const button = within(rowFor('Corporate (built-in)')).getByText('删除')
-    expect(button).toBeDisabled()
-    expect(button).toHaveAttribute('title', '内置模板只读，不可删除')
+    expect(within(rowFor('内置企业预设')).queryByText('删除')).not.toBeInTheDocument()
     expect(requests.some((request) => request.method === 'DELETE')).toBe(false)
   })
 

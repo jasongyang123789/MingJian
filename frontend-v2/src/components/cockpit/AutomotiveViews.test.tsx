@@ -322,7 +322,7 @@ describe('PromptList', () => {
 describe('ExpectationCatalogTable', () => {
   it('renders evaluated and catalog-only entries distinctly', () => {
     render(<ExpectationCatalogTable entries={CATALOG} />)
-    expect(screen.getByText('Driving domain controller implies cameras')).toBeTruthy()
+    expect(screen.getByText('行车域控制器意味着配备摄像头')).toBeTruthy()
     expect(screen.getAllByText('评估').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('仅目录')).toBeTruthy()
   })

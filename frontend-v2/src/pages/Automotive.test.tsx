@@ -195,7 +195,7 @@ describe('Automotive', () => {
     await waitFor(() => expect(screen.getByText('287.8')).toBeTruthy())
     expect(screen.getAllByText(/faw-vw/).length).toBeGreaterThan(0)
     expect(screen.getByText(/现有客户/)).toBeTruthy()
-    expect(screen.getByText('Driving domain controller implies cameras')).toBeTruthy()
+    expect(screen.getByText('行车域控制器意味着配备摄像头')).toBeTruthy()
     expect(screen.getAllByText('运行汽车模板').length).toBeGreaterThan(0)
   })
 
@@ -259,6 +259,6 @@ describe('Automotive', () => {
     // Reinstall with the failing status honored: the mock reads the
     // mutable variable, so flipping it before render is enough.
     renderPage()
-    await waitFor(() => expect(screen.getByText('该 Run 未带拆分结构')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('该推演未带拆分结构')).toBeTruthy())
   })
 })

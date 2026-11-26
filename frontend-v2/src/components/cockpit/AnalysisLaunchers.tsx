@@ -126,15 +126,15 @@ export function MonteCarloLauncher({
       onRetry={handleLaunch}
       onLaunch={handleLaunch}
       launchDisabled={metric === ''}
-      launchLabel="运行 Ensemble"
+      launchLabel="运行模拟集合"
       note={
         stateFields.length > 0
-          ? '试验数 50、loss_threshold 0、无策略杠杆、seed 由后端定（后端默认值）。'
-          : '未取到该 Run 的状态字段，手动输入指标名，后端会校验它是否为该领域的状态字段。试验数 50、loss_threshold 0、无策略杠杆（后端默认值）。'
+          ? '试验数 50、亏损阈值 0、无策略杠杆、随机种子由后端定（后端默认值）。'
+          : '未取到该推演的状态字段，手动输入指标名，后端会校验它是否为该领域的状态字段。试验数 50、亏损阈值 0、无策略杠杆（后端默认值）。'
       }
     >
       {variablesLoading ? (
-        <p className="text-xs text-slate-500">正在加载该 Run 的状态字段…</p>
+        <p className="text-xs text-slate-500">正在加载该推演的状态字段…</p>
       ) : stateFields.length > 0 ? (
         <span className="flex items-center gap-2">
           <label htmlFor="mc-metric" className="text-xs text-slate-400">
@@ -229,7 +229,7 @@ export function BootstrapLauncher({
       onRetry={handleLaunch}
       onLaunch={handleLaunch}
       launchDisabled={false}
-      launchLabel="运行 Bootstrap 分析"
+      launchLabel="运行自助法分析"
       note="统计量 mean / median / p_loss，1000 次 draws，level 0.90（后端默认值）。"
     />
   )
@@ -279,12 +279,12 @@ export function ThresholdSearchLauncher({
       launchLabel="运行阈值搜索"
       note={
         boundIds.length > 0
-          ? 'p_loss 模式、方向 increasing、每评估 20 次试验、最多 8 轮（后端默认值）。目标为概率，须在 0 与 1 之间。'
-          : '未取到该 Run 的变量绑定，手动输入变量 id，后端会校验。p_loss 模式、方向 increasing、每评估 20 次试验、最多 8 轮（后端默认值）。目标为概率，须在 0 与 1 之间。'
+          ? '亏损概率模式、方向递增、每评估 20 次试验、最多 8 轮（后端默认值）。目标为概率，须在 0 与 1 之间。'
+          : '未取到该推演的变量绑定，手动输入变量编号，后端会校验。亏损概率模式、方向递增、每评估 20 次试验、最多 8 轮（后端默认值）。目标为概率，须在 0 与 1 之间。'
       }
     >
       {variablesLoading ? (
-        <p className="text-xs text-slate-500">正在加载该 Run 的变量绑定…</p>
+        <p className="text-xs text-slate-500">正在加载该推演的变量绑定…</p>
       ) : boundIds.length > 0 ? (
         <span className="flex items-center gap-2">
           <label htmlFor="ts-variable" className="text-xs text-slate-400">
@@ -312,7 +312,7 @@ export function ThresholdSearchLauncher({
             id="ts-variable"
             value={variableInput}
             onChange={(event) => setVariableInput(event.target.value)}
-            placeholder="变量 id，如 cash"
+            placeholder="变量编号，如 cash"
             className={loopInputClassName()}
           />
         </span>

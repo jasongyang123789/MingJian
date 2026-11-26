@@ -483,6 +483,145 @@ export function PromptList({ report }: { report: PromptReportRead }) {
   )
 }
 
+/** 共生期望目录的中文显示映射（按后端 EXPECTATION_CATALOG 的 entry id）。
+ * 规则编号（R1–R13、X1–X5、AVM1、BUNDLE1、SCREEN1、EMBED1）与技术标识
+ * （P01–P05、DC、AVM、GB 47955-2026、Ho Q 编号）保留原样，只翻描述文字。
+ * 后端新增规则时这里没有对应条目，表格回退显示后端原文。 */
+const EXPECTATION_ZH: Record<string, { title: string; normal_logic: string; strength: string; scope: string }> = {
+  R1: {
+    title: '行车域控制器意味着配备摄像头',
+    normal_logic: '带行车域控制器（P02 DC）的配置，必有摄像头行（P05）。',
+    strength: '63/64 个域控块（唯一例外是华为套餐，Ho Q11）',
+    scope: '全部整车厂；套餐配置除外（摄像头已含在套餐价内）',
+  },
+  R2: {
+    title: '摄像头数量随行车计算平台分级',
+    normal_logic: '摄像头总数随平台分级：IFC/前视模块 5 个，8620 平台 7 个，8650 平台 10 个（2026 年）/ 11 个（2027 年起），RHP/NGX 平台 11 个（含模块内置的 1 个前视摄像头）。',
+    strength: '35/35 组前缀配对（红旗）；5/7/11 摄像头档位与公开证据一致',
+    scope: '红旗已验证；凡有平台与可计数 P05 标签的配置均适用；±1 容差（Ho Q2）',
+  },
+  R3: {
+    title: '一体形态意味着没有独立中控屏',
+    normal_logic: 'IVI 一体机 / 融合形态的配置没有独立的 P03 中控行（屏幕在 P01 里）。',
+    strength: '丰田一体机 11/11 个块；大众融合块按 Ho Q5',
+    scope: '形态为 ivi_one_box / fused 的配置',
+  },
+  R4: {
+    title: '分体主机意味着有中控屏',
+    normal_logic: '带座舱主机的分体主机配置，必有 P03 中控屏行。',
+    strength: '总体 115/140 个主机块；排除丰田一体机后 109/123；红旗 98%，本田 93%',
+    scope: '形态为 discrete_host 的配置',
+  },
+  R5: {
+    title: '形态与已核实登记事实一致',
+    normal_logic: '配置的形态与已逐项核实的（整车厂、车型、年份）登记事实一致（如有）。',
+    strength: '仅限登记事实；不跨车型推广（Ho Q9）',
+    scope: '（整车厂、车型、年份）有登记事实的配置',
+  },
+  R6: {
+    title: '同类 P02 替代（重叠只是提示）',
+    normal_logic: '同一功能类（域控 / 前视模块）内，不同方案互相替代：其搭载率通常每配置合计不超过 1。',
+    strength: '类级规律；大众 2027 年四方案合计 1.2 的块属于合理的独立渗透（Ho Q7）——重叠只提示说明，永不拒绝',
+    scope: '带已分类 P02 行且含方案码的配置',
+  },
+  R7: {
+    title: '中控位替代（副驾屏除外）',
+    normal_logic: 'ABT 中控屏各变体在中控位内互相替代：其搭载率通常合计不超过 1。CDD/CDI 副驾屏可共存，不计入（Ho Q3）。',
+    strength: '大众 2027 年 ABT+CDD 合计 1.1–1.2 属于合理共存',
+    scope: '带已分类 P03 中控行的配置',
+  },
+  R8: {
+    title: '仪表行归属 P03',
+    normal_logic: '仪表行记在 P03（屏幕）下，永不记在 P01 下（Ho Q3 2026-11-16：仪表计入 P03）。',
+    strength: '已确认的分类裁决',
+    scope: '所有归类为仪表的 P01 行',
+  },
+  R9: {
+    title: '4G/5G 变体替代',
+    normal_logic: '4G 与 5G 通信终端变体互相替代：其搭载率通常每配置合计不超过 1（一车一终端）。',
+    strength: 'P04 槽位：一车一终端；变体最大值按不同变体的装配读取',
+    scope: '同时带 4G 与 5G 变体标签的配置',
+  },
+  R10: {
+    title: '摄像头多意味着有行车计算',
+    normal_logic: '摄像头不少于 7 个的配置，通常在 P02 带行车计算（域控或模块）。',
+    strength: '块级共现率 0.94；仅泊车环视组属于合理例外',
+    scope: '可计数 P05 总数不少于 7 的配置',
+  },
+  R11: {
+    title: '插混能量细节意味着有电池包域',
+    normal_logic: '插混车型带电池包域行（仅目录：能量细节不由结构承载）。',
+    strength: '无法评估',
+    scope: '无（结构能量只有新能源/燃油两类）',
+  },
+  R12: {
+    title: 'DMS 法规增加一个座舱摄像头',
+    normal_logic: 'DMS 法规生效时（GB 47955-2026，自 2027-01-01 起），摄像头总数含 +1 个座舱（DMS/OMS）摄像头。',
+    strength: '法规（强制标准）',
+    scope: '带 dms_mandate_on 上下文的推演',
+  },
+  R13: {
+    title: 'P.O 要拆解，永不是篮子行',
+    normal_logic: 'P.O 子产品（HUD/雷达/网关/车身域/APA/AVM/UWB/……）各自成行；裸 P.O 篮子行会被标记要求拆解。',
+    strength: '结构性裁决（Ho Q8）',
+    scope: '全部配置',
+  },
+  X1: {
+    title: 'IVI 一体机排除独立座舱域控',
+    normal_logic: '一车一种形态：一机形态的配置没有独立的 SCDC 行（结构强制——形态是单一字段）。',
+    strength: '仅目录',
+    scope: '无（结构性）',
+  },
+  X2: {
+    title: '一体机与分体主机互斥',
+    normal_logic: '一个配置恰有一种形态（结构强制——形态是单一字段）。',
+    strength: '仅目录',
+    scope: '无（结构性）',
+  },
+  X3: {
+    title: '域控 + 前视模块重叠',
+    normal_logic: '域控与前视模块是不同计算层级；同一配置两者都有，提示可能是合并的子人群（与 R6 联合评估）。',
+    strength: '仅提示',
+    scope: '同时带域控与模块行的配置',
+  },
+  X4: {
+    title: '一个配置里有两个域控',
+    normal_logic: '一个配置一个行车域控；两个不同域控方案提示可能是合并的子人群（与 R6 联合评估）。',
+    strength: '仅提示',
+    scope: '带不少于 2 个不同域控方案的配置',
+  },
+  X5: {
+    title: 'ABT 变体只在中控位内替代',
+    normal_logic: 'ABT 变体之间互相替代，永不与副驾屏替代（与 R7 联合评估）。',
+    strength: '仅提示',
+    scope: '带不少于 2 个不同 ABT 变体的配置',
+  },
+  AVM1: {
+    title: 'AVM 意味着有环视摄像头组',
+    normal_logic: '带 AVM 的配置在 P05 有环视摄像头组。反过来不成立：有环视组不意味着有 AVM。',
+    strength: '结构性配对（Ho Q8）',
+    scope: '带 AVM 行的配置',
+  },
+  BUNDLE1: {
+    title: '华为行按套餐计价，永不与单件均价比较',
+    normal_logic: "华为全套方案行按 price_basis 'bundle' 计价（屏幕 + 摄像头已含），套餐配置不带独立的 P03/P05 行。",
+    strength: '已确认的分类裁决',
+    scope: '所有带华为行 / 套餐计价行的配置',
+  },
+  SCREEN1: {
+    title: '一体机 / 融合形态的 P01 均价含屏幕',
+    normal_logic: "一体形态配置的 P01 均价按 price_basis 'includes_screen' 标注；永不与分体主机均价比较。",
+    strength: '已确认的分类裁决',
+    scope: '形态为 ivi_one_box / fused 的配置',
+  },
+  EMBED1: {
+    title: '前视模块内置一个摄像头（记账说明）',
+    normal_logic: 'MFK/IFC 前视模块内置 1 个摄像头：总数按含/不含内置单元标注；1 个摄像头的差异属于正常容差（Ho Q2），永不是异常。',
+    strength: '记账约定',
+    scope: '带前视模块行的配置',
+  },
+}
+
 export function ExpectationCatalogTable({ entries }: { entries: ExpectationCatalogEntry[] }) {
   return (
     <div className="overflow-x-auto">
@@ -497,18 +636,21 @@ export function ExpectationCatalogTable({ entries }: { entries: ExpectationCatal
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.id} className="border-b border-slate-800/50 align-top text-slate-200">
-              <td className="py-2 pr-4">
-                <span className="font-mono text-xs text-slate-400">{entry.id}</span>
-                <div className="font-medium">{entry.title}</div>
-              </td>
-              <td className="py-2 pr-4">{entry.normal_logic}</td>
-              <td className="py-2 pr-4 text-slate-400">{entry.strength}</td>
-              <td className="py-2 pr-4 text-slate-400">{entry.scope}</td>
-              <td className="py-2 text-slate-400">{entry.evaluated ? '评估' : '仅目录'}</td>
-            </tr>
-          ))}
+          {entries.map((entry) => {
+            const zh = EXPECTATION_ZH[entry.id]
+            return (
+              <tr key={entry.id} className="border-b border-slate-800/50 align-top text-slate-200">
+                <td className="py-2 pr-4">
+                  <span className="font-mono text-xs text-slate-400">{entry.id}</span>
+                  <div className="font-medium">{zh?.title ?? entry.title}</div>
+                </td>
+                <td className="py-2 pr-4">{zh?.normal_logic ?? entry.normal_logic}</td>
+                <td className="py-2 pr-4 text-slate-400">{zh?.strength ?? entry.strength}</td>
+                <td className="py-2 pr-4 text-slate-400">{zh?.scope ?? entry.scope}</td>
+                <td className="py-2 text-slate-400">{entry.evaluated ? '评估' : '仅目录'}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

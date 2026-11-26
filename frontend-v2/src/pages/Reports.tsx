@@ -6,6 +6,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { reportApi } from '../api/endpoints'
+import { asRecord } from '../components/ui/dataSurfaceUtils'
 import { useApi } from '../hooks/useApi'
 
 interface Prediction {
@@ -197,7 +198,7 @@ export default function Reports() {
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-4">
               <BarChart3 className="w-5 h-5 text-blue-400" />
-              <h3 className="text-sm font-semibold text-slate-300">Community 监测范围</h3>
+              <h3 className="text-sm font-semibold text-slate-300">社区监测范围</h3>
             </div>
             {monitoring ? (
               <div className="space-y-4">
@@ -236,7 +237,7 @@ export default function Reports() {
               <div className="space-y-3">
                 {monitoring.recent_changes.slice(0, 5).map((c: Record<string, unknown>, i: number) => (
                   <div key={i} className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/50">
-                    <p className="text-sm text-slate-400">{String(c.description || c.name || JSON.stringify(c).slice(0, 80))}</p>
+                    <p className="text-sm text-slate-400">{String(c.description || c.name || '无描述')}</p>
                     {String(c.timestamp || '') && <p className="text-xs text-slate-600 mt-1">{new Date(String(c.timestamp)).toLocaleString()}</p>}
                   </div>
                 ))}
@@ -251,16 +252,39 @@ export default function Reports() {
       {/* Decisions Tab */}
       {tab === 'decisions' && (
         <>
-          {decisionStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(decisionStats).map(([key, val]) => (
-                <Card key={key} className="p-4">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider">{key}</p>
-                  <p className="text-xl font-bold text-slate-100 mt-1">{typeof val === 'object' ? JSON.stringify(val) : String(val)}</p>
-                </Card>
-              ))}
-            </div>
-          )}
+          {decisionStats && (() => {
+            const stats = asRecord(decisionStats)
+            const counts = asRecord(stats.counts)
+            const ratios = asRecord(stats.ratios)
+            const outcomeLabels: [string, string][] = [
+              ['adopt', '采纳'],
+              ['defer', '推迟'],
+              ['need_more_info', '需更多信息'],
+              ['reject', '拒绝'],
+            ]
+            const cards: { label: string; value: string }[] = [
+              { label: '总数', value: String(stats.total ?? 0) },
+              ...outcomeLabels.map(([key, label]) => ({
+                label: `${label}（个）`,
+                value: String(counts[key] ?? 0),
+              })),
+              ...(['adopt', 'defer', 'reject'] as const).map((key) => {
+                const label = outcomeLabels.find(([k]) => k === key)?.[1] ?? key
+                const ratio = Number(ratios[key])
+                return { label: `${label}占比`, value: Number.isFinite(ratio) ? `${Math.round(ratio * 100)}%` : '—' }
+              }),
+            ]
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {cards.map((card) => (
+                  <Card key={card.label} className="p-4">
+                    <p className="text-xs text-slate-500">{card.label}</p>
+                    <p className="text-xl font-bold text-slate-100 mt-1">{card.value}</p>
+                  </Card>
+                ))}
+              </div>
+            )
+          })()}
           <Card>
             <CardHeader title="决策记录" />
             <div className="divide-y divide-slate-800/60">

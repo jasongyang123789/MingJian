@@ -65,3 +65,100 @@ export function metricNumber(value: unknown) {
   if (value == null || value === '') return '0'
   return String(value)
 }
+
+/** 后端状态码 → 中文标签（全站集中映射；界面不再直接显示英文状态码）。 */
+const STATUS_LABELS: Record<string, string> = {
+  active: '有效',
+  online: '在线',
+  offline: '离线',
+  completed: '已完成',
+  running: '运行中',
+  pending: '待处理',
+  failed: '失败',
+  error: '异常',
+  accepted: '已接受',
+  rejected: '已拒绝',
+  verified: '已验证',
+  refuted: '已驳回',
+  configured: '已配置',
+  env: '未配置',
+  paused: '已暂停',
+  attention: '注意',
+  ready: '正常',
+  dev_fallback: '开发版备用',
+  unknown: '未知',
+  adopt: '采纳',
+  defer: '推迟',
+  need_more_info: '需更多信息',
+  reject: '拒绝',
+  in_progress: '进行中',
+  queued: '排队中',
+  cancelled: '已取消',
+  timeout: '超时',
+  skipped: '已跳过',
+  draft: '草稿',
+  approved: '已批准',
+  superseded: '已替代',
+  passed: '通过',
+  warning: '警告',
+  healthy: '正常',
+  unhealthy: '异常',
+  ok: '正常',
+  created: '已创建',
+  archived: '已归档',
+}
+
+export function statusLabel(value: unknown): string {
+  if (value == null) return '未知'
+  const raw = String(value).trim()
+  if (!raw) return '未知'
+  const mapped = STATUS_LABELS[raw.toLowerCase()]
+  if (mapped) return mapped
+  // 已是中文或其他可读文本时原样显示；纯英文编码兜底为“未知”
+  if (/[\u4e00-\u9fff]/.test(raw)) return raw
+  if (/^[a-z0-9_]+$/i.test(raw)) return '未知'
+  return raw
+}
+
+/** 领域编号 → 中文标签；未知编号返回空（调用方自行隐藏）。 */
+const DOMAIN_LABELS: Record<string, string> = {
+  automotive: '汽车',
+  corporate: '企业',
+  auto: '汽车',
+  default: '默认',
+}
+
+export function domainLabel(value: unknown): string {
+  if (value == null) return ''
+  const raw = String(value).trim()
+  if (!raw) return ''
+  return DOMAIN_LABELS[raw.toLowerCase()] ?? ''
+}
+
+/** 来源类型码 → 中文标签。 */
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  rss_feed: '订阅源',
+  blog: '博客',
+  analyst_note: '分析师笔记',
+}
+
+export function sourceTypeLabel(value: unknown): string {
+  if (value == null) return ''
+  const raw = String(value).trim()
+  if (!raw) return ''
+  return SOURCE_TYPE_LABELS[raw.toLowerCase()] ?? ''
+}
+
+/** 推演模式码 → 中文标签（standard / deep / quick）。 */
+const MODE_LABELS: Record<string, string> = {
+  standard: '标准',
+  deep: '深度',
+  quick: '快速',
+}
+
+export function modeLabel(value: unknown): string {
+  if (value == null) return ''
+  const raw = String(value).trim()
+  if (!raw) return ''
+  return MODE_LABELS[raw.toLowerCase()] ?? raw
+}
