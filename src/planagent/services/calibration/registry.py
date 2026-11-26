@@ -145,6 +145,46 @@ ORDER_BOOK_ENTRIES: list[dict[str, Any]] = [
         "internal: order_intake_flow (RMB m per tick)",
         internal_field="order_intake_flow",
     ),
+    # desay-2018 order-book entries (branch fix/desay-2018-case,
+    # 2026-11-24). NON-INDEPENDENT case: its horizon overlaps
+    # desay-2015 (2018-2020) and desay-2020 (2020-2023); same realized
+    # years are scored twice. Values identical to the 2018 harness
+    # (run_desay_2018.py::_relabel_2018 / _autopack_wiring_variables
+    # 2018 call), except the stock/flow are rounded to 2 significant
+    # figures (7000 vs the harness's exact 7031.36) to remove false
+    # precision, same convention as 2015/2020.
+    _entry(
+        "order_intake_rate/desay-2018",
+        "order_book",
+        "research harness run_desay_2018.py::_autopack_wiring_variables (2018 call)",
+        {"type": "triangular", "min": 1.00, "mode": 1.30, "max": 1.60},
+        STATUS_SIMULATED,
+        "GENERATED (desay-2018-case-2026-11-24): mode 1.30 from '获得新项目订单年化销售额超过70亿元' (2018 annual-report summary, announcement 2019-017) / FY2018 revenue RMB 5,408.74m = 1.29, treated as ~RMB 7.0bn central (same convention as the 2020 case's ~70亿); min 1.00 / max 1.60 are the symmetric spread around the mode (no lower/upper observation disclosed). NON-INDEPENDENT case.",
+        "internal: order_intake_rate (annualised new orders / revenue, "
+        "decision year, per case)",
+        internal_field="order_intake_rate",
+    ),
+    _entry(
+        "order_backlog_opening/desay-2018",
+        "order_book",
+        "research harness run_desay_2018.py::_autopack_wiring_variables (2018 call)",
+        {"type": "fixed", "value": 7000},
+        STATUS_SIMULATED,
+        "GENERATED (desay-2018-case-2026-11-24): opening order stock was NEVER disclosed. Proxy = one year of intake at the intake-rate mode (1.30 x 5,408.74 = 7,031.36), rounded to 2 significant figures (7000) to remove false precision. NON-INDEPENDENT case.",
+        "internal: order_backlog_opening (RMB m, unfulfilled order "
+        "stock at the decision date)",
+        internal_field="order_backlog_opening",
+    ),
+    _entry(
+        "order_intake_flow_opening/desay-2018",
+        "order_book",
+        "research harness run_desay_2018.py::_autopack_wiring_variables (2018 call)",
+        {"type": "fixed", "value": 7000},
+        STATUS_SIMULATED,
+        "GENERATED (desay-2018-case-2026-11-24): opening new-orders flow = one year of intake at the intake-rate mode (1.30 x 5,408.74 = 7,031.36), rounded to 2 significant figures (7000); same proxy as the stock. NON-INDEPENDENT case.",
+        "internal: order_intake_flow (RMB m per tick)",
+        internal_field="order_intake_flow",
+    ),
     _entry(
         "backlog_conversion",
         "order_book",

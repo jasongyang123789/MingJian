@@ -73,14 +73,19 @@ def test_registry_status_counts():
     # assumption:pending-calibration (generic-scale sales base /
     # opening DSO stock). price_cut_factor adds no registry entry
     # (definitional seed, 1.0 = no cut yet).
+    # 2026-11-26: desay-2018 case rebased onto 471f6dc (branch
+    # fix/desay-2018-case, NON-INDEPENDENT) added 3 simulated
+    # order-book entries (order_intake_rate / order_backlog_opening /
+    # order_intake_flow_opening per desay-2018): simulated 67 -> 70,
+    # total 77 -> 80.
     from collections import Counter
 
     counts = Counter(e["status"] for e in registry_entries())
-    assert counts["simulated"] == 67
+    assert counts["simulated"] == 70
     assert counts["kept_prior"] == 6
     assert counts["evidence"] == 2
     assert counts["calibrated_v3"] == 2
-    assert sum(counts.values()) == 77
+    assert sum(counts.values()) == 80
 
 
 def test_registry_transmission_values_are_live():
@@ -168,7 +173,9 @@ def test_registry_every_simulated_entry_has_replacement_path():
 def test_registry_replaceable_fields_are_pipeline_parameters():
     for e in replaceable_entries():
         assert e["internal_field"] in ip.INTERNAL_PARAMETER_SPECS, e["id"]
-    assert len(replaceable_entries()) == 17
+    # 2026-11-24: desay-2018 case added 3 replaceable order-book
+    # entries (same three internal fields, per-case): 17 -> 20.
+    assert len(replaceable_entries()) == 20
 
 
 # ---------------------------------------------------------------- pipeline
