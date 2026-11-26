@@ -16,75 +16,89 @@ shrink** (yr-3 replay and yr-5 P50, each vs its actual). Historical
 reports (TRACK11-ORDER-BOOK.md, the e047f50 re-run REPORT.md) keep the
 old wording as history; this file, ``docs/causal-chain-pattern.md`` §5
 and the Track A harness pin the new wording.
-STEP-1 REFINEMENT (2026-11-24, finite-book depletion): the
-mechanism-level pin is the BACKLOG TERM falling every tick (the book
-depletes geometrically, so the term — the mechanism's own output —
-shrinks monotonically) plus the opening fall of total growth (the
-anti-hump guard: under Track 11 total factors ROSE from tick 1).
-Total-factor monotonicity through the whole horizon is NOT pinned at
-synthetic mode values: the adoption/NEV couplings are monotone RISING
-channels, and once the term has burned off (tick 3–4 at mode values)
-they take over and total growth rises again — that handover is the
-mechanism working as designed (the opportunity leg is front-loaded;
-after it burns off, base + coupling growth takes over). The shape
-tests below lock the term's fall, the geometric depletion and the
-opening fall at 2020 AND 2015 mode values, plus a tick-by-tick
-replication. Total-factor falling through the horizon is verified on
-the REAL cases, not the synthetic controls: the step-1 four-case
-rerun (downside ON, seed 42, trials 50) has B-replay factors
-[1.2599, 1.1796, 1.0694, 0.9763] (2015) and [1.7271, 1.3917, 1.2342,
-1.1253] (2020), falling on every tick. The second half of the
-criterion (absolute errors shrink) is asserted by the step-1 re-run
-analysis, not by a unit test — it needs the ensemble.
+D2C REFINEMENT (2026-11-25, Ho-approved Option A — lag-shaped
+delivery, supersedes the step-1 geometric form). The step-1 pin (the
+backlog term falling every tick) is SUPERSEDED: the geometric rate
+converted 45% of the book in year 1 and caused the desay-2018 tick-1
+overshoot (83% of it; the diagnosis). The mechanism-level pin is now
+the SCHEDULE: the delivery fraction is 0 at tick 1 (the SOP-lag
+floor — orders won in a year need at least 1–2 years to convert to
+revenue, Ho confirmed 2026-11-25), peaks at tick 3 (45% of the
+opening book) and exhausts the book by tick 5; the backlog term is
+therefore 0 at tick 1, peaks at tick 3 and dies by tick 6, and total
+growth rises to the schedule mode and falls after it. The Track A
+criterion's first half ("per-tick growth becomes decreasing") does
+NOT hold under D2C by design — growth rises to tick 3 — and is
+replaced by the schedule pin plus the real-case validation: the
+desay-2018 counterfactual (diagnosis §5.2) put the yr3 milestone
+inside the band at +16.1% with this exact schedule and the tick-1
+brake, and the D2C four-case rerun (downside ON, seed 42, trials 50)
+is what decides the criterion now. The second half of the criterion
+(absolute errors shrink) is asserted by the rerun analysis, not by a
+unit test — it needs the ensemble.
 
-MECHANISM (step 1, 2026-11-24 — FINITE-BOOK DEPLETION, replaces both
-the Track 11 stock form and the Track A pool form). History: the
-Track 11 mechanism failed the 2015 control (the backlog term HUMPED
-before it decayed because decay acted only on the FLOW while
-conversion (~0.40) roughly balanced the intake flow, so the stock sat
-near 1300–1400 while revenue grew). Track A revised it to a POOL form
-(term on pre-tick book + decayed intake, pool lapsing with adoption) —
-but that form was NEVER run by any backtest harness: the tests pinned
-it while every rerun harness (e047f50 → A/C → trials50) kept its own
-Track 11 stock driver (term ``c*B/R``, update ``B + I - c*B``), and
-Track A's own rerun made the 2015 yr-3 replay error WORSE (-4.1% →
-+15.2%, its new-criterion checks all NO). Step 1 unifies the three
-layers (template driver + tests + harness) on one form, chosen by
-offline screening on the trials50 replay paths (OLD reproduced
-exactly; FBOOK yr-3 replay errors +3.4%/+8.8%/−11.7%/−9.0% vs OLD
-+19.9%/+20.2%/+20.0%/+13.2%; the pool form screened HOTTER, +24.9%/
-+21.2% on the anchor paths) and confirmed by a full four-case rerun
-(downside ON, seed 42, trials 50 — see the step-1 report):
+MECHANISM (D2C, 2026-11-25 — LAG-SHAPED DELIVERY, replaces the
+step-1 geometric form). History: the Track 11 mechanism failed the
+2015 control (the backlog term HUMPED before it decayed because decay
+acted only on the FLOW while conversion (~0.40) roughly balanced the
+intake flow, so the stock sat near 1300–1400 while revenue grew).
+Track A revised it to a POOL form (term on pre-tick book + decayed
+intake, pool lapsing with adoption) — but that form was NEVER run by
+any backtest harness: the tests pinned it while every rerun harness
+(e047f50 → A/C → trials50) kept its own Track 11 stock driver (term
+``c*B/R``, update ``B + I - c*B``), and Track A's own rerun made the
+2015 yr-3 replay error WORSE (-4.1% → +15.2%, its new-criterion checks
+all NO). Step 1 unified the three layers (template driver + tests +
+harness) on finite-book depletion (``B' = B*(1-c)``), chosen by offline
+screening and confirmed by a full four-case rerun — but the geometric
+rate still converted 45% of the book in year 1, and the desay-2018
+diagnosis (2026-11-25) showed that tick-1 conversion is 83% of the
+2018 yr3 overshoot. D2C replaces the rate with a lag-shaped schedule
+of fractions of the OPENING book, (0, 0.15, 0.45, 0.30, 0.10) for
+ticks 1–5, plus a tick-1 downturn brake for negative-anchor cases:
 
-- The revenue term is UNCHANGED: ``+ backlog_conversion *
-  order_backlog / revenue`` on the PRE-TICK book. The converted
-  amount is exactly ``backlog_conversion * book``, so the Track 11
-  accounting identity (revenue term = converted amount) is preserved.
-- The stock update is the change: ``B' = max(0, B * (1 -
-  backlog_conversion))`` — the FINITE decision-time opening book
-  depletes geometrically (mean delivery lag 1/c, ~2.5y at mode 0.40,
-  inside the SOP-lag evidence 1.67–3.33y). The intake flow NO LONGER
-  replenishes the convertible stock: later orders' delivery is carried
-  by ``revenue_growth``, which is calibrated on TOTAL historical
-  growth and already includes normal order conversion — replenishing
-  the stock on top of it double-counts. The old stock form made the
-  term a PERPETUAL growth premium (intake ≈ 1x revenue re-fills the
-  book every tick, so ``c*B/R`` ≈ +10pp/+38pp per tick forever,
-  horizon-unbounded); the pool form converted this tick's intake with
-  no SOP lag (tick-1 term 0.65–0.93). Under depletion the total
-  backlog uplift is FINITE and front-loaded.
-- The stock update lives in the TEMPLATE (``TEMPLATE_FORMULAS``,
-  right after the revenue passthrough — a merge anchor). A case must
-  NOT supply its own backlog-update driver: one on the same output
-  would replace the anchor in place and silently reintroduce its own
-  form (that is exactly how the drift happened). Locked by
-  ``test_template_backlog_driver_governs`` below (template-governed
-  run == case-driver run, tick by tick).
+- The revenue term is ``+ backlog_delivery_fraction *
+  order_backlog_opening / revenue``. The delivered amount is exactly
+  ``backlog_delivery_fraction * opening book``, so the Track 11
+  accounting identity (revenue term = delivered amount) is preserved.
+  ``backlog_delivery_fraction`` is a template tick driver (a merge
+  anchor before the revenue passthrough): the schedule gated by
+  ``backlog_conversion`` — min(1, backlog_conversion / 0.30) is 1 on
+  the whole calibrated support (0.30–0.60) and 0 exactly when the leg
+  is frozen off, so the leg-freeze interface (frozen-baseline
+  decomposition, two-value module) keeps working. The schedule is
+  DETERMINISTIC (not sampled): the counterfactual that validated it
+  used fixed fractions.
+- The stock update is ``B' = max(0, B - backlog_delivery_fraction *
+  order_backlog_opening)`` — the FINITE decision-time opening book
+  drains by the scheduled delivery (mean delivery lag ~3.35 ticks,
+  inside the SOP-lag evidence 1.67–3.33y widened by vintage mix).
+  The intake flow NO LONGER replenishes the convertible stock: later
+  orders' delivery is carried by ``revenue_growth``, which is
+  calibrated on TOTAL historical growth and already includes normal
+  order conversion — replenishing the stock on top of it
+  double-counts. Under the schedule the total backlog uplift is
+  FINITE and lag-shaped (nothing in year 1, mode in year 3).
+- The downturn brake adds ``downturn_brake * (tick == 1)`` to the
+  revenue driver's growth sum — tick-1 growth only. When the
+  anchor-year realized growth is negative, the brake is (anchor-year
+  growth − revenue_growth mode): 2018 −0.1501; 2015/2020 anchor years
+  positive, brake 0. Decision-point data only; never fitted to
+  post-decision actuals (hindsight firewall).
+- The stock update and the delivery-fraction driver live in the
+  TEMPLATE (``TEMPLATE_FORMULAS`` — the fraction driver before the
+  revenue passthrough, the update right after it; both merge anchors).
+  A case must NOT supply its own drivers on either output: one on the
+  same output would replace the anchor in place and silently
+  reintroduce its own form (that is exactly how the drift happened).
+  Locked by ``test_template_backlog_driver_governs`` below (template-
+  governed run == case-driver run, tick by tick).
 - Driver order within a tick is load-bearing: adoption, NEV, share,
-  INTAKE (decays the flow), REVENUE (reads the pre-tick book),
-  BACKLOG (drains exactly what revenue converted), profit. The intake
-  driver still runs (it decays the diagnostic flow) but the flow is
-  unread by any driver under this form — locked by
+  INTAKE (decays the flow), DELIVERY FRACTION (this tick's fraction),
+  REVENUE (reads the fraction and the opening book), BACKLOG (drains
+  exactly what revenue converted), profit. The intake driver still
+  runs (it decays the diagnostic flow) but the flow is unread by any
+  driver under this form — locked by
   ``test_order_intake_is_inert_for_revenue`` below (twin runs with
   intake 6799.06 vs 0.0 have identical revenue/backlog trajectories).
 
@@ -112,10 +126,11 @@ On the spec's OLD unit validation ("with ``order_decay`` = 0 and
 constant intake, the backlog term must reduce to a constant level
 shift"): it does NOT hold under finite-book depletion BY DESIGN — a
 finite book cannot produce a perpetual level shift, and the level-shift
-test is replaced below by the finite-uplift test (the book depletes
-geometrically, the term falls every tick, the total uplift converges).
-A constant term would require a perpetually replenished stock, which
-is exactly the defect this revision removes.
+test is replaced below by the finite-uplift test (the book drains on
+the schedule, the term is 0 at tick 1, peaks at tick 3 and dies by
+tick 6, the total uplift converges). A constant term would require a
+perpetually replenished stock, which is exactly the defect this
+revision removes.
 """
 
 from __future__ import annotations
@@ -242,18 +257,42 @@ def _growth_driver(field: str, growth: str, coupling: str, cap: bool) -> dict:
 
 
 def _backlog_term() -> dict:
-    """Step-1 revenue term: conversion * pre-tick book / pre-tick
-    revenue. The intake flow is NOT in the term (finite-book
-    depletion: only the decision-time opening book converts)."""
+    """D2C revenue term: this tick's fraction of the OPENING book
+    (backlog_delivery_fraction, 0 in tick 1) times the opening book,
+    over pre-tick revenue. The intake flow is NOT in the term
+    (finite-book depletion: only the decision-time opening book
+    converts, on the lag-shaped schedule)."""
     return {
         "op": "multiply",
         "args": [
-            {"ref": "backlog_conversion"},
+            {"ref": "backlog_delivery_fraction"},
             {
                 "op": "divide",
                 "args": [
-                    {"ref": "order_backlog"},
+                    {"ref": "order_backlog_opening"},
                     {"ref": "revenue"},
+                ],
+            },
+        ],
+    }
+
+
+def _brake_term() -> dict:
+    """D2C downturn brake: downturn_brake * (tick == 1) — tick-1
+    growth only, via the min/max tick indicator (the formula
+    language has no conditionals). 0 for growth-year anchors."""
+    return {
+        "op": "multiply",
+        "args": [
+            {"ref": "downturn_brake"},
+            {
+                "op": "max",
+                "args": [
+                    0,
+                    {
+                        "op": "min",
+                        "args": [1, {"op": "subtract", "args": [2, {"ref": "tick"}]}],
+                    },
                 ],
             },
         ],
@@ -262,8 +301,9 @@ def _backlog_term() -> dict:
 
 def _revenue_driver_with_backlog() -> dict:
     """Full Desay revenue driver: base growth + adoption coupling +
-    NEV-chain term + exactly one backlog term (step 1: conversion on
-    the pre-tick book only). No interaction term."""
+    NEV-chain term + exactly one backlog term (D2C: this tick's
+    fraction of the opening book) + the tick-1 downturn brake.
+    No interaction term."""
     return {
         "output": "revenue",
         "expression": {
@@ -302,7 +342,13 @@ def _revenue_driver_with_backlog() -> dict:
                                                                 {"ref": "nev_penetration"},
                                                             ],
                                                         },
-                                                        _backlog_term(),
+                                                        {
+                                                            "op": "add",
+                                                            "args": [
+                                                                _backlog_term(),
+                                                                _brake_term(),
+                                                            ],
+                                                        },
                                                     ],
                                                 },
                                             ],
@@ -315,14 +361,15 @@ def _revenue_driver_with_backlog() -> dict:
                 },
             ],
         },
-        "description": "Revenue with the NEV-chain term and the backlog term (step 1 finite-book depletion).",
+        "description": "Revenue with the NEV-chain term, the D2C backlog term and the tick-1 brake.",
         "tick_driver": True,
     }
 
 
 def _revenue_driver_backlog_only() -> dict:
     """Minimal revenue driver for the finite-uplift guard: base growth
-    plus exactly one backlog term, no adoption / NEV terms."""
+    plus exactly one backlog term plus the tick-1 brake, no adoption /
+    NEV terms."""
     return {
         "output": "revenue",
         "expression": {
@@ -341,7 +388,13 @@ def _revenue_driver_backlog_only() -> dict:
                                     "op": "add",
                                     "args": [
                                         {"ref": "revenue_growth"},
-                                        _backlog_term(),
+                                        {
+                                            "op": "add",
+                                            "args": [
+                                                _backlog_term(),
+                                                _brake_term(),
+                                            ],
+                                        },
                                     ],
                                 },
                             ],
@@ -371,12 +424,13 @@ def _intake_decay_driver() -> dict:
 
 
 def _backlog_update_driver() -> dict:
-    """Step-1 stock update: the finite book depletes geometrically
-    at the conversion rate — B' = max(0, B * (1 - conversion)).
-    The intake flow does NOT replenish the book (its delivery is
-    carried by revenue_growth). Identical to the template's merge
-    anchor; the template-governance test below asserts the two agree
-    tick by tick when the case drops this driver."""
+    """D2C stock update: the finite book depletes by the scheduled
+    delivery — B' = max(0, B - backlog_delivery_fraction *
+    order_backlog_opening). The intake flow does NOT replenish the
+    book (its delivery is carried by revenue_growth). Identical to
+    the template's merge anchor; the template-governance test below
+    asserts the two agree tick by tick when the case drops this
+    driver."""
     return {
         "output": "order_backlog",
         "expression": {
@@ -384,18 +438,21 @@ def _backlog_update_driver() -> dict:
             "args": [
                 0,
                 {
-                    "op": "multiply",
+                    "op": "subtract",
                     "args": [
                         {"ref": "order_backlog"},
                         {
-                            "op": "subtract",
-                            "args": [1, {"ref": "backlog_conversion"}],
+                            "op": "multiply",
+                            "args": [
+                                {"ref": "backlog_delivery_fraction"},
+                                {"ref": "order_backlog_opening"},
+                            ],
                         },
                     ],
                 },
             ],
         },
-        "description": "Backlog updates as backlog * (1 - conversion), floored at 0 (step 1 finite-book depletion).",
+        "description": "Backlog drains by the scheduled delivery, floored at 0 (D2C lag-shaped depletion).",
         "tick_driver": True,
     }
 
@@ -412,14 +469,24 @@ def test_order_book_variables_match_spec() -> None:
     # Step 1 (2026-11-24): 44 -> 45 formulas (the order_backlog
     # finite-book-depletion merge anchor, right after the revenue
     # passthrough).
-    assert len(TEMPLATE_VARIABLES) == 76
-    assert len(TEMPLATE_FORMULAS) == 45
+    # D2C (2026-11-25): 76 -> 78 variables (order_backlog_opening +
+    # downturn_brake, both fixed), 45 -> 46 formulas (the
+    # backlog_delivery_fraction merge anchor, before the revenue
+    # passthrough).
+    # 2026-11-25 adjustment: 78 -> 79 variables (backlog_delivery_fast,
+    # fixed 0.0; no new formula — the blend lives inside the
+    # delivery-fraction formula).
+    assert len(TEMPLATE_VARIABLES) == 79
+    assert len(TEMPLATE_FORMULAS) == 46
     expected = {
         "order_backlog": ("fixed", 0.0),
+        "order_backlog_opening": ("fixed", 0.0),
         "order_intake": ("fixed", 0.0),
         "order_intake_rate": ("triangular", (0.50, 1.00, 1.50)),
         "backlog_conversion": ("triangular", (0.30, 0.40, 0.60)),
         "order_decay": ("triangular", (0.10, 0.25, 0.40)),
+        "downturn_brake": ("fixed", 0.0),
+        "backlog_delivery_fast": ("fixed", 0.0),
     }
     for var_id, (kind, dist_v) in expected.items():
         raw = by_id[var_id]
@@ -437,8 +504,12 @@ def test_order_book_variables_match_spec() -> None:
     # anchor +0/+1; the revenue-passthrough merge anchor is one of
     # the seven chain formulas; see the template docstring).
     # Step 1 (2026-11-24): 44 -> 45 formulas (backlog-update anchor).
-    assert len(template.variables) == 76
-    assert len(template.formulas) == 45
+    # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas
+    # (delivery-fraction anchor).
+    # 2026-11-25 adjustment: 78 -> 79 variables
+    # (backlog_delivery_fast; no new formula).
+    assert len(template.variables) == 79
+    assert len(template.formulas) == 46
     # The template carries the backlog-update driver (finite-book
     # depletion) right after the revenue passthrough, and it is the
     # ONLY backlog-update driver in the template.
@@ -446,10 +517,18 @@ def test_order_book_variables_match_spec() -> None:
     assert [f["output"] for f in TEMPLATE_FORMULAS].index("order_backlog") == (
         [f["output"] for f in TEMPLATE_FORMULAS].index("revenue") + 1
     )
+    # D2C: the template carries the delivery-fraction driver, exactly
+    # once, BEFORE the revenue passthrough (both readers — the revenue
+    # term and the backlog update — must see this tick's fraction).
+    assert len([f for f in TEMPLATE_FORMULAS if f["output"] == "backlog_delivery_fraction"]) == 1
+    assert [f["output"] for f in TEMPLATE_FORMULAS].index("backlog_delivery_fraction") < (
+        [f["output"] for f in TEMPLATE_FORMULAS].index("revenue")
+    )
     fields = {f.name: float(f.default) for f in domain_pack_registry.get("automotive").state_fields}
-    assert len(fields) == 51
+    assert len(fields) == 52
     assert fields["order_backlog"] == 0.0
     assert fields["order_intake"] == 0.0
+    assert fields["backlog_delivery_fraction"] == 0.0
 
 
 # --- API harness (mirrors test_nev_chain.py) -----------------------------
@@ -492,16 +571,22 @@ def _backlog_case_set(
     nev_midpoint: float = 4.0,
     nev_ceiling: float = 0.40,
     nev_penetration0: float = 0.054,
+    downturn_brake: float = 0.0,
+    backlog_delivery_fast: float = 0.0,
 ) -> dict:
-    """Full Desay case set: adoption + NEV chain + backlog (step-1
-    finite-book drivers). Fixed values throughout, so the trajectory
+    """Full Desay case set: adoption + NEV chain + backlog (D2C
+    lag-shaped drivers). Fixed values throughout, so the trajectory
     is deterministic. Defaults are the 2020 MODE values; the 2015
     shape test overrides them. Driver order is load-bearing: intake
-    decays the flow BEFORE revenue reads the pre-tick book, and the
-    backlog updates after revenue (draining exactly what revenue
-    converted). The opening book/flow are bound as variables at one
-    year of intake (intake_rate * mode revenue); see the module
-    docstring for why they are variables, not initial formulas."""
+    decays the flow BEFORE revenue reads this tick's delivery
+    fraction, and the backlog updates after revenue (draining
+    exactly what revenue converted). The opening book/flow are bound
+    as variables at one year of intake (intake_rate * mode revenue);
+    order_backlog_opening is bound at the same book value (the frozen
+    tick-0 level the schedule delivers fractions of); downturn_brake
+    is 0.0 unless the test binds it (the 2018 brake test binds
+    -0.1501). See the module docstring for why the book is a
+    variable, not an initial formula."""
     variables = [
         _fixed("market_share", 0.066),
         _fixed("base_growth", 0.03),
@@ -521,6 +606,9 @@ def _backlog_case_set(
         _fixed("nev_rate", nev_rate),
         _fixed("nev_midpoint", nev_midpoint),
         _fixed("order_backlog", book0),
+        _fixed("order_backlog_opening", book0),
+        _fixed("downturn_brake", downturn_brake),
+        _fixed("backlog_delivery_fast", backlog_delivery_fast),
         _fixed("order_intake", book0),
         _fixed("order_intake_rate", order_intake_rate),
         _fixed("backlog_conversion", backlog_conversion),
@@ -545,19 +633,22 @@ def _backlog_case_set(
 def _finite_book_case_set() -> dict:
     """Finite-uplift guard case: revenue_growth 0.10, conversion
     0.50, decay 0.25, adoption pinned 0.0, book opened at half of
-    revenue (B0 = 0.5 * R0). Under finite-book depletion the book
-    halves every tick (B_t = B0 * 0.5^t) and the backlog term falls
-    every tick, so per-tick growth FALLS toward the 1.10 base rate —
-    the total uplift converges instead of compounding forever. The
-    intake flow still decays each tick (the driver runs) but is
-    unread, so it cannot move revenue: the twin run with intake 0.0
-    must produce the identical revenue trajectory (locked by
+    revenue (B0 = 0.5 * R0). Under the D2C schedule the book delivers
+    nothing in tick 1 (the SOP-lag floor), 15% in tick 2, 45% in tick
+    3, 30% in tick 4 and the last 10% in tick 5, so the backlog term
+    is 0 at tick 1, peaks at tick 3 and is gone by tick 6 — the total
+    uplift converges instead of compounding forever. The intake flow
+    still decays each tick (the driver runs) but is unread, so it
+    cannot move revenue: the twin run with intake 0.0 must produce
+    the identical revenue trajectory (locked by
     ``test_order_intake_is_inert_for_revenue``)."""
     variables = [
         _fixed("revenue", 6799.06),
         _fixed("revenue_growth", 0.10),
         _fixed("disruptor_adoption", 0.0),
         _fixed("order_backlog", 0.5 * 6799.06),
+        _fixed("order_backlog_opening", 0.5 * 6799.06),
+        _fixed("downturn_brake", 0.0),
         _fixed("order_intake", 6799.06),
         _fixed("order_intake_rate", 1.0),
         _fixed("backlog_conversion", 0.50),
@@ -608,6 +699,20 @@ def _trajectory(client: TestClient, run_id: str) -> dict[int, dict]:
     return {s["tick"]: s["state"] for s in pkg["snapshots"]}
 
 
+#: D2C delivery schedule (ticks 1..5): fractions of the opening book
+#: delivered per tick. Must match BACKLOG_DELIVERY_SCHEDULE in the
+#: template spec.
+_DELIVERY_SCHEDULE = (0.0, 0.15, 0.45, 0.30, 0.10)
+
+#: Fast delivery schedule (2026-11-25 adjustment, Ho-approved): the
+#: same uniform-lag discretization with ZERO widening — the D2U
+#: variant tested in the desay-2018 diagnosis. Must match
+#: BACKLOG_DELIVERY_SCHEDULE_FAST in the template spec. Selected
+#: when the book's long-lag programs have already reached SOP at the
+#: decision point (desay-2020 binds it via backlog_delivery_fast = 1).
+_DELIVERY_SCHEDULE_FAST = (0.0, 0.20, 0.60, 0.20, 0.0)
+
+
 def _simulate_backlog(
     revenue0: float = 6799.06,
     backlog0: float = 6799.06,
@@ -623,28 +728,36 @@ def _simulate_backlog(
     nev_rate: float = 0.70,
     nev_midpoint: float = 4.0,
     nev_ceiling: float = 0.40,
+    downturn_brake: float = 0.0,
+    fast: bool = False,
     ticks: int = 5,
 ) -> tuple[dict[int, float], dict[int, float], dict[int, float], dict[int, float]]:
-    """Independent replication of the step-1 driver math (same
+    """Independent replication of the D2C driver math (same
     equations, written separately): revenue / backlog / intake / the
     backlog term per tick, each rounded to 4dp like the engine.
     Per tick: the intake decays first (diagnostic only — it enters
-    neither the term nor the book), then the revenue term converts
-    the pre-tick book, then the book depletes geometrically at the
-    conversion rate. Returns (revenue, backlog, intake, term) keyed
-    by tick."""
+    neither the term nor the book), then the delivery fraction is
+    gated by backlog_conversion (1 on its calibrated support, 0 when
+    frozen off), then the revenue term delivers this tick's fraction
+    of the OPENING book (plus the tick-1 brake), then the book drains
+    by exactly the delivered amount. Returns (revenue, backlog,
+    intake, term) keyed by tick."""
     revenue = {0: revenue0}
     backlog = {0: backlog0}
     intake = {0: backlog0 if intake0 is None else intake0}
     term: dict[int, float] = {}
+    gate = min(1.0, backlog_conversion / 0.30) if backlog_conversion else 0.0
+    sched = _DELIVERY_SCHEDULE_FAST if fast else _DELIVERY_SCHEDULE
     for tick in range(1, ticks + 1):
         adoption = _logistic(disruptor_rate * (tick - disruptor_midpoint), disruptor_ceiling)
         pen = _logistic(nev_rate * (tick - nev_midpoint), nev_ceiling)
         intake[tick] = round(intake[tick - 1] * (1 - order_decay), 4)
-        term[tick] = backlog_conversion * backlog[tick - 1] / revenue[tick - 1]
-        factor = 1 + revenue_growth + revenue_coupling * adoption + nev_coupling * pen + term[tick]
+        frac = gate * (sched[tick - 1] if tick <= len(sched) else 0.0)
+        term[tick] = frac * backlog0 / revenue[tick - 1]
+        brake = downturn_brake if tick == 1 else 0.0
+        factor = 1 + revenue_growth + revenue_coupling * adoption + nev_coupling * pen + term[tick] + brake
         revenue[tick] = round(revenue[tick - 1] * factor, 4)
-        backlog[tick] = round(max(0, backlog[tick - 1] * (1 - backlog_conversion)), 4)
+        backlog[tick] = round(max(0, backlog[tick - 1] - frac * backlog0), 4)
     return revenue, backlog, intake, term
 
 
@@ -652,15 +765,19 @@ def _simulate_backlog(
 
 
 def test_order_book_finite_book_depletes_and_uplift_converges(monkeypatch, tmp_path: Path) -> None:
-    """Step-1 unit validation 1: with conversion 0.50 the book halves
-    every tick (B_t = B0 * 0.5^t) and the backlog term falls every
-    tick, so per-tick growth FALLS toward the 1.10 base rate instead
-    of sitting at a constant level shift. The old level-shift
-    property is gone BY DESIGN (a finite book cannot produce a
-    perpetual shift — that was the defect); what is pinned instead
-    is finiteness: the book is 1/32 of its opening level by tick 5
-    and the total uplift converges (the tick-5 factor is within 1pp
-    of the 1.10 base rate, vs 1.35 at tick 1)."""
+    """D2C unit validation 1: the book delivers nothing in tick 1
+    (the SOP-lag floor — the signature of the lag-shaped schedule),
+    15% in tick 2, 45% in tick 3, 30% in tick 4 and the last 10% in
+    tick 5, so the book is 1.00 / 0.85 / 0.40 / 0.10 / 0.00 of its
+    opening level after ticks 1–5 and the backlog term is 0 at tick 1,
+    peaks at tick 3 and is gone by tick 6. The tick-1 factor is
+    exactly the 1.10 base rate (no immediate conversion — the 2018
+    defect is absent by construction), and the total uplift converges
+    (the book is empty after tick 5, so later growth is base +
+    couplings only). The old level-shift property is gone BY DESIGN
+    (a finite book cannot produce a perpetual shift — that was the
+    defect); what is pinned instead is finiteness: the schedule
+    exhausts the book and the term peaks and dies."""
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
         states = _trajectory(client, _create_run(client, _finite_book_case_set())["id"])
@@ -670,14 +787,20 @@ def test_order_book_finite_book_depletes_and_uplift_converges(monkeypatch, tmp_p
         revenue = {t: states[t]["revenue"] for t in states}
         backlog = {t: states[t]["order_backlog"] for t in states}
         intake = {t: states[t]["order_intake"] for t in states}
-        for tick in (1, 2, 3, 4, 5):
-            assert backlog[tick] == pytest.approx(0.5 * 6799.06 * 0.5**tick, rel=1e-3), tick
+        # The book drains on the schedule, not geometrically.
+        opening = 0.5 * 6799.06
+        for tick, remaining in ((1, 1.00), (2, 0.85), (3, 0.40), (4, 0.10), (5, 0.00)):
+            assert backlog[tick] == pytest.approx(opening * remaining, rel=1e-3), tick
             assert intake[tick] == pytest.approx(6799.06 * 0.75**tick, rel=1e-3), tick
+        # The delivery fraction itself follows the schedule.
+        for tick, frac in ((1, 0.0), (2, 0.15), (3, 0.45), (4, 0.30), (5, 0.10)):
+            assert states[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
         factors = [revenue[t] / revenue[t - 1] for t in (1, 2, 3, 4, 5)]
-        assert factors == sorted(factors, reverse=True), factors
-        assert all(factors[i] > factors[i + 1] for i in range(len(factors) - 1)), factors
-        assert factors[0] == pytest.approx(1.35, rel=1e-3), factors
-        assert factors[-1] == pytest.approx(1.10, abs=0.01), factors
+        # Tick 1 is exactly the base rate: nothing delivers in year 1.
+        assert factors[0] == pytest.approx(1.10, rel=1e-3), factors
+        # The term peaks at tick 3 (the schedule mode) and falls after.
+        assert factors[2] > factors[3] > factors[4], factors
+        assert factors[2] > factors[1] > factors[0], factors
         # Independent replication agrees tick by tick.
         exp_rev, exp_backlog, exp_intake, _ = _simulate_backlog(
             revenue0=6799.06, backlog0=0.5 * 6799.06, intake0=6799.06,
@@ -693,27 +816,92 @@ def test_order_book_finite_book_depletes_and_uplift_converges(monkeypatch, tmp_p
             assert intake[tick] == pytest.approx(exp_intake[tick], rel=2e-3), tick
 
 
+# --- Fast schedule (2026-11-25 adjustment) ------------------------------
+
+
+def test_delivery_schedules_sum_to_one_and_share_length() -> None:
+    """Both schedules exhaust the book (sum 1) and share a length,
+    so the blend in _delivery_fraction_expr is well-defined, and
+    tick 1 is 0 under both (Ho's 1-2y floor)."""
+    from planagent.simulation.domain_packs.automotive.template_spec import (
+        BACKLOG_DELIVERY_SCHEDULE,
+        BACKLOG_DELIVERY_SCHEDULE_FAST,
+    )
+
+    assert sum(BACKLOG_DELIVERY_SCHEDULE) == pytest.approx(1.0)
+    assert sum(BACKLOG_DELIVERY_SCHEDULE_FAST) == pytest.approx(1.0)
+    assert len(BACKLOG_DELIVERY_SCHEDULE) == len(BACKLOG_DELIVERY_SCHEDULE_FAST)
+    assert BACKLOG_DELIVERY_SCHEDULE[0] == 0.0
+    assert BACKLOG_DELIVERY_SCHEDULE_FAST[0] == 0.0
+
+
+def test_fast_schedule_delivers_uniform_lag_profile(monkeypatch, tmp_path: Path) -> None:
+    """2026-11-25 adjustment: with backlog_delivery_fast = 1 the
+    delivery fraction follows the fast schedule [0, .20, .60, .20, 0]
+    (the uniform-lag discretization with zero widening) — 80% of the
+    book by tick 3 vs 60% on the default — and the book drains
+    1.00 / 0.80 / 0.20 / 0.00. With flag 0 the fractions are the
+    default schedule exactly (the blend is exact at the endpoints,
+    not approximate). Tick 1 stays 0 under both profiles (Ho's 1-2y
+    floor). Independent replication agrees tick by tick.
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        fast = _trajectory(
+            client,
+            _create_run(
+                client,
+                _backlog_case_set(0.40, backlog_delivery_fast=1.0),
+                tick_count=4,
+                downside=None,
+            )["id"],
+        )
+        default = _trajectory(
+            client,
+            _create_run(client, _backlog_case_set(0.40), tick_count=4, downside=None)["id"],
+        )
+        assert sorted(fast) == [0, 1, 2, 3, 4]
+        # The fast delivery fraction follows the fast schedule.
+        for tick, frac in ((1, 0.0), (2, 0.20), (3, 0.60), (4, 0.20)):
+            assert fast[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
+        # The book drains on the fast schedule.
+        for tick, remaining in ((1, 1.00), (2, 0.80), (3, 0.20), (4, 0.00)):
+            assert fast[tick]["order_backlog"] == pytest.approx(6799.06 * remaining, rel=1e-3), tick
+        # Flag 0 is the default schedule exactly.
+        for tick, frac in ((1, 0.0), (2, 0.15), (3, 0.45), (4, 0.30)):
+            assert default[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
+        # Fast delivers more by tick 3, so the tick-3 revenue is higher.
+        assert fast[3]["revenue"] > default[3]["revenue"]
+        # Independent replication agrees tick by tick (fast profile).
+        exp_rev, exp_backlog, _, _ = _simulate_backlog(fast=True)
+        for tick in (1, 2, 3, 4):
+            assert fast[tick]["revenue"] == pytest.approx(exp_rev[tick], rel=2e-3), tick
+            assert fast[tick]["order_backlog"] == pytest.approx(exp_backlog[tick], rel=2e-3), tick
+
+
 # --- Shape: the depleting book makes growth FALL ------------------------
 
 
 def test_order_book_decay_produces_falling_growth(monkeypatch, tmp_path: Path) -> None:
     """The shape property the monotone channels cannot express, at
     2020 MODE values (conversion 0.40, decay 0.25, intake rate 1.0):
-    the backlog term (conversion * pre-tick book / revenue) FALLS
-    every tick as the finite book depletes geometrically, and total
-    growth falls with it while the term dominates (ticks 1–3). The
-    tick-4 uptick is the coupling handover, not a failure: the
-    adoption/NEV couplings are monotone RISING channels, and once the
-    term has burned off (0.029 by tick 4) they take over — see the
-    module docstring. What is pinned is the term's fall, the
-    geometric depletion, the opening fall (the anti-hump guard: under
-    Track 11 the factors ROSE from tick 1), and a tick-by-tick
+    under the D2C schedule the backlog term is 0 at tick 1 (the
+    SOP-lag floor — no immediate conversion), peaks at tick 3 (the
+    schedule mode, 45% of the opening book) and falls after, and the
+    book drains on the schedule (1.00 / 0.85 / 0.40 / 0.10 after
+    ticks 1–4). Total growth therefore RISES to tick 3 and falls at
+    tick 4 — the hump is the schedule's mode, not a failure: the
+    step-1 "opening fall" pin is superseded by D2C, which moves the
+    boost later (the 2018 diagnosis: the tick-1 overshoot was the
+    defect, and the counterfactual validated this exact shape on the
+    real 2018 case). What is pinned is the tick-1 zero, the t3 peak,
+    the scheduled drain, the fall after the peak, and a tick-by-tick
     replication. Scored horizon is ticks 1–4 (the Desay child replay
     has ticks 0–4).
 
-    Track C: explicitly opted out — the shape pin is exact (strictly
-    falling terms + tick-by-tick replication), and the default shock
-    breaks the monotonicity it exists to guard.
+    Track C: explicitly opted out — the shape pin is exact (the
+    schedule fractions + tick-by-tick replication), and the default
+    shock breaks the monotonicity it exists to guard.
     """
     setup_app(monkeypatch, tmp_path)
     with TestClient(create_app()) as client:
@@ -727,18 +915,24 @@ def test_order_book_decay_produces_falling_growth(monkeypatch, tmp_path: Path) -
         assert states[0]["order_backlog"] == pytest.approx(6799.06, rel=1e-6)
         assert states[0]["order_intake"] == pytest.approx(6799.06, rel=1e-6)
         factors = [revenue[t] / revenue[t - 1] for t in (1, 2, 3, 4)]
-        # Opening fall (anti-hump): the term dominates ticks 1–3.
-        assert factors[0] > factors[1] > factors[2], factors
-        # The backlog term itself shrinks every tick, and the book
-        # drains geometrically from tick 1 (the intake flow does not
-        # replenish it).
-        terms = [0.40 * backlog[t - 1] / revenue[t - 1] for t in (1, 2, 3, 4)]
-        assert terms == sorted(terms, reverse=True), terms
-        assert all(terms[i] > terms[i + 1] for i in range(len(terms) - 1)), terms
+        # Tick-1 zero (the SOP-lag floor): no backlog boost in year 1.
+        assert states[1]["backlog_delivery_fraction"] == pytest.approx(0.0, abs=1e-9)
+        # The book drains on the schedule.
+        for tick, remaining in ((1, 1.00), (2, 0.85), (3, 0.40), (4, 0.10)):
+            assert backlog[tick] == pytest.approx(6799.06 * remaining, rel=1e-3), tick
         assert intake[1] == pytest.approx(6799.06 * 0.75, rel=1e-3)
-        assert backlog[0] > backlog[1] > backlog[2] > backlog[3] > backlog[4]
-        for tick in (1, 2, 3, 4):
-            assert backlog[tick] == pytest.approx(6799.06 * 0.6**tick, rel=1e-3), tick
+        # The backlog term itself is 0 at tick 1, peaks at tick 3 and
+        # falls after (term = fraction * opening / pre-tick revenue).
+        terms = [
+            states[t]["backlog_delivery_fraction"] * 6799.06 / revenue[t - 1]
+            for t in (1, 2, 3, 4)
+        ]
+        assert terms[0] == pytest.approx(0.0, abs=1e-9), terms
+        assert terms[2] > terms[1] > 0, terms
+        assert terms[2] > terms[3] > 0, terms
+        # Total growth rises to the schedule mode and falls after it.
+        assert factors[0] < factors[1] < factors[2], factors
+        assert factors[2] > factors[3], factors
         # Independent replication agrees tick by tick.
         exp_rev, exp_backlog, exp_intake, _ = _simulate_backlog(ticks=4)
         for tick in (1, 2, 3, 4):
@@ -751,12 +945,10 @@ def test_order_book_2015_mode_falling_growth(monkeypatch, tmp_path: Path) -> Non
     """The 2015 control, at 2015 MODE values — the case the Track 11
     mechanism failed (e047f50 B-replay factors [1.2316, 1.2614, 1.2613,
     1.2622], still rising, because the term humped before it decayed).
-    Under finite-book depletion the small book (0.25x revenue) also
-    yields a falling backlog term from tick 1 (0.10 → 0.049 → 0.025 →
-    0.013) and an opening fall of total growth (the anti-hump guard);
-    the tick-3/4 uptick is the coupling handover (the small term
-    burns off faster, so the rising adoption/NEV couplings take over
-    sooner — see the module docstring). Modes only — no parameter was
+    Under the D2C schedule the small book (0.25x revenue) also
+    delivers nothing in tick 1, peaks at tick 3 and drains on the
+    schedule (1.00 / 0.85 / 0.40 / 0.10); total growth rises to the
+    schedule mode and falls after it. Modes only — no parameter was
     tuned to the 2015 actuals (hindsight firewall).
 
     Track C: explicitly opted out — the pin is an exact tick-by-tick
@@ -786,14 +978,20 @@ def test_order_book_2015_mode_falling_growth(monkeypatch, tmp_path: Path) -> Non
         backlog = {t: states[t]["order_backlog"] for t in states}
         intake = {t: states[t]["order_intake"] for t in states}
         factors = [revenue[t] / revenue[t - 1] for t in (1, 2, 3, 4)]
-        # Opening fall (anti-hump): the term dominates tick 1–2.
-        assert factors[0] > factors[1], factors
-        terms = [0.40 * backlog[t - 1] / revenue[t - 1] for t in (1, 2, 3, 4)]
-        assert terms == sorted(terms, reverse=True), terms
-        assert all(terms[i] > terms[i + 1] for i in range(len(terms) - 1)), terms
-        assert backlog[0] > backlog[1] > backlog[2] > backlog[3] > backlog[4]
-        for tick in (1, 2, 3, 4):
-            assert backlog[tick] == pytest.approx(917.06 * 0.6**tick, rel=1e-3), tick
+        # Tick-1 zero (the SOP-lag floor) and the scheduled drain.
+        assert states[1]["backlog_delivery_fraction"] == pytest.approx(0.0, abs=1e-9)
+        for tick, remaining in ((1, 1.00), (2, 0.85), (3, 0.40), (4, 0.10)):
+            assert backlog[tick] == pytest.approx(917.06 * remaining, rel=1e-3), tick
+        terms = [
+            states[t]["backlog_delivery_fraction"] * 917.06 / revenue[t - 1]
+            for t in (1, 2, 3, 4)
+        ]
+        assert terms[0] == pytest.approx(0.0, abs=1e-9), terms
+        assert terms[2] > terms[1] > 0, terms
+        assert terms[2] > terms[3] > 0, terms
+        # Total growth rises to the schedule mode and falls after it.
+        assert factors[0] < factors[1] < factors[2], factors
+        assert factors[2] > factors[3], factors
         exp_rev, exp_backlog, exp_intake, _ = _simulate_backlog(
             revenue0=3668.25,
             backlog0=917.06,
@@ -826,12 +1024,13 @@ def test_order_book_frozen_baseline_conversion_zero_is_no_backlog(
     every variable fixed, only backlog_conversion changes. 0.0 must
     reproduce the pure NEV-chain revenue exactly, and 0.40 must sit
     above it at every tick; share and profit are untouched by the
-    backlog channel (same in both runs). With conversion 0 the book
-    is FROZEN at its opening level (B' = B * (1 - 0) = B): nothing
-    converts, nothing replenishes — the geometric-depletion form
-    makes the frozen book a fixed point, where the Track 11 stock
-    form accumulated it and the Track A pool form lapsed it with
-    adoption.
+    backlog channel (same in both runs). With conversion 0 the gate
+    is 0, so the delivery fraction is 0 at every tick and the book
+    is FROZEN at its opening level (B' = B - 0 = B): nothing
+    converts, nothing replenishes — the scheduled form with a zero
+    gate makes the frozen book a fixed point, where the Track 11
+    stock form accumulated it and the Track A pool form lapsed it
+    with adoption.
 
     Track C: explicitly opted out — the control is an exact-equality
     device between two runs, and the default shock's draws depend on
@@ -848,9 +1047,14 @@ def test_order_book_frozen_baseline_conversion_zero_is_no_backlog(
         revenue_on = {t: states_on[t]["revenue"] for t in states_on}
         revenue_off = {t: states_off[t]["revenue"] for t in states_off}
         exp_rev, _, _, _ = _simulate_backlog(backlog_conversion=0.0)
+        # D2C: at tick 1 the ON run equals the OFF run exactly — the
+        # schedule delivers nothing in year 1, so there is no tick-1
+        # boost to distinguish them. From tick 2 the ON run sits above.
+        assert revenue_on[1] == pytest.approx(revenue_off[1], rel=1e-9)
         for tick in (1, 2, 3, 4, 5):
             assert revenue_off[tick] == pytest.approx(exp_rev[tick], rel=2e-3), tick
-            assert revenue_on[tick] > revenue_off[tick], tick
+            if tick >= 2:
+                assert revenue_on[tick] > revenue_off[tick], tick
             assert states_on[tick]["market_share"] == pytest.approx(
                 states_off[tick]["market_share"], rel=1e-6
             ), tick
@@ -942,6 +1146,11 @@ def test_order_book_generic_run_unaffected(monkeypatch, tmp_path: Path) -> None:
             assert states[tick]["order_backlog"] == 0.0, tick
             assert states[tick]["order_intake"] == 0.0, tick
             assert states[tick]["revenue"] == 100.0, tick
+        # D2C: the delivery-fraction driver still runs (it is a
+        # template driver), so the fraction follows the schedule —
+        # but with a zero opening book it moves nothing.
+        for tick, frac in ((1, 0.0), (2, 0.15), (3, 0.45), (4, 0.30), (5, 0.10)):
+            assert states[tick]["backlog_delivery_fraction"] == pytest.approx(frac, abs=1e-9), tick
 
 
 # --- The template driver governs: dropping the case driver changes nothing
@@ -1031,3 +1240,100 @@ def test_order_intake_is_inert_for_revenue(monkeypatch, tmp_path: Path) -> None:
             6799.06 * 0.75**5, rel=1e-3
         )
         assert states_without[5]["order_intake"] == 0.0
+
+# --- D2C: the downturn brake hits tick 1 only ----------------------------
+
+
+def test_downturn_brake_hits_tick_1_only(monkeypatch, tmp_path: Path) -> None:
+    """D2C brake control: twin runs at 2020 mode values, one with
+    downturn_brake = -0.1501 (the 2018 value: anchor-year -10.01%
+    minus revenue_growth mode +5%), one with 0.0. The braked run's
+    tick-1 growth factor is exactly 0.1501 lower; the brake term
+    itself is tick-1 only, but the tick-2+ factors differ by exactly
+    the backlog-term denominator effect (the smaller tick-1 base
+    raises the later terms, which divide by pre-tick revenue); the
+    book trajectory is identical (the brake does not touch the book).
+    The replication agrees tick by tick.
+
+    Track C: explicitly opted out (``downside: null``) — exact
+    equality between two runs.
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        unbraked = _backlog_case_set(0.40, downturn_brake=0.0)
+        braked = _backlog_case_set(0.40, downturn_brake=-0.1501)
+        states_off = _trajectory(
+            client, _create_run(client, unbraked, tick_count=5, downside=None)["id"]
+        )
+        states_on = _trajectory(
+            client, _create_run(client, braked, tick_count=5, downside=None)["id"]
+        )
+        rev_off = {t: states_off[t]["revenue"] for t in states_off}
+        rev_on = {t: states_on[t]["revenue"] for t in states_on}
+        f_off = [rev_off[t] / rev_off[t - 1] for t in (1, 2, 3, 4, 5)]
+        f_on = [rev_on[t] / rev_on[t - 1] for t in (1, 2, 3, 4, 5)]
+        assert f_off[0] - f_on[0] == pytest.approx(0.1501, abs=1e-6)
+        # The brake term itself is tick-1 only, but the tick-2+ factors
+        # are NOT identical: the backlog term divides by pre-tick
+        # revenue, so the braked run's smaller tick-1 base mechanically
+        # raises its later backlog terms (a denominator effect, not a
+        # second brake). What is pinned is that the difference is
+        # exactly that denominator effect — the replication below
+        # encodes it — and that the book is untouched by the brake.
+        for tick in (2, 3, 4, 5):
+            term_off = states_off[tick]["backlog_delivery_fraction"] * 6799.06 / rev_off[tick - 1]
+            term_on = states_on[tick]["backlog_delivery_fraction"] * 6799.06 / rev_on[tick - 1]
+            assert f_on[tick - 1] - f_off[tick - 1] == pytest.approx(
+                term_on - term_off, abs=1e-6
+            ), tick
+            assert states_on[tick]["order_backlog"] == pytest.approx(
+                states_off[tick]["order_backlog"], rel=1e-9
+            ), tick
+        # The tick-1 shortfall persists (the braked level stays below),
+        # though the denominator effect partly compensates it.
+        for tick in (1, 2, 3, 4, 5):
+            assert rev_on[tick] < rev_off[tick], tick
+        assert rev_on[1] == pytest.approx(rev_off[1] * (f_on[0] / f_off[0]), rel=1e-9)
+        exp_rev, exp_backlog, _, _ = _simulate_backlog(
+            downturn_brake=-0.1501, ticks=5
+        )
+        for tick in (1, 2, 3, 4, 5):
+            assert rev_on[tick] == pytest.approx(exp_rev[tick], rel=2e-3), tick
+            assert states_on[tick]["order_backlog"] == pytest.approx(
+                exp_backlog[tick], rel=2e-3
+            ), tick
+
+
+# --- D2C: the conversion gate zeroes the fraction when frozen off ------
+
+
+def test_conversion_gate_zeroes_delivery_fraction(monkeypatch, tmp_path: Path) -> None:
+    """D2C gate control: with backlog_conversion = 0 the delivery
+    fraction is 0 at every tick (min(1, 0 / 0.30) = 0), so the book
+    is frozen at its opening level and revenue is the pure NEV-chain
+    path — the leg-freeze interface the frozen-baseline decomposition
+    and the two-value opportunity module rely on. With conversion
+    0.40 the gate is 1 on the whole calibrated support and the
+    fraction follows the schedule.
+
+    Track C: explicitly opted out (``downside: null``) — exact
+    equality device.
+    """
+    setup_app(monkeypatch, tmp_path)
+    with TestClient(create_app()) as client:
+        states_off = _trajectory(
+            client,
+            _create_run(client, _backlog_case_set(0.0), tick_count=5, downside=None)["id"],
+        )
+        states_on = _trajectory(
+            client,
+            _create_run(client, _backlog_case_set(0.40), tick_count=5, downside=None)["id"],
+        )
+        for tick in (1, 2, 3, 4, 5):
+            assert states_off[tick]["backlog_delivery_fraction"] == pytest.approx(0.0, abs=1e-9), tick
+            assert states_on[tick]["backlog_delivery_fraction"] == pytest.approx(
+                _DELIVERY_SCHEDULE[tick - 1], abs=1e-9
+            ), tick
+        assert states_off[5]["order_backlog"] == pytest.approx(
+            states_off[0]["order_backlog"], rel=1e-9
+        )

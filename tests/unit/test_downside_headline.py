@@ -182,6 +182,76 @@ def test_decline_structural_when_mode_path_already_falls() -> None:
     assert "结构性" in result.label_zh
 
 
+def test_decline_lone_first_tick_dip_is_forgiven() -> None:
+    # 2026-11-25 lone-first-tick rule (§9): a single first-tick dip
+    # followed by rising ticks is an opening level adjustment, not a
+    # declining path. 2015 B D2C OFF factors: dip 0.9691 at tick 1,
+    # then 1.1608+ — informative, depth from the slowest later tick.
+    result = assess_decline_saturation(
+        [0.9691, 1.1608, 1.2456, 1.2478], depth_high=0.35, max_rise=RISE
+    )
+    assert result.category == INFORMATIVE
+    assert result.first_tick_dip_forgiven is True
+    assert result.slowest_growth == pytest.approx(1.1608)
+    # Binding tick is the slowest later one (1.1608):
+    # (1 − 1/1.1608) / 0.626 ≈ 0.221.
+    assert result.required_depth == pytest.approx(0.221, abs=0.002)
+
+
+def test_decline_lone_first_tick_dip_saturates_when_later_growth_fast() -> None:
+    # 2018 B D2C OFF factors: the tick-1 dip is forgiven, but the
+    # later ticks grow so fast (slowest 1.7043) that no in-support
+    # shock can make the path decline — saturated, still OUT.
+    result = assess_decline_saturation(
+        [0.7818, 1.7154, 2.0242, 1.7043], depth_high=0.35, max_rise=RISE
+    )
+    assert result.category == SATURATED
+    assert result.first_tick_dip_forgiven is True
+    assert result.required_depth == pytest.approx(0.660, abs=0.002)
+
+
+def test_decline_later_tick_dip_stays_structural() -> None:
+    # A single dip at tick 2 is in the modeled dynamics, not the
+    # opening adjustment — structural, forgiveness does not apply.
+    result = assess_decline_saturation(
+        [1.20, 0.95, 1.30, 1.40], depth_high=0.35, max_rise=RISE
+    )
+    assert result.category == STRUCTURAL
+    assert result.required_depth is None
+    assert result.first_tick_dip_forgiven is False
+
+
+def test_decline_second_dip_anywhere_stays_structural() -> None:
+    # Two dips, one at tick 1: the path itself turns down twice.
+    result = assess_decline_saturation(
+        [0.95, 1.20, 0.90, 1.30], depth_high=0.35, max_rise=RISE
+    )
+    assert result.category == STRUCTURAL
+    assert result.required_depth is None
+    assert result.first_tick_dip_forgiven is False
+
+
+def test_decline_single_tick_path_stays_structural() -> None:
+    # A one-tick path that declines has no "after" to forgive.
+    result = assess_decline_saturation([0.90], depth_high=0.35, max_rise=RISE)
+    assert result.category == STRUCTURAL
+    assert result.required_depth is None
+    assert result.first_tick_dip_forgiven is False
+
+
+def test_decline_nokia_factors_stay_structural() -> None:
+    # Nokia B: six consecutive sub-1 ticks from tick 4 — the canonical
+    # structural case is untouched by the lone-first-tick rule.
+    result = assess_decline_saturation(
+        [1.0996, 1.0811, 1.0309, 0.9936, 0.9807, 0.978, 0.9764, 0.9772, 0.9769],
+        depth_high=0.35,
+        max_rise=RISE,
+    )
+    assert result.category == STRUCTURAL
+    assert result.required_depth is None
+    assert result.first_tick_dip_forgiven is False
+
+
 def test_decline_rejects_bad_inputs() -> None:
     with pytest.raises(ValueError):
         assess_decline_saturation([], depth_high=0.35, max_rise=RISE)

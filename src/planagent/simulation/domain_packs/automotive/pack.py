@@ -279,11 +279,14 @@ class AutomotiveDomainPack(DomainPack):
             # is bound as a variable, not an initial formula: merge
             # is per-output, so an initial formula and a tick driver
             # cannot share an output id. The flow
-            # decays per tick by (1 - order_decay), so the backlog
-            # term shrinks as the order surge passes and per-tick
-            # growth FALLS even while penetration and adoption keep
-            # rising — the front-loaded shape the monotone channels
-            # cannot express (diagnostic-2020 §4).
+            # decays per tick by (1 - order_decay), and the book
+            # depletes on the D2C delivery schedule (2026-11-25:
+            # backlog_delivery_fraction of the opening book per tick,
+            # 0 in tick 1), so the backlog term shrinks as the order
+            # surge passes and per-tick growth FALLS even while
+            # penetration and adoption keep rising — the front-loaded
+            # shape the monotone channels cannot express
+            # (diagnostic-2020 §4).
             StateFieldSpec(
                 "order_backlog",
                 "Stock of unfulfilled orders, same units as revenue.",
@@ -292,6 +295,11 @@ class AutomotiveDomainPack(DomainPack):
             StateFieldSpec(
                 "order_intake",
                 "New orders arriving per tick, same units as revenue.",
+                0.0,
+            ),
+            StateFieldSpec(
+                "backlog_delivery_fraction",
+                "Fraction of the opening order book delivered this tick (D2C delivery schedule, 0-1).",
                 0.0,
             ),
             # Ho 2026-11-16 generation/lifecycle dimension (NOT in synthesis

@@ -4,10 +4,13 @@
 and desay-2020 (decide end-2020, project to 2025), re-wired from the
 Track 7 auto-pack harness (run_desay_autopack.py, which is NOT
 modified) with the Track 7 §7 order-book mechanism attached: the
-revenue driver gains the backlog term
-(+ backlog_conversion * order_backlog / revenue), the intake flow
-decays per tick, and the backlog stock updates as
-backlog + intake - converted. The NEV chain stays the level term; the
+revenue driver gains the backlog term (D2C, 2026-11-25:
++ backlog_delivery_fraction * order_backlog_opening / revenue — the
+lag-shaped delivery schedule (0, 0.15, 0.45, 0.30, 0.10) of the
+opening book, superseding the geometric
+backlog_conversion * order_backlog / revenue), the intake flow
+decays per tick, and the backlog stock updates by the scheduled
+delivery. The NEV chain stays the level term; the
 backlog term is the shape term. Own scratch backend (BACKTEST_BASE,
 default :8024), own DB $BACKTEST_RUN_DIR/trials50-fbook.db; never
 touches :8000/3000.
@@ -298,10 +301,14 @@ def chain_drivers():
                                                                 # revenue share; that would
                                                                 # double-count revenue_coupling).
                                                                 {"op": "multiply", "args": [{"ref": "adas_coupling"}, {"ref": "adas_penetration"}]},
-                                                                # Track 11: exactly one backlog term — the
-                                                                # SHAPE term. Converted amount =
-                                                                # backlog_conversion * pre-tick backlog.
-                                                                {"op": "multiply", "args": [{"ref": "backlog_conversion"}, {"op": "divide", "args": [{"ref": "order_backlog"}, {"ref": "revenue"}]}]},
+                                                                # D2C (2026-11-25): exactly one backlog
+                                                                # term — the SHAPE term. Delivered
+                                                                # amount = this tick's fraction of the
+                                                                # OPENING book (0 in tick 1: the SOP-lag
+                                                                # floor). The downturn brake adds
+                                                                # downturn_brake * (tick == 1) — tick-1
+                                                                # growth only; 0 for growth-year anchors.
+                                                                {"op": "add", "args": [{"op": "multiply", "args": [{"ref": "backlog_delivery_fraction"}, {"op": "divide", "args": [{"ref": "order_backlog_opening"}, {"ref": "revenue"}]}]}, {"op": "multiply", "args": [{"ref": "downturn_brake"}, {"op": "max", "args": [0, {"op": "min", "args": [1, {"op": "subtract", "args": [2, {"ref": "tick"}]}]}]}]}]},
                                                             ],
                                                         },
                                                     ],
@@ -316,7 +323,7 @@ def chain_drivers():
                 },
             ],
         },
-        "description": "Revenue grows at revenue_growth plus revenue_coupling * adoption plus nev_coupling * nev_penetration (diagnostic §5.2) plus adas_coupling * adas_penetration (Track C1 §2: the grade term) plus backlog_conversion * order_backlog / revenue (Track 11 §7: the shape term); floored at 0.",
+        "description": "Revenue grows at revenue_growth plus revenue_coupling * adoption plus nev_coupling * nev_penetration (diagnostic §5.2) plus adas_coupling * adas_penetration (Track C1 §2: the grade term) plus backlog_delivery_fraction * order_backlog_opening / revenue (D2C §7: the shape term — lag-shaped delivery of the opening book) plus downturn_brake * (tick == 1) (D2C: tick-1 growth brake, 0 for growth-year anchors); floored at 0.",
         "tick_driver": True,
     }
 
@@ -336,15 +343,16 @@ def chain_drivers():
         "description": "New-orders flow decays by (1 - order_decay) per tick (Track 11 §7).",
         "tick_driver": True,
     }
-    # STEP 1 (b) PROMOTED — finite-book depletion now lives in the
-    # TEMPLATE (fix/anchor-growth-form, 4a43f5b: order_backlog merge
-    # anchor right after the revenue passthrough, B' = B*(1-c)).
-    # The case driver that the experiment carried is DELIBERATELY
-    # DROPPED here: a case driver on the same output would replace
-    # the anchor in place, and this rerun proves the template driver
-    # alone reproduces the experiment's numbers exactly. The revenue
-    # term is unchanged (+ c*B/R); the intake driver still decays
-    # the diagnostic flow.
+    # D2C (2026-11-25) PROMOTED — scheduled-book depletion now lives
+    # in the TEMPLATE (order_backlog merge anchor right after the
+    # revenue passthrough, B' = max(0, B - backlog_delivery_fraction
+    # * order_backlog_opening), plus the backlog_delivery_fraction
+    # driver before the revenue passthrough). The case driver that the
+    # experiment carried is DELIBERATELY DROPPED here: a case driver
+    # on the same output would replace the anchor in place. The
+    # revenue term is the D2C form (+ f*opening/R, 0 in tick 1, plus
+    # the tick-1 brake); the intake driver still decays the diagnostic
+    # flow.
     return [
         adoption,
         nev_penetration,
@@ -790,7 +798,9 @@ def _adas_wiring_variables(adas_pen: tuple, adas_midpoint: tuple | None, base_ta
     return variables
 
 
-def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag: str) -> list:
+def _orderbook_wiring_variables(
+    intake_rate: tuple, book_value: float, base_tag: str, fast_schedule: bool = False
+) -> list:
     """Track 11 order-book wiring variables appended to each Desay case.
 
     - order_backlog / order_intake: FIXED at one year of intake
@@ -798,6 +808,24 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
       LABELED ASSUMPTION (the order stock itself was never disclosed).
       Bound as variables, not initial formulas: merge is per-output, so
       an initial formula and a tick driver cannot share an output id.
+    - order_backlog_opening (D2C, 2026-11-25): FIXED at the same
+      book_value — the frozen tick-0 level the delivery schedule
+      delivers fractions of. The template's backlog_delivery_fraction
+      driver reads it; the stock update drains the same amount.
+    - downturn_brake (D2C, 2026-11-25): FIXED at 0.0 for the 2015 /
+      2020 cases (anchor-year growth positive — no brake). The 2018
+      case binds -0.1501 in its own script (anchor-year -10.01% minus
+      revenue_growth mode +5%).
+    - backlog_delivery_fast (2026-11-25 adjustment, Ho-approved):
+      FIXED 0/1 schedule-profile selector. 1 = fast schedule
+      [0, .20, .60, .20, 0] (uniform-lag discretization, zero
+      widening) for a book whose long-lag programs have reached SOP
+      at the decision point; 0 = default schedule. 2020 binds 1
+      (IPU03 in mass production on XPeng P7 by end-2020; cockpit
+      86.95% of revenue, +33.5%, on established lines); 2015 binds
+      0 (small book, no SOP evidence for a faster profile). The 2018
+      case binds 0 (default) via the template default in its own
+      script. Tick 1 stays 0 under both profiles (Ho's 1-2y floor).
     - order_intake_rate: triangular around the decision-time order
       book. 2020: ~70亿 annualised new orders / 67.99亿 revenue ≈ 1.03
       → triangular(0.80, 1.00, 1.20). 2015: no order surge disclosed →
@@ -806,7 +834,11 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
       is NEVER an input here — scoring evidence only.
     - backlog_conversion / order_decay: the template distributions
       (triangular(0.30, 0.40, 0.60) / triangular(0.10, 0.25, 0.40)),
-      restated at case level with their decision-time basis.
+      restated at case level with their decision-time basis. D2C:
+      backlog_conversion is now the delivery schedule's on/off gate
+      (1 on its whole support, 0 when frozen off), not a per-tick
+      rate — retained as a sampled variable so the sampling stream is
+      unchanged.
     """
     return [
         {
@@ -815,6 +847,41 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
             "distribution": {"type": "fixed", "value": book_value},
             "evidence_ref": "estimate: LABELED ASSUMPTION — opening order-book stock = one year of intake at the intake-rate mode (the stock itself was never disclosed; 2020: 1.00 x 6799.06; 2015: 0.25 x 3668.25)",
             "description": "期初未交付订单存量（一年新签订单量的代理值，标注假设）",
+            "scope_tags": [base_tag],
+        },
+        {
+            "id": "order_backlog_opening",
+            "unit": "RMB m",
+            "distribution": {"type": "fixed", "value": book_value},
+            "evidence_ref": "estimate: LABELED ASSUMPTION — opening order-book stock, same proxy as order_backlog (D2C delivery schedule delivers fractions of this frozen tick-0 level)",
+            "description": "期初订单存量（冻结的 tick-0 水平，交付计划的分母）",
+            "scope_tags": [base_tag],
+        },
+        {
+            "id": "downturn_brake",
+            "unit": "per-year (additive growth points)",
+            "distribution": {"type": "fixed", "value": 0.0},
+            "evidence_ref": "rule: D2C downturn brake (2026-11-25, Ho-approved Option A) — anchor-year realized revenue growth is positive for 2015/2020, so no brake (0.0); the 2018 case binds -0.1501 in its own script",
+            "description": "下行刹车（tick-1 增速修正；2015/2020 为 0）",
+            "scope_tags": [base_tag],
+        },
+        {
+            "id": "backlog_delivery_fast",
+            "unit": "0/1 selector",
+            "distribution": {"type": "fixed", "value": 1.0 if fast_schedule else 0.0},
+            "evidence_ref": (
+                "rule: D2C schedule-profile selector (2026-11-25 adjustment, Ho-approved) — "
+                "1 = fast schedule [0, .20, .60, .20, 0] (uniform-lag discretization, zero "
+                "widening) for desay-2020: IPU03 in mass production on XPeng P7 by end-2020, "
+                "cockpit 86.95% of revenue (+33.5%) on established in-production lines, so the "
+                "book's long-lag programs have reached SOP and its remaining-lag distribution "
+                "does not push later"
+                if fast_schedule
+                else "rule: D2C schedule-profile selector (2026-11-25 adjustment, Ho-approved) — "
+                "0 = default SOP-lag schedule [0, .15, .45, .30, .10] for desay-2015 (small book, "
+                "no decision-point evidence for a faster profile)"
+            ),
+            "description": "交付计划档位（2020 为快档，2015 为默认档）",
             "scope_tags": [base_tag],
         },
         {
@@ -837,8 +904,8 @@ def _orderbook_wiring_variables(intake_rate: tuple, book_value: float, base_tag:
             "id": "backlog_conversion",
             "unit": "fraction of backlog converted per tick",
             "distribution": triangular(0.30, 0.40, 0.60),
-            "evidence_ref": "estimate: LABELED ASSUMPTION — fraction of the backlog converted to revenue per tick, calibratable from the historical order-to-revenue lag (design-in to start-of-production ~1-2 years for auto electronics, ~0.40/yr turns the book over in ~2.5 years)",
-            "description": "每 tick 订单存量转化为收入的比例",
+            "evidence_ref": "estimate: LABELED ASSUMPTION — D2C (2026-11-25): the delivery schedule's on/off gate (min(1, backlog_conversion / 0.30) = 1 on the whole support, 0 when frozen off), not a per-tick rate; the lag evidence (design-in to start-of-production ~1-2 years) now calibrates the schedule, not this rate. Retained sampled so the sampling stream is unchanged.",
+            "description": "订单簿通道开关（D2C：交付计划的门控，冻结时为 0）",
             "scope_tags": [base_tag],
         },
         {
@@ -976,7 +1043,7 @@ CASES["desay-2015"]["variables"] += _orderbook_wiring_variables(
     (0.15, 0.25, 0.40), 917.06, "traditional",
 )
 CASES["desay-2020"]["variables"] += _orderbook_wiring_variables(
-    (0.80, 1.00, 1.20), 6799.06, "cockpit",
+    (0.80, 1.00, 1.20), 6799.06, "cockpit", fast_schedule=True,
 )
 # ADAS wiring appended to each case (Track C1 §2): 2015 is the
 # pre-L2 control (starting ~0, midpoint mode 5.0); 2020 is the
