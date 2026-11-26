@@ -419,12 +419,21 @@ CASES = {
         # backend but is never scored or cited for this case. The
         # $50M Netflix anecdote is DISPUTED (Antioco denied a formal
         # acquisition discussion) and is never used as a case input.
+        # S1+S2 FIX (Ho 2026-11-26 13:29; branch fix/blockbuster-2003-s1s2):
+        # S1 re-anchors the revenue start level from the 1999 print to the
+        # 2000 H1 annualized run-rate (Q2 2000 10-Q, filed 2000-08-14, 18
+        # days before the decision point); S2 halves this case's downside
+        # occurrence (0.5 -> 0.25) on the 1990-91 recession record for
+        # video rental. Both changes use decision-time evidence only;
+        # the global downside defaults are untouched (C2 stays
+        # non-compliant). See the revenue variable, the downturn_occurs
+        # variable, and revenue_loss_threshold below.
         "company_id": "backtest-blockbuster-2000",
         "company_name": "Blockbuster (2000 retrospective)",
         "market": "video-rental",
         "decision_time": "2000-09-01T00:00:00Z",
         "loss_threshold": 0.36,
-        "revenue_loss_threshold": 4.46,
+        "revenue_loss_threshold": 4.85,
         "formulas": diffusion_drivers(with_profit=False),
         "topic": "Blockbuster 2000：收购/合作Netflix还是坚持门店模式？",
         "decomposition": {
@@ -490,9 +499,18 @@ CASES = {
             {
                 "id": "revenue",
                 "unit": "USD B",
-                "distribution": triangular(4.2, 4.46, 4.9),
-                "evidence_ref": "evidence: 1999 total revenues $4.46B (10-K chart, decision-time known); 2000 full-year $4.96B was NOT known on 2000-09-01 and is not used as input",
-                "description": "年总收入，单位十亿美元（起始值，1999年为基准）",
+                # S1 (fix/blockbuster-2003-s1s2, Ho 2026-11-26 13:29): the
+                # start level is re-anchored from the 1999 print (4.46) to
+                # the 2000 H1 annualized run-rate. Q2 2000 10-Q (SEC, filed
+                # 2000-08-14, 18 days before the 2000-09-01 decision point):
+                # H1 revenue $2,425.5M, +12.6% YoY, Q2 alone +16.5% ->
+                # annualized $4.851B. Shift +0.39 (= 4.85 - 4.46) applied
+                # to all three parameters, spread preserved (width 0.70,
+                # mode 0.26 above min, as before). The 2000 full-year
+                # $4.96B was NOT known on 2000-09-01 and is not used.
+                "distribution": triangular(4.59, 4.85, 5.29),
+                "evidence_ref": "evidence: 2000 H1 revenue $2,425.5M (+12.6% YoY, Q2 +16.5%), Q2 2000 10-Q filed 2000-08-14, decision-time known; annualized $4.851B; whole distribution re-anchored +0.39 from the 1999 print $4.46B (1999 10-K), spread preserved",
+                "description": "年总收入，单位十亿美元（起始值，2000 年上半年年化 run-rate 为基准）",
                 "scope_tags": ["channels"],
             },
             {
@@ -502,6 +520,27 @@ CASES = {
                 "evidence_ref": "estimate: labeled assumption — store growth + late fees, moderating; 1999-2004 revenue CAGR 6.3% is post-decision and not used",
                 "description": "无颠覆时的年均收入增长率",
                 "scope_tags": ["channels"],
+            },
+            {
+                # S2 (fix/blockbuster-2003-s1s2, Ho 2026-11-26 13:29):
+                # this case binds its own downturn_occurs, so the engine
+                # keeps this definition and fills only the other four
+                # downside variables from the unified default (downside.py:
+                # a caller-bound id is never overwritten). Occurrence
+                # 0.5 -> 0.25, CASE-ONLY: the global default is untouched
+                # (C2 — unifying the parameter across cases — stays
+                # non-compliant). Depth / start / duration / persistent
+                # stay at the unified default; no independent estimate is
+                # claimed for a new depth. Appended at the END of the case
+                # variables so the pre-existing draws are untouched; only
+                # the four default-filled downside draws shift by one
+                # position in the sampling stream.
+                "id": "downturn_occurs",
+                "unit": "probability",
+                "distribution": {"type": "bernoulli", "p": 0.25},
+                "evidence_ref": "estimate: CASE DOWNGRADE (S2) — default 0.5 halved to 0.25 for video rental: 1990-91 recession (NBER Jul 1990-Mar 1991) did not dent rental demand — BLS industry output (NAICS 532282) rose nominally 1990 $5,006.9M -> 1991 $5,035.9M (+0.6%), real dip only -3.2% for one year; worst observed hit ~1/6 of default modal depth 0.20. Full chain in blockbuster-2003-fix-2026-11-26/REPORT.md",
+                "description": "本案周期下行发生概率（租赁抗周期，默认 0.5 降档至 0.25）",
+                "scope_tags": [],
             },
         ],
         "internal": {
