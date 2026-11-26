@@ -53,7 +53,10 @@ MAX_INTERNAL_VALUE_LENGTH = 2000
 #: automotive template alone holds 36 formulas, and Desay-style cases
 #: add 6 case formulas on top (42 total), so the reference cap now
 #: refuses the exact usage the order-book backtest verifies.
-MAX_FORMULAS = 50
+#: Raised from 50 to 100 by Ho's 2026-11-26 decision: the merged
+#: template holds 50 formulas and Desay-style cases add 1 more (51),
+#: which the 50 cap rejected with HTTP 400.
+MAX_FORMULAS = 100
 #: Maximum expression nesting depth, ported from the reference
 #: (``depth > 15`` is rejected there).
 MAX_FORMULA_DEPTH = 15
