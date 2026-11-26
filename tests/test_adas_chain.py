@@ -116,9 +116,14 @@ def test_adas_chain_variables_match_spec() -> None:
     # registry pin.)
     # 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(TEMPLATE_VARIABLES) == 79
-    assert len(TEMPLATE_FORMULAS) == 46
-    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 43
+    # Audit A2 rebase (2026-11-20): +3 variables / +4 formulas /
+    # +4 tick drivers — price_cut_factor + template_revenue +
+    # accounts_receivable, and the price_cut_factor tick driver plus
+    # the receivables trio (accounts_receivable_next / cash /
+    # accounts_receivable) (79 -> 82, 46 -> 50, 43 -> 47).
+    assert len(TEMPLATE_VARIABLES) == 82
+    assert len(TEMPLATE_FORMULAS) == 50
+    assert len([f for f in TEMPLATE_FORMULAS if f.get("tick_driver")]) == 47
     expected = {
         "adas_ceiling": (0.50, 0.65, 0.80),
         "adas_rate": (0.50, 0.70, 1.00),
@@ -147,8 +152,10 @@ def test_adas_chain_variables_match_spec() -> None:
     # D2C (2026-11-25): 76 -> 78 variables, 45 -> 46 formulas.
     # 2026-11-25 adjustment: 78 -> 79 variables
     # (backlog_delivery_fast; no new formula).
-    assert len(template.variables) == 79
-    assert len(template.formulas) == 46
+    # Audit A2 rebase (2026-11-20): 79 -> 82 variables,
+    # 46 -> 50 formulas (see the count comment above).
+    assert len(template.variables) == 82
+    assert len(template.formulas) == 50
 
 
 def test_adas_chain_planning_path_values() -> None:

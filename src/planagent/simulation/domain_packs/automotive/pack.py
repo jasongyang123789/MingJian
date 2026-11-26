@@ -180,10 +180,29 @@ class AutomotiveDomainPack(DomainPack):
             # 24.97%); replaces the 2023-25 post-decision window
             # (hindsight-leak fix). Ho's own margin is an internal parameter.
             StateFieldSpec("tier1_gross_margin", "Tier-1 gross margin.", 0.25),
+            # Audit A2 (2026-11-20): cumulative OEM annual-cut factor on
+            # the Tier-1 price level. 1.0 = no cut yet; the tick driver in
+            # template_spec.py multiplies it by (1 - annual_cut_rate/12)
+            # each month, so after 12 ticks it is ~(1 - annual_cut_rate).
+            # The price driver applies it to its cost-implied target.
+            StateFieldSpec(
+                "price_cut_factor", "Cumulative annual-cut factor on price, 1.0 = no cut yet.", 1.0
+            ),
             # Synthesis C1: 1.0 = baseline (anchored to 366M parc, ~8yr average age).
             StateFieldSpec("replacement_demand", "Replacement-demand level, 1.0 = baseline.", 1.0),
             # Synthesis C1: retained ONLY for Monte Carlo metric continuity.
             StateFieldSpec("cash", "Available operating cash.", 100.0),
+            # Audit A2 (2026-11-20): receivables stock, same units as
+            # revenue. Default 600.0 = generic revenue 100.0 x mode terms
+            # 6 months, so a generic-scale run opens with no tick-1 cash
+            # jump (a case that binds revenue in other units MUST bind
+            # this opening too — same rule as Track 11 order_backlog).
+            # The tick drivers re-derive it as revenue x payment terms
+            # each tick (monthly ticks); the cash driver absorbs the
+            # change, so cash + receivables conserve the sales flow.
+            StateFieldSpec(
+                "accounts_receivable", "Receivables stock, same units as revenue.", 600.0
+            ),
             # B2B funnel (Track 4, one-click): the 8-stage Tier-1 sales
             # chain — customer development -> lead funnel -> RFQ/contract
             # -> demand/product matching/project management -> manufacturing
