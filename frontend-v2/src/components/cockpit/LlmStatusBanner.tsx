@@ -16,7 +16,7 @@ export function LlmStatusBanner({ error, onRetry }: { error: unknown; onRetry?: 
         className="flex items-center justify-between gap-4 rounded-[20px] border border-amber-500/20 bg-amber-500/5 px-4 py-3"
       >
         <div>
-          <p className="text-sm font-medium text-amber-300">未配置 LLM，无法启动 deliberation</p>
+          <p className="text-sm font-medium text-amber-300">未配置 LLM，无法启动商议</p>
           <p className="mt-0.5 text-xs leading-5 text-amber-200/70">
             后端返回 503 skill_llm_unavailable：primary 目标没有配置密钥。历史记录与数值工件不受影响；配置密钥后即可启动。
           </p>

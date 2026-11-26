@@ -47,7 +47,7 @@ function renderPage(initialEntries: string[] = ['/cockpit/deliberations']) {
 }
 
 async function selectRun(runId: string) {
-  fireEvent.change(await screen.findByLabelText('选择模拟 Run'), { target: { value: runId } })
+  fireEvent.change(await screen.findByLabelText('选择推演'), { target: { value: runId } })
 }
 
 describe('Deliberation', () => {
@@ -58,9 +58,9 @@ describe('Deliberation', () => {
   it('preselects the run from the ?run= URL parameter', async () => {
     mockBackend()
     renderPage(['/cockpit/deliberations?run=run-1'])
-    expect(await screen.findByText('历史记录（append-only，最新在前）')).toBeInTheDocument()
+    expect(await screen.findByText('历史记录（只追加，最新在前）')).toBeInTheDocument()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toHaveValue('run-1')
+      expect(screen.getByLabelText('选择推演')).toHaveValue('run-1')
     })
   })
 
@@ -69,14 +69,14 @@ describe('Deliberation', () => {
     renderPage()
     await selectRun('run-1')
 
-    const rows = await screen.findAllByText(/standard · 2026-11-13T/)
+    const rows = await screen.findAllByText(/标准 · 2026-11-13T/)
     expect(rows).toHaveLength(2)
     // Newest first: the advisory record (09:00) precedes the strategy record (08:00).
     expect(rows[0]).toHaveTextContent('09:00:00Z')
     expect(rows[1]).toHaveTextContent('08:00:00Z')
 
     fireEvent.click(rows[0])
-    expect(await screen.findByText(/Round 1 · 各 lens 独立打分/)).toBeInTheDocument()
+    expect(await screen.findByText(/第一轮 · 各视角独立打分/)).toBeInTheDocument()
   })
 
   it('launches a strategy-team deliberation and shows the result', async () => {
@@ -85,7 +85,7 @@ describe('Deliberation', () => {
     await selectRun('run-1')
 
     fireEvent.change(screen.getByLabelText('决策主题'), { target: { value: 'Launch?' } })
-    fireEvent.click(screen.getByRole('button', { name: /启动 deliberation/ }))
+    fireEvent.click(screen.getByRole('button', { name: /启动商议/ }))
 
     expect(await screen.findByText('最新结果')).toBeInTheDocument()
     expect(screen.getByText(/#1 Phased rollout/)).toBeInTheDocument()
@@ -103,7 +103,7 @@ describe('Deliberation', () => {
     fireEvent.click(screen.getByRole('button', { name: /顾问团/ }))
     fireEvent.change(screen.getByLabelText('决策'), { target: { value: 'Launch?' } })
     fireEvent.change(screen.getByLabelText(/候选选项/), { target: { value: 'Phased rollout\nFull launch\n' } })
-    fireEvent.click(screen.getByRole('button', { name: /启动 deliberation/ }))
+    fireEvent.click(screen.getByRole('button', { name: /启动商议/ }))
 
     expect(await screen.findByText('最新结果')).toBeInTheDocument()
     const post = fetchMock.mock.calls.find(([input, init]) => String(input).endsWith('/skills/advisory-board') && init?.method === 'POST')
@@ -117,8 +117,8 @@ describe('Deliberation', () => {
     renderPage()
     await selectRun('run-2')
 
-    expect(await screen.findByText(/该 Run 尚未完成/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /启动 deliberation/ })).toBeDisabled()
+    expect(await screen.findByText(/该推演尚未完成/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /启动商议/ })).toBeDisabled()
   })
 
   it('shows the honest 503 banner when launching without a configured LLM', async () => {
@@ -136,12 +136,12 @@ describe('Deliberation', () => {
     await selectRun('run-1')
 
     fireEvent.change(screen.getByLabelText('决策主题'), { target: { value: 'Launch?' } })
-    fireEvent.click(screen.getByRole('button', { name: /启动 deliberation/ }))
+    fireEvent.click(screen.getByRole('button', { name: /启动商议/ }))
 
-    expect(await screen.findByText('未配置 LLM，无法启动 deliberation')).toBeInTheDocument()
+    expect(await screen.findByText('未配置 LLM，无法启动商议')).toBeInTheDocument()
     expect(screen.queryByText('最新结果')).not.toBeInTheDocument()
     // The launcher stays visible and usable.
-    expect(screen.getByRole('button', { name: /启动 deliberation/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /启动商议/ })).toBeEnabled()
   })
 
   it('shows the distinct 502 contract-failure banner for malformed LLM output', async () => {
@@ -158,9 +158,9 @@ describe('Deliberation', () => {
     await selectRun('run-1')
 
     fireEvent.change(screen.getByLabelText('决策主题'), { target: { value: 'Launch?' } })
-    fireEvent.click(screen.getByRole('button', { name: /启动 deliberation/ }))
+    fireEvent.click(screen.getByRole('button', { name: /启动商议/ }))
 
     expect(await screen.findByText(/LLM 输出未通过契约校验（502）/)).toBeInTheDocument()
-    expect(screen.queryByText('未配置 LLM，无法启动 deliberation')).not.toBeInTheDocument()
+    expect(screen.queryByText('未配置 LLM，无法启动商议')).not.toBeInTheDocument()
   })
 })

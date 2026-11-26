@@ -27,7 +27,7 @@ describe('TemplateProvenance', () => {
     for (const template of SKILL_TEMPLATES) {
       expect(screen.getByText(new RegExp(template.id.replace('.', '\\.')))).toBeInTheDocument()
     }
-    expect(screen.getByText(/No license declared in the source repo/)).toBeInTheDocument()
+    expect(screen.getByText(/源仓库未声明许可证/)).toBeInTheDocument()
     expect(screen.getByText(/静态数据/)).toBeInTheDocument()
   })
 })

@@ -86,7 +86,7 @@ async function pickAnchorRun(anchorId: string) {
       <Directions />
     </MemoryRouter>,
   )
-  fireEvent.change(await screen.findByLabelText('锚定 Run'), { target: { value: anchorId } })
+  fireEvent.change(await screen.findByLabelText('锚定推演'), { target: { value: anchorId } })
   await screen.findByRole('button', { name: '生成简报' })
 }
 
@@ -135,7 +135,7 @@ describe('Directions with v2 backtest fixtures', () => {
     await pickAnchorRun(derivation.anchor_run_id)
     fireEvent.click(screen.getByRole('button', { name: '推导方向' }))
     expect(await screen.findByText(/规则版本 derivation-rules-v2/)).toBeTruthy()
-    expect(screen.getByText(new RegExp(`场景家族 ${derivation.family_size} 个 Run`))).toBeTruthy()
+    expect(screen.getByText(new RegExp(`场景家族 ${derivation.family_size} 个推演`))).toBeTruthy()
     expect(screen.getByText(new RegExp(`${derivation.candidates_considered} 个候选`))).toBeTruthy()
     expect(screen.getByText(new RegExp(`已选 ${c.bShort}.*${c.bP50}，${c.bLoss}`))).toBeTruthy()
     expect(screen.getByText(/与规则 最高 P50 重复/)).toBeTruthy()

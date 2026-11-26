@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 
 const TABS = [
   { label: '推演驾驶舱', path: '/cockpit' },
-  { label: 'Deliberation', path: '/cockpit/deliberations' },
+  { label: '商议', path: '/cockpit/deliberations' },
   { label: 'MECE 编写', path: '/cockpit/mece' },
   { label: '变量模板', path: '/cockpit/variable-templates' },
   { label: '分布图表', path: '/cockpit/charts' },

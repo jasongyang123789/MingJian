@@ -17,6 +17,7 @@ import type {
   VariableValidationResult,
 } from '../../api/engineTypes'
 import { distributionSummary, formatHash, formatNumber } from './format'
+import { domainLabel } from '../ui/dataSurfaceUtils'
 import {
   DISTRIBUTION_PARAMS,
   DISTRIBUTION_PARAM_LABELS,
@@ -361,8 +362,8 @@ export function TemplateForm({
         {domainLocked ? (
           <div>
             <span className="mb-1 block text-xs text-slate-500">领域（创建后不可改）</span>
-            <p className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-3 py-2 font-mono text-sm text-slate-300">
-              {draft.domain_id}
+            <p className="rounded-lg border border-slate-700/50 bg-slate-800/40 px-3 py-2 text-sm text-slate-300">
+              {domainLabel(draft.domain_id) || draft.domain_id}
             </p>
           </div>
         ) : domains.length > 0 ? (
@@ -376,7 +377,7 @@ export function TemplateForm({
             >
               {domains.map((domain) => (
                 <option key={domain} value={domain}>
-                  {domain}
+                  {domainLabel(domain) || domain}
                 </option>
               ))}
             </select>
@@ -775,7 +776,7 @@ export function TemplateReadView({
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
-        <KeyValue label="领域" value={template.domain_id} />
+        <KeyValue label="领域" value={domainLabel(template.domain_id) || template.domain_id} />
         <KeyValue label="内置预设" value={template.is_builtin ? '是（只读）' : '否'} />
         <KeyValue label="创建时间" value={template.created_at ?? '—'} />
       </div>

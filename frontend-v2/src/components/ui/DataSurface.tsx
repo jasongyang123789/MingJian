@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Card } from './Card'
-import { asRecord, formatDate, metricNumber, textValue, titleOf } from './dataSurfaceUtils'
+import { asRecord, domainLabel, formatDate, metricNumber, statusLabel, textValue, titleOf } from './dataSurfaceUtils'
 
 export function MetricCard({
   label,
@@ -83,9 +83,14 @@ export function ExpandableRecord({ item, eyebrow }: { item: unknown; eyebrow?: s
           </div>
           {summary && <p className="editorial-copy mt-1 line-clamp-2 text-xs leading-5">{summary}</p>}
           <div className="mono-data mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
-            {textValue(record.status, '') && <span>状态 {textValue(record.status)}</span>}
+            {textValue(record.status, '') && <span>状态 {statusLabel(record.status)}</span>}
             {textValue(record.created_at ?? record.updated_at, '') && <span>{formatDate(record.created_at ?? record.updated_at)}</span>}
-            {textValue(record.source ?? record.domain_id ?? record.trigger_type, '') && <span>{textValue(record.source ?? record.domain_id ?? record.trigger_type)}</span>}
+            {(() => {
+              const third = textValue(record.source ?? record.trigger_type ?? '', '')
+              const domain = domainLabel(record.domain_id)
+              const shown = third || (domain && domain !== '默认' ? domain : '')
+              return shown ? <span>{shown}</span> : null
+            })()}
           </div>
         </div>
         {open ? <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-500" /> : <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-500" />}

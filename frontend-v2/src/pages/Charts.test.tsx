@@ -125,24 +125,24 @@ describe('Charts', () => {
   }
 
   async function selectRun() {
-    fireEvent.change(screen.getByLabelText('选择模拟 Run'), { target: { value: 'run-1' } })
+    fireEvent.change(screen.getByLabelText('选择推演'), { target: { value: 'run-1' } })
     await waitFor(() => {
-      expect(screen.getByText('Ensemble 分布（run-1）')).toBeInTheDocument()
+      expect(screen.getByText('模拟集合分布（run-1）')).toBeInTheDocument()
     })
   }
 
   it('asks for a run before showing any chart', async () => {
     renderPage()
     await waitFor(() => {
-      expect(screen.getByText('请选择一个 Run')).toBeInTheDocument()
+      expect(screen.getByText('请选择一个推演')).toBeInTheDocument()
     })
-    expect(screen.queryByText('Ensemble 分布（run-1）')).not.toBeInTheDocument()
+    expect(screen.queryByText('模拟集合分布（run-1）')).not.toBeInTheDocument()
   })
 
   it('renders ensemble histograms and all robustness charts for a run', async () => {
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -151,7 +151,7 @@ describe('Charts', () => {
     expect(screen.getByRole('img', { name: '策略臂分布直方图' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '配对差值直方图' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '龙卷风图' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Bootstrap 区间图' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '自助法区间图' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: '阈值搜索图' })).toBeInTheDocument()
     // The stored threshold search is unreachable — the honest state shows.
     expect(screen.getByText(/阈值不可达/)).toBeInTheDocument()
@@ -161,13 +161,13 @@ describe('Charts', () => {
     ensemble = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('暂无 Ensemble 结果')).toBeInTheDocument()
+      expect(screen.getByText('暂无模拟集合结果')).toBeInTheDocument()
     })
-    expect(screen.getByText(/POST \/runs\/\{id\}\/monte-carlo/)).toBeInTheDocument()
+    expect(screen.getByText('运行模拟集合')).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '基线臂分布直方图' })).not.toBeInTheDocument()
   })
 
@@ -175,11 +175,11 @@ describe('Charts', () => {
     values = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('Trial 值不可用')).toBeInTheDocument()
+      expect(screen.getByText('试验值不可用')).toBeInTheDocument()
     })
     expect(screen.getByText(/不会用摘要统计量伪造分布/)).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '基线臂分布直方图' })).not.toBeInTheDocument()
@@ -189,7 +189,7 @@ describe('Charts', () => {
     robustness = robustnessReadReachable
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -201,13 +201,13 @@ describe('Charts', () => {
     robustness = { ...robustnessRead, tornado: null, bootstrap: null, threshold_search: null }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
       expect(screen.getByText('尚未运行龙卷风分析')).toBeInTheDocument()
     })
-    expect(screen.getByText('尚未运行 Bootstrap 分析')).toBeInTheDocument()
+    expect(screen.getByText('尚未运行自助法分析')).toBeInTheDocument()
     expect(screen.getByText('尚未运行阈值搜索')).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '龙卷风图' })).not.toBeInTheDocument()
   })
@@ -216,7 +216,7 @@ describe('Charts', () => {
     robustness = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -229,16 +229,16 @@ describe('Charts', () => {
     robustness = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Ensemble')).toBeInTheDocument()
+      expect(screen.getByText('运行模拟集合')).toBeInTheDocument()
     })
     await waitFor(() => {
       expect(screen.getByLabelText('指标')).toHaveValue('cash')
     })
-    fireEvent.click(screen.getByText('运行 Ensemble'))
+    fireEvent.click(screen.getByText('运行模拟集合'))
     const posted = requests.find((request) => request.method === 'POST')
     expect(posted?.url).toBe('/api/runs/run-1/monte-carlo')
     expect(posted?.body).toEqual({ trials: 50, seed: null, metric: 'cash', loss_threshold: 0, strategy_levers: {} })
@@ -254,14 +254,14 @@ describe('Charts', () => {
     ensemble = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Ensemble')).toBeInTheDocument()
+      expect(screen.getByText('运行模拟集合')).toBeInTheDocument()
     })
     fireEvent.change(screen.getByLabelText('指标'), { target: { value: 'pipeline' } })
-    fireEvent.click(screen.getByText('运行 Ensemble'))
+    fireEvent.click(screen.getByText('运行模拟集合'))
     const posted = requests.find((request) => request.method === 'POST')
     expect(posted?.body).toMatchObject({ metric: 'pipeline' })
   })
@@ -271,15 +271,15 @@ describe('Charts', () => {
     runVariables = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
       expect(screen.getByPlaceholderText('如 cash')).toBeInTheDocument()
     })
-    expect(screen.getByText('运行 Ensemble')).toBeDisabled()
+    expect(screen.getByText('运行模拟集合')).toBeDisabled()
     fireEvent.change(screen.getByPlaceholderText('如 cash'), { target: { value: 'readiness' } })
-    fireEvent.click(screen.getByText('运行 Ensemble'))
+    fireEvent.click(screen.getByText('运行模拟集合'))
     const posted = requests.find((request) => request.method === 'POST')
     expect(posted?.body).toMatchObject({ metric: 'readiness' })
   })
@@ -290,13 +290,13 @@ describe('Charts', () => {
     postBody = { detail: { code: 'monte_carlo_unknown_metric', message: "Metric 'nope' is not a state field of domain 'corporate'." } }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Ensemble')).toBeInTheDocument()
+      expect(screen.getByText('运行模拟集合')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('运行 Ensemble'))
+    fireEvent.click(screen.getByText('运行模拟集合'))
     await waitFor(() => {
       expect(screen.getByText(/monte_carlo_unknown_metric：Metric 'nope' is not a state field/)).toBeInTheDocument()
     })
@@ -313,13 +313,13 @@ describe('Charts', () => {
     holdPosts = true
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Ensemble')).toBeInTheDocument()
+      expect(screen.getByText('运行模拟集合')).toBeInTheDocument()
     })
-    const button = screen.getByText('运行 Ensemble')
+    const button = screen.getByText('运行模拟集合')
     fireEvent.click(button)
     await waitFor(() => {
       expect(screen.getByText('运行中…')).toBeDisabled()
@@ -334,7 +334,7 @@ describe('Charts', () => {
     robustness = { ...robustnessRead, tornado: null }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -355,7 +355,7 @@ describe('Charts', () => {
     postBody = { detail: { code: 'robustness_no_ensemble', message: 'Run run-1 has no stored ensemble.' } }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -378,7 +378,7 @@ describe('Charts', () => {
     holdPosts = true
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -398,18 +398,18 @@ describe('Charts', () => {
     robustness = { ...robustnessRead, bootstrap: null }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Bootstrap 分析')).toBeInTheDocument()
+      expect(screen.getByText('运行自助法分析')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('运行 Bootstrap 分析'))
+    fireEvent.click(screen.getByText('运行自助法分析'))
     const posted = requests.find((request) => request.method === 'POST')
     expect(posted?.url).toBe('/api/runs/run-1/robustness/bootstrap')
     expect(posted?.body).toEqual({ statistics: ['mean', 'median', 'p_loss'], draws: 1000, seed: null, level: 0.9 })
     await waitFor(() => {
-      expect(screen.getByRole('img', { name: 'Bootstrap 区间图' })).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: '自助法区间图' })).toBeInTheDocument()
     })
   })
 
@@ -419,17 +419,17 @@ describe('Charts', () => {
     postBody = { detail: { code: 'robustness_no_ensemble', message: 'Run run-1 has no stored ensemble.' } }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Bootstrap 分析')).toBeInTheDocument()
+      expect(screen.getByText('运行自助法分析')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('运行 Bootstrap 分析'))
+    fireEvent.click(screen.getByText('运行自助法分析'))
     await waitFor(() => {
       expect(screen.getByText(/robustness_no_ensemble：Run run-1 has no stored ensemble/)).toBeInTheDocument()
     })
-    expect(screen.queryByRole('img', { name: 'Bootstrap 区间图' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: '自助法区间图' })).not.toBeInTheDocument()
   })
 
   it('disables the bootstrap button while the launch is in flight', async () => {
@@ -437,19 +437,19 @@ describe('Charts', () => {
     holdPosts = true
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByText('运行 Bootstrap 分析')).toBeInTheDocument()
+      expect(screen.getByText('运行自助法分析')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('运行 Bootstrap 分析'))
+    fireEvent.click(screen.getByText('运行自助法分析'))
     await waitFor(() => {
       expect(screen.getByText('运行中…')).toBeDisabled()
     })
     releaseHeldPosts()
     await waitFor(() => {
-      expect(screen.getByRole('img', { name: 'Bootstrap 区间图' })).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: '自助法区间图' })).toBeInTheDocument()
     })
   })
 
@@ -457,7 +457,7 @@ describe('Charts', () => {
     robustness = { ...robustnessRead, threshold_search: null }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -493,7 +493,7 @@ describe('Charts', () => {
     robustness = { ...robustnessRead, threshold_search: null }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -515,14 +515,14 @@ describe('Charts', () => {
     runVariables = null
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
-      expect(screen.getByPlaceholderText('变量 id，如 cash')).toBeInTheDocument()
+      expect(screen.getByPlaceholderText('变量编号，如 cash')).toBeInTheDocument()
     })
     expect(screen.getByText('运行阈值搜索')).toBeDisabled()
-    fireEvent.change(screen.getByPlaceholderText('变量 id，如 cash'), { target: { value: 'cac' } })
+    fireEvent.change(screen.getByPlaceholderText('变量编号，如 cash'), { target: { value: 'cac' } })
     fireEvent.click(screen.getByText('运行阈值搜索'))
     const posted = requests.find((request) => request.method === 'POST')
     expect(posted?.body).toMatchObject({ variable: 'cac', target: 0.5 })
@@ -534,7 +534,7 @@ describe('Charts', () => {
     postBody = { detail: { code: 'robustness_threshold_fixed_variable', message: "Variable 'cash' is fixed; there is no range to search." } }
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {
@@ -552,7 +552,7 @@ describe('Charts', () => {
     holdPosts = true
     renderPage()
     await waitFor(() => {
-      expect(screen.getByLabelText('选择模拟 Run')).toBeInTheDocument()
+      expect(screen.getByLabelText('选择推演')).toBeInTheDocument()
     })
     await selectRun()
     await waitFor(() => {

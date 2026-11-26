@@ -9,6 +9,13 @@ import type {
 } from '../../api/engineTypes'
 import { formatNumber } from './format'
 
+/** 兵棋推演循环的停止原因码 → 中文。 */
+const WARGAME_STOP_LABELS: Record<string, string> = {
+  not_deep: '非深度模式',
+  cap_reached: '已达轮数上限',
+  two_quiet_rounds: '连续两轮无新增致命问题',
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">{children}</h4>
@@ -76,7 +83,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
       </div>
 
       <div>
-        <SectionTitle>Shortlist（{shortlist.ranked.length} 个入围）</SectionTitle>
+        <SectionTitle>入围名单（{shortlist.ranked.length} 个入围）</SectionTitle>
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
@@ -120,7 +127,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
       </div>
 
       <div>
-        <SectionTitle>综合建议（Pyramid）</SectionTitle>
+        <SectionTitle>综合建议（金字塔）</SectionTitle>
         <p className="text-sm font-medium leading-6 text-slate-100">{synthesis.governing_thought}</p>
         <div className="mt-3 space-y-2">
           {synthesis.arguments.map((argument, index) => (
@@ -145,9 +152,9 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
       </div>
 
       <div>
-        <SectionTitle>验证 Panel  tally（≥2 个不同 lens 标记为 fatal 才算 must-address）</SectionTitle>
+        <SectionTitle>验证小组汇总（≥2 个不同视角标记为致命才算必须处理）</SectionTitle>
         {tally.flags.length === 0 ? (
-          <p className="text-sm text-slate-500">Panel 未标记任何 fatal flag。</p>
+          <p className="text-sm text-slate-500">验证小组未标记任何致命问题。</p>
         ) : (
           <div className="space-y-2">
             {tally.flags.map((flag) => (
@@ -162,13 +169,13 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
                 <p className="text-sm text-slate-200">
                   {flag.must_address && (
                     <span className="mr-2 rounded-full border border-red-500/30 bg-red-500/20 px-2 py-0.5 text-[11px] font-medium text-red-300">
-                      MUST ADDRESS
+                      必须处理
                     </span>
                   )}
                   {flag.flag}
                 </p>
-                <p className="mt-0.5 font-mono text-[11px] text-slate-500">
-                  lens：{flag.lenses.join(', ')}（{flag.lens_count} 个独立视角）
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  视角：{flag.lenses.map((lens) => lensLabel(lens)).join('、')}（{flag.lens_count} 个独立视角）
                 </p>
               </div>
             ))}
@@ -179,7 +186,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
       {panel.wargame && (
         <div>
           <SectionTitle>
-            War-game 推演{result.wargame_loop_rounds > 0 ? `（深度模式追加 ${result.wargame_loop_rounds} 轮，${result.wargame_loop_stop_reason}）` : ''}
+            兵棋推演{result.wargame_loop_rounds > 0 ? `（深度模式追加 ${result.wargame_loop_rounds} 轮，${WARGAME_STOP_LABELS[result.wargame_loop_stop_reason] ?? result.wargame_loop_stop_reason}）` : ''}
           </SectionTitle>
           <div className="space-y-2">
             {panel.wargame.scenarios.map((scenario) => (
@@ -194,7 +201,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
           </div>
           {panel.wargame.playbook.length > 0 && (
             <div className="mt-3">
-              <p className="mb-1 text-xs text-slate-500">Playbook（信号 → 响应 → 负责人）：</p>
+              <p className="mb-1 text-xs text-slate-500">应对手册（信号 → 响应 → 负责人）：</p>
               <ul className="space-y-1">
                 {panel.wargame.playbook.map((entry, index) => (
                   <li key={index} className="text-sm text-slate-300">
@@ -209,7 +216,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
 
       {result.tournament && (
         <div>
-          <SectionTitle>Tournament（两两对决，深度模式）</SectionTitle>
+          <SectionTitle>对决评判（两两对决，深度模式）</SectionTitle>
           <p className="mb-2 text-sm text-slate-300">
             胜出：<span className="font-medium text-slate-100">{result.tournament.winner ?? '—'}</span> ·
             胜场：
@@ -232,7 +239,7 @@ export function StrategyTeamResultView({ result }: { result: StrategyTeamResult 
 
       {panel.premortem && (
         <div>
-          <SectionTitle>事前验尸（Pre-mortem）</SectionTitle>
+          <SectionTitle>事前验尸</SectionTitle>
           <p className="text-sm leading-6 text-slate-300">{panel.premortem.failure_narrative}</p>
           <div className="mt-2 space-y-2">
             {panel.premortem.failure_modes.map((mode) => (
@@ -262,6 +269,11 @@ const LENS_LABELS: Record<string, string> = {
   scale_systems: '规模与系统',
   offer_strength: 'Offer 强度',
   future_self: '未来自我',
+  // 验证组视角（verify panel 的 lens id）
+  assumptions: '假设审计',
+  wargame: '兵棋推演',
+  execution: '执行与经济性',
+  premortem: '事前验尸',
 }
 
 function lensLabel(lens: string): string {
@@ -289,7 +301,7 @@ function ScoreTable({
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
-            <th className="py-2 pr-3 font-medium">Lens</th>
+            <th className="py-2 pr-3 font-medium">视角</th>
             {options.map((option) => (
               <th key={option} className="py-2 pr-3 font-medium">
                 {option}
@@ -304,7 +316,7 @@ function ScoreTable({
             return (
               <tr key={row.lens}>
                 <td className="py-2 pr-3 text-slate-200">
-                  {lensLabel(row.lens)} <span className="font-mono text-[11px] text-slate-500">{row.lens}</span>
+                  {lensLabel(row.lens)}
                 </td>
                 {options.map((option) => (
                   <td key={option} className="py-2 pr-3 font-mono text-xs text-slate-300">
@@ -356,16 +368,16 @@ export function AdvisoryBoardResultView({ result }: { result: AdvisoryBoardResul
       )}
 
       <ScoreTable
-        title="Round 1 · 各 lens 独立打分"
+        title="第一轮 · 各视角独立打分"
         rows={result.positions}
         scoreOf={(row) => (row as LensPosition).option_scores}
       />
 
       <div>
-        <SectionTitle>加权方向（lens 分数的加权平均——只是汇总，不是答案）</SectionTitle>
+        <SectionTitle>加权方向（视角分数的加权平均——只是汇总，不是答案）</SectionTitle>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="mb-1 text-xs text-slate-500">Round 1（等权）</p>
+            <p className="mb-1 text-xs text-slate-500">第一轮（等权）</p>
             <ol className="space-y-1">
               {result.weighted_direction_round1.ranking.map((option, index) => (
                 <li key={option} className="text-sm text-slate-300">
@@ -389,14 +401,14 @@ export function AdvisoryBoardResultView({ result }: { result: AdvisoryBoardResul
         </div>
         {result.unanimous_option && (
           <p className="mt-2 text-xs text-slate-500">
-            一致性提示：五个 lens 全部首选 {result.unanimous_option}，强制辩论中已注入 steelman 要求。
+            一致性提示：五个视角全部首选 {result.unanimous_option}，强制辩论中已注入强化反方论证的要求。
           </p>
         )}
       </div>
 
       {result.revisions.length > 0 && (
         <ScoreTable
-          title="Round 3 · 修订后打分"
+          title="第三轮 · 修订后打分"
           rows={result.revisions}
           scoreOf={(row) => (row as LensRevision).revised_scores}
         />
@@ -442,11 +454,11 @@ export function AdvisoryBoardResultView({ result }: { result: AdvisoryBoardResul
           </div>
           <div className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             <p className="text-slate-300">
-              <span className="text-xs text-slate-500">Go 阈值：</span>
+              <span className="text-xs text-slate-500">推进阈值：</span>
               {contract.go_threshold}
             </p>
             <p className="text-slate-300">
-              <span className="text-xs text-slate-500">Kill 准则：</span>
+              <span className="text-xs text-slate-500">终止准则：</span>
               {contract.kill_criterion}
             </p>
             <p className="text-slate-300">
@@ -476,10 +488,10 @@ export function AdvisoryBoardResultView({ result }: { result: AdvisoryBoardResul
           <p className="mt-1 text-xs leading-5 text-slate-400">不做清单：{contract.do_not_do}</p>
           <p className="mt-1 text-xs leading-5 text-slate-400">少数派报告：{contract.minority_report}</p>
           <p className="mt-1 font-mono text-[11px] text-slate-500">
-            lens 权重：
+            视角权重：
             {Object.entries(contract.lens_weights)
-              .map(([lens, weight]) => `${lens}=${weight}`)
-              .join(', ')}
+              .map(([lens, weight]) => `${lensLabel(lens)}=${weight}`)
+              .join('、')}
           </p>
         </div>
       </div>

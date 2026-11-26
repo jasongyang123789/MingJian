@@ -5,8 +5,22 @@ import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorBanner } from '../components/ui/ErrorBanner'
 import { sourcesApi } from '../api/endpoints'
 import { useApi, useApiAction } from '../hooks/useApi'
-import { ExpandableRecord, JsonBlock, MetricCard } from '../components/ui/DataSurface'
-import { asArray, asRecord, titleOf } from '../components/ui/dataSurfaceUtils'
+import { ExpandableRecord, MetricCard } from '../components/ui/DataSurface'
+import { asArray, asRecord, sourceTypeLabel, statusLabel, titleOf } from '../components/ui/dataSurfaceUtils'
+
+/** 显示名取可读名：URL 只取域名，类型码翻成中文，其余原样。 */
+function readableSourceName(record: Record<string, unknown>): string {
+  const display = String(record.display_name ?? record.source_key ?? '')
+  if (!display) return '数据源'
+  if (/^https?:\/\//i.test(display)) {
+    try {
+      return new URL(display).hostname
+    } catch {
+      return display
+    }
+  }
+  return sourceTypeLabel(display) || display
+}
 
 export default function Sources() {
   const { data: states, loading, error, reload } = useApi(() => sourcesApi.listStates())
@@ -27,7 +41,7 @@ export default function Sources() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs text-blue-300">Sources</p>
+          <p className="text-xs text-blue-300">数据源</p>
           <h1 className="mt-1 text-3xl font-semibold text-slate-50">数据源</h1>
           <p className="mt-2 text-sm text-slate-500">
             开源版使用内置公开数据源；自定义数据源连接器保留在 Cloud 和 Enterprise。
@@ -50,12 +64,64 @@ export default function Sources() {
           {stateList.length === 0 ? (
             <CardBody><EmptyState icon="▥" title="暂无源状态" /></CardBody>
           ) : (
-            stateList.map((item, index) => <ExpandableRecord key={index} item={item} eyebrow="state" />)
+            stateList.map((item, index) => <ExpandableRecord key={index} item={item} eyebrow="数据源" />)
           )}
         </Card>
         <Card>
           <CardHeader title="健康与声誉快照" />
-          <CardBody><JsonBlock value={{ health, reputations, snapshots }} /></CardBody>
+          <CardBody className="space-y-4">
+            {reputationList.length === 0 && asArray(health).length === 0 && asArray(snapshots).length === 0 ? (
+              <EmptyState icon="▥" title="暂无健康与声誉数据" />
+            ) : (
+              <>
+                {reputationList.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-xs text-slate-500">
+                          <th className="py-2 pr-3 font-medium">来源名</th>
+                          <th className="py-2 pr-3 font-medium">类型</th>
+                          <th className="py-2 font-medium">声誉分</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {reputationList.map((item, index) => {
+                          const record = asRecord(item)
+                          const score = Number(record.reputation_score)
+                          return (
+                            <tr key={index}>
+                              <td className="py-2 pr-3 text-slate-200">{readableSourceName(record)}</td>
+                              <td className="py-2 pr-3 text-slate-400">{sourceTypeLabel(record.source_type) || '其他'}</td>
+                              <td className="py-2 text-slate-200">{Number.isFinite(score) ? `${Math.round(score * 100)}%` : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {asArray(health).length > 0 && (
+                  <div className="space-y-2">
+                    {asArray(health).map((item, index) => {
+                      const record = asRecord(item)
+                      return (
+                        <div key={index} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="text-slate-300">{sourceTypeLabel(record.source_type) || '数据源'}</span>
+                          <span className="text-xs text-slate-500">
+                            {statusLabel(record.status)}
+                            {Number(record.consecutive_failures) > 0 ? ` · 连续失败 ${record.consecutive_failures} 次` : ''}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {asArray(snapshots).length > 0 && (
+                  <p className="text-xs text-slate-500">快照 {asArray(snapshots).length} 条</p>
+                )}
+              </>
+            )}
+          </CardBody>
         </Card>
       </div>
 

@@ -8,6 +8,7 @@ import type {
   VariableDefinition,
 } from '../../api/engineTypes'
 import { distributionSummary } from './format'
+import { statusLabel } from '../ui/dataSurfaceUtils'
 import { Card, CardBody, CardHeader } from '../ui/Card'
 import { ErrorBanner } from '../ui/ErrorBanner'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
@@ -309,7 +310,7 @@ export function OverrideDirectionForm({
                 </div>
                 <p className="text-xs text-slate-500">
                   分叉步必须是 ≥ 1 的整数；后端会校验该步是否有快照。
-                  {tickCount !== null && `锚定 Run 共 ${tickCount} 步。`}
+                  {tickCount !== null && `锚定推演共 ${tickCount} 步。`}
                 </p>
                 <div className="space-y-3">
                   <span className="block text-xs text-slate-500">变量覆盖（至少一个）</span>
@@ -502,10 +503,10 @@ export function OverrideDirectionForm({
                       {OUTCOME_LABELS[outcome.status]}：{outcome.reason}
                       {outcome.status === 'stored' && outcome.child_run_id && (
                         <span className="block text-xs text-slate-500">
-                          子 Run {outcome.child_run_id}
+                          子推演 {outcome.child_run_id}
                           {outcome.branch_id ? ` · 分支 ${outcome.branch_id}` : ''}
                           {outcome.fork_step !== null ? ` · 分叉步 ${outcome.fork_step}` : ''}
-                          {outcome.child_status ? ` · 状态 ${outcome.child_status}` : ''}
+                          {outcome.child_status ? ` · 状态 ${statusLabel(outcome.child_status)}` : ''}
                         </span>
                       )}
                     </li>

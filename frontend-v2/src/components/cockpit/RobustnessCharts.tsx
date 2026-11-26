@@ -88,7 +88,7 @@ export function BootstrapChart({ bootstrap }: { bootstrap: BootstrapResult }) {
   const height = Math.min(560, 80 + rows.length * 40)
   const first = bootstrap.baseline[0] ?? bootstrap.strategy[0]
   return (
-    <div role="img" aria-label="Bootstrap 区间图">
+    <div role="img" aria-label="自助法区间图">
       <ComposedChart
         layout="vertical"
         width={CHART_WIDTH}

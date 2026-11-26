@@ -21,7 +21,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { consoleApi, agentsApi, simulationApi, evidenceApi, monitoringApi, reportApi, sourcesApi, debateApi, assistantApi } from '../api/endpoints'
 import { useApi, useApiAction } from '../hooks/useApi'
 import { ExpandableRecord, MetricCard, ProgressBar } from '../components/ui/DataSurface'
-import { asArray, asRecord, formatDate, titleOf } from '../components/ui/dataSurfaceUtils'
+import { asArray, asRecord, domainLabel, formatDate, statusLabel, titleOf } from '../components/ui/dataSurfaceUtils'
 
 const decisionTemplates = [
   {
@@ -141,7 +141,7 @@ export default function Dashboard() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="cockpit-kicker">Decision Workspace</p>
+                <p className="cockpit-kicker">决策工作空间</p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-normal text-slate-50 sm:text-3xl md:text-4xl">你现在要判断什么？</h1>
                 <p className="editorial-copy mt-3 max-w-2xl text-base leading-7">提交一个真实决策问题，明鉴会创建战略会话，调度证据采集、推演、辩论和报告生成，并在助手页沉淀为可追踪的决策工作流。</p>
               </div>
@@ -210,14 +210,14 @@ export default function Dashboard() {
 
 	          <div className="rounded-[22px] border border-slate-800/70 bg-slate-950/24 p-4">
             <div className="flex items-center justify-between">
-              <p className="cockpit-kicker">Artifact Preview</p>
+              <p className="cockpit-kicker">成果预览</p>
               <FileText className="h-4 w-4 text-slate-500" />
             </div>
             <div className="mt-5 space-y-4">
               {[
-                ['1', 'Evidence Map', '来源新鲜度、可信度、争议点与引用链'],
-                ['2', 'Debate Trace', '支持方、反方、仲裁方的论证与修正'],
-                ['3', 'Decision Brief', '推荐动作、置信度、风险和监控规则'],
+                ['1', '证据地图', '来源新鲜度、可信度、争议点与引用链'],
+                ['2', '辩论轨迹', '支持方、反方、仲裁方的论证与修正'],
+                ['3', '决策简报', '推荐动作、置信度、风险和监控规则'],
               ].map(([step, title, body]) => (
                 <div key={title} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
 	                  <span className="mono-data grid h-7 w-7 place-items-center rounded-full border border-amber-400/18 bg-amber-500/10 text-xs font-semibold text-amber-300">{step}</span>
@@ -233,10 +233,10 @@ export default function Dashboard() {
       </section>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="计划智能体" value={agents.length} hint={`${readyAgents} ready`} icon={<Bot className="h-5 w-5" />} tone="blue" />
-        <MetricCard label="执行/推演任务" value={runs.length} hint="simulation runs" icon={<FlaskConical className="h-5 w-5" />} tone="violet" />
-        <MetricCard label="验证证据" value={evidence.length} hint={`${debateList.length} debates`} icon={<ShieldCheck className="h-5 w-5" />} tone="emerald" />
-        <MetricCard label="数据源状态" value={`${onlineSources.length}/${sourceList.length}`} hint={`${watchList.length} watch rules`} icon={<Database className="h-5 w-5" />} tone="amber" />
+        <MetricCard label="计划智能体" value={agents.length} hint={`${readyAgents} 个已就绪`} icon={<Bot className="h-5 w-5" />} tone="blue" />
+        <MetricCard label="执行/推演任务" value={runs.length} hint="模拟推演" icon={<FlaskConical className="h-5 w-5" />} tone="violet" />
+        <MetricCard label="验证证据" value={evidence.length} hint={`${debateList.length} 场辩论`} icon={<ShieldCheck className="h-5 w-5" />} tone="emerald" />
+        <MetricCard label="数据源状态" value={`${onlineSources.length}/${sourceList.length}`} hint={`${watchList.length} 条监控规则`} icon={<Database className="h-5 w-5" />} tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr_1.1fr]">
@@ -245,8 +245,9 @@ export default function Dashboard() {
           <CardBody className="space-y-3">
             {sourceList.length === 0 ? <EmptyState icon="📡" title="暂无数据源状态" /> : sourceList.slice(0, 7).map((source, index) => {
               const record = asRecord(source)
-              const status = String(record.status ?? 'unknown')
-              const ok = ['active', 'online', 'ok', 'healthy'].includes(status.toLowerCase())
+              const rawStatus = String(record.status ?? '')
+              const ok = ['active', 'online', 'ok', 'healthy'].includes(rawStatus.toLowerCase())
+              const status = !rawStatus || rawStatus.toLowerCase() === 'unknown' ? '未接入' : statusLabel(rawStatus)
               return (
                 <div key={String(record.key ?? record.id ?? index)} className="flex items-center justify-between gap-3 rounded-lg border border-slate-800/60 bg-slate-950/20 px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-3">
@@ -286,7 +287,7 @@ export default function Dashboard() {
                 <div key={String(record.id ?? index)} className="grid grid-cols-[minmax(0,1fr)_88px] items-center gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm text-slate-300">{titleOf(run, `任务 ${index + 1}`)}</p>
-                    <p className="text-xs text-slate-600">{String(record.domain_id ?? record.status ?? 'running')}</p>
+                    <p className="text-xs text-slate-600">{domainLabel(record.domain_id) || (record.status ? statusLabel(record.status) : '运行中')}</p>
                   </div>
                   <div className="space-y-1">
                     <ProgressBar value={pct} />
@@ -303,7 +304,7 @@ export default function Dashboard() {
         <Card>
           <CardHeader title="最近生成的报告/预测/辩论" />
           {recentReports.length === 0 ? <CardBody><EmptyState icon="📄" title="暂无生成内容" /></CardBody> : recentReports.map((item, index) => (
-            <ExpandableRecord key={index} item={item} eyebrow="recent" />
+            <ExpandableRecord key={index} item={item} eyebrow="最近" />
           ))}
         </Card>
         <Card>

@@ -44,7 +44,7 @@ describe('TornadoChart', () => {
 describe('BootstrapChart', () => {
   it('renders interval bars with estimate dots for both arms', () => {
     render(<BootstrapChart bootstrap={bootstrap} />)
-    const chart = screen.getByRole('img', { name: 'Bootstrap 区间图' })
+    const chart = screen.getByRole('img', { name: '自助法区间图' })
     const ticks = [...chart.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value')].map(
       (node) => node.textContent,
     )

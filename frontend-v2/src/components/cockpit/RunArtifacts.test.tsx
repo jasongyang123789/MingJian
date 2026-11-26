@@ -52,7 +52,7 @@ describe('EnsembleView', () => {
     expect(screen.getByText('98.9')).toBeInTheDocument()
     expect(screen.getByText('30.0%')).toBeInTheDocument()
     expect(screen.getByText(/40.61/)).toBeInTheDocument()
-    expect(screen.getByText(/ensemble ens-1/)).toBeInTheDocument()
+    expect(screen.getByText(/模拟集合 ens-1/)).toBeInTheDocument()
   })
 })
 
@@ -113,8 +113,8 @@ describe('RobustnessView', () => {
 describe('DecisionGatesView', () => {
   it('renders registrations with pre-registration evidence and evaluations with outcomes', () => {
     render(<DecisionGatesView data={decisionGatesRead} />)
-    expect(screen.getByText(/p50-above-zero: baseline.p50 >= 0/)).toBeInTheDocument()
-    expect(screen.getByText(/注册时 ensemble 不存在/)).toBeInTheDocument()
+    expect(screen.getByText(/p50-above-zero: 基线.p50 >= 0/)).toBeInTheDocument()
+    expect(screen.getByText(/注册时模拟集合 不存在/)).toBeInTheDocument()
     expect(screen.getByText('全部通过')).toBeInTheDocument()
     expect(screen.getByText(/预注册：是/)).toBeInTheDocument()
     expect(screen.getByText(/PASS/)).toBeInTheDocument()

@@ -104,7 +104,7 @@ describe('MeceAuthoring', () => {
     fireEvent.change(screen.getByLabelText('决策主题'), { target: { value: 'Launch?' } })
     fireEvent.click(screen.getByRole('button', { name: /提议分解树/ }))
 
-    expect(await screen.findByText('未配置 LLM，无法启动 deliberation')).toBeInTheDocument()
+    expect(await screen.findByText('未配置 LLM，无法启动商议')).toBeInTheDocument()
   })
 
   it('validates pasted tree JSON without an LLM call', async () => {

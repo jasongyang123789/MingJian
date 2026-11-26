@@ -11,7 +11,7 @@ describe('LlmStatusBanner', () => {
       JSON.stringify({ detail: { code: 'skill_llm_unavailable', message: 'No LLM is configured.' } }),
     )
     render(<LlmStatusBanner error={error} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('未配置 LLM，无法启动 deliberation')
+    expect(screen.getByRole('alert')).toHaveTextContent('未配置 LLM，无法启动商议')
     expect(screen.getByRole('alert')).toHaveTextContent('503 skill_llm_unavailable')
     expect(screen.queryByText(/契约校验/)).not.toBeInTheDocument()
   })

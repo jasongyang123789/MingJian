@@ -13,13 +13,15 @@ const STYLES: Record<string, string> = {
   offline: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
 }
 
+import { statusLabel } from './dataSurfaceUtils'
+
 export function StatusBadge({ status }: { status?: string | null }) {
   if (!status) return null
   const s = status.toLowerCase()
   const style = STYLES[s] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'
   return (
 	    <span className={`mono-data inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${style}`}>
-      {status}
+      {statusLabel(status)}
     </span>
   )
 }

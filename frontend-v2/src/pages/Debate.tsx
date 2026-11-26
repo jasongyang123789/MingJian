@@ -266,27 +266,27 @@ export default function Debate() {
                   <label className="block text-xs text-slate-500 mb-1.5">目标类型</label>
                   <select value={formTargetType} onChange={(e) => setFormTargetType(e.target.value as 'run' | 'claim')}
                     className="w-full bg-slate-800/40 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500/50">
-                    <option value="run">Run</option>
-                    <option value="claim">Claim</option>
+                    <option value="run">推演</option>
+                    <option value="claim">论断</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1.5">模式</label>
                   <select value={formMode} onChange={(e) => setFormMode(e.target.value as 'full' | 'fast')}
                     className="w-full bg-slate-800/40 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500/50">
-                    <option value="full">Full</option>
-                    <option value="fast">Fast</option>
+                    <option value="full">完整</option>
+                    <option value="fast">快速</option>
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1.5">Run ID / Claim ID *</label>
+                <label className="block text-xs text-slate-500 mb-1.5">推演编号 / 论断编号 *</label>
                 <input value={formTargetId} onChange={(e) => setFormTargetId(e.target.value)}
-                  placeholder={(runs || [])[0] ? `默认使用最新 Run：${String(((runs || [])[0] as Record<string, unknown>).id || '').slice(0, 8)}` : '输入目标 ID'}
+                  placeholder={(runs || [])[0] ? `默认使用最新推演：${String(((runs || [])[0] as Record<string, unknown>).id || '').slice(0, 8)}` : '输入目标 ID'}
                   className="w-full bg-slate-800/40 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50" />
               </div>
               <div className="rounded-lg bg-slate-800/30 border border-slate-700/50 p-3">
-                <div className="text-xs text-slate-500 mb-2">Community 固定参与智能体</div>
+                <div className="text-xs text-slate-500 mb-2">社区固定参与智能体</div>
                 <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
                   {agentList.slice(0, 9).map((a) => (
                     <div key={a.role_key} className="flex items-center gap-2 p-2 rounded-lg text-xs bg-slate-900/40 text-slate-300 border border-slate-800">

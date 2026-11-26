@@ -51,7 +51,7 @@ function mockAllFragments(fragments: Record<string, unknown> = {}) {
 }
 
 async function selectRun() {
-  fireEvent.change(screen.getByLabelText('选择模拟 Run'), { target: { value: 'run-1' } })
+  fireEvent.change(screen.getByLabelText('选择推演'), { target: { value: 'run-1' } })
   await waitFor(() => {
     expect(screen.getByText('MECE 分解')).toBeInTheDocument()
   })
@@ -73,7 +73,7 @@ describe('Cockpit', () => {
   it('renders every Sprint 1–5 fragment section for the selected run', async () => {
     mockAllFragments()
     renderPage()
-    expect(await screen.findByLabelText('选择模拟 Run')).toBeInTheDocument()
+    expect(await screen.findByLabelText('选择推演')).toBeInTheDocument()
     await selectRun()
 
     expect(await screen.findByText('MECE 通过')).toBeInTheDocument()
@@ -92,11 +92,11 @@ describe('Cockpit', () => {
   it('shows an empty state, not an error, when a fragment is missing (404)', async () => {
     mockAllFragments({ '/api/runs/run-1/monte-carlo': null, '/api/runs/run-1/robustness': null })
     renderPage()
-    expect(await screen.findByLabelText('选择模拟 Run')).toBeInTheDocument()
+    expect(await screen.findByLabelText('选择推演')).toBeInTheDocument()
     await selectRun()
 
-    expect(await screen.findByText('该 Run 尚未运行 Monte Carlo')).toBeInTheDocument()
-    expect(screen.getByText('该 Run 尚未存储稳健性分析')).toBeInTheDocument()
+    expect(await screen.findByText('该推演尚未运行蒙特卡洛')).toBeInTheDocument()
+    expect(screen.getByText('该推演尚未存储稳健性分析')).toBeInTheDocument()
     // Other sections still render.
     expect(screen.getAllByText('Launch decision')).toHaveLength(3)
   })
@@ -104,14 +104,14 @@ describe('Cockpit', () => {
   it('prompts to select a run before showing any fragment', async () => {
     mockAllFragments()
     renderPage()
-    expect(await screen.findByText('驾驶舱展示该 Run 已存储的全部 Sprint 1–5 工件')).toBeInTheDocument()
+    expect(await screen.findByText('驾驶舱展示该推演已存储的全部 Sprint 1–5 工件')).toBeInTheDocument()
     expect(screen.queryByText('MECE 分解')).not.toBeInTheDocument()
   })
 
   it('scopes the calibration history to the selected run domain', async () => {
     const fetchMock = mockAllFragments()
     renderPage()
-    expect(await screen.findByLabelText('选择模拟 Run')).toBeInTheDocument()
+    expect(await screen.findByLabelText('选择推演')).toBeInTheDocument()
     await selectRun()
     await screen.findByText(/tmpl-cal-1/)
     const fitsCall = fetchMock.mock.calls.find(([input]) => String(input).startsWith('/api/calibration/fits'))

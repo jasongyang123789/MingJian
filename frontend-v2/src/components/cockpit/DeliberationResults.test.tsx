@@ -22,12 +22,12 @@ describe('StrategyTeamResultView', () => {
 
   it('highlights must-address flags and shows single-lens flags without the badge', () => {
     render(<DeliberationRecordView record={strategyTeamRecord} />)
-    expect(screen.getAllByText('MUST ADDRESS')).toHaveLength(2)
+    expect(screen.getAllByText('必须处理')).toHaveLength(2)
     expect(screen.getByText('Demand growth assumption is untested')).toBeInTheDocument()
     // The capacity flag appears twice: once in the tally, once as a pre-mortem failure mode.
     expect(screen.getAllByText('Delivery capacity cannot cover launch volume')).toHaveLength(2)
     expect(screen.getByText('Rival undercuts price within one quarter')).toBeInTheDocument()
-    expect(screen.getByText(/lens：assumptions, wargame/)).toBeInTheDocument()
+    expect(screen.getByText(/视角：假设审计、兵棋推演/)).toBeInTheDocument()
   })
 
   it('renders the war-game playbook and pre-mortem failure modes', () => {
@@ -39,14 +39,14 @@ describe('StrategyTeamResultView', () => {
 
   it('renders the tournament bracket and loop info in deep mode only', () => {
     const { unmount } = render(<DeliberationRecordView record={strategyTeamRecord} />)
-    expect(screen.queryByText(/Tournament/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/对决评判/)).not.toBeInTheDocument()
     unmount()
 
     render(<DeliberationRecordView record={strategyTeamDeepRecord} />)
-    expect(screen.getByText(/Tournament（两两对决，深度模式）/)).toBeInTheDocument()
+    expect(screen.getByText(/对决评判（两两对决，深度模式）/)).toBeInTheDocument()
     expect(screen.getByText(/Phased rollout 2，Full launch 1，Partner-led 0/)).toBeInTheDocument()
     expect(screen.getByText(/Phased rollout vs Full launch → 胜者/)).toBeInTheDocument()
-    expect(screen.getByText(/深度模式追加 2 轮，two_quiet_rounds/)).toBeInTheDocument()
+    expect(screen.getByText(/深度模式追加 2 轮，连续两轮无新增致命问题/)).toBeInTheDocument()
   })
 
   it('shows stage provenance with template id + version for every stage', () => {
@@ -61,8 +61,8 @@ describe('StrategyTeamResultView', () => {
 describe('AdvisoryBoardResultView', () => {
   it('renders lens score tables, weighted directions, and the debate', () => {
     render(<DeliberationRecordView record={advisoryBoardRecord} />)
-    expect(screen.getByText(/Round 1 · 各 lens 独立打分/)).toBeInTheDocument()
-    expect(screen.getByText(/Round 3 · 修订后打分/)).toBeInTheDocument()
+    expect(screen.getByText(/第一轮 · 各视角独立打分/)).toBeInTheDocument()
+    expect(screen.getByText(/第三轮 · 修订后打分/)).toBeInTheDocument()
     expect(screen.getByText('#1 Phased rollout · 7.2')).toBeInTheDocument()
     expect(screen.getByText('#1 Phased rollout · 7.4545')).toBeInTheDocument()
     expect(screen.getByText('Speed of mechanism vs cost of being wrong.')).toBeInTheDocument()

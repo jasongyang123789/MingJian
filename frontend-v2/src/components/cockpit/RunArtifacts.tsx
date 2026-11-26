@@ -11,6 +11,66 @@ import type {
   VariableRunRead,
 } from '../../api/engineTypes'
 import { distributionSummary, formatHash, formatNumber, formatShare } from './format'
+import { domainLabel } from '../ui/dataSurfaceUtils'
+
+/** 工件里的原始码 → 中文标签。未命中的码不直接显示，调用处回退隐藏。 */
+const ISSUE_KIND_LABELS: Record<string, string> = {
+  missing_parameter: '缺少参数',
+  invalid_std: '标准差无效',
+  degenerate_bounds: '边界退化',
+  invalid_bounds: '边界无效',
+  invalid_probability: '概率无效',
+  correlation_duplicate_pair: '相关性配对重复',
+  correlation_self_pair: '相关性自配对',
+  correlation_unknown_variable: '相关性引用未知变量',
+  duplicate_scope_tag: '作用域标签重复',
+  duplicate_state_field: '状态字段重复',
+  duplicate_variable: '变量重复',
+  empty_set: '变量集为空',
+  empty_state_field_name: '状态字段名为空',
+  invalid_policy_thresholds: '策略阈值无效',
+  invalid_scope_tag: '作用域标签无效',
+  missing_evidence_ref: '缺少证据引用',
+  missing_unit: '缺少单位',
+  too_many_variables: '变量过多',
+  formula_too_deep: '公式嵌套过深',
+  formula_invalid_expression: '公式表达式无效',
+  formula_nonfinite_literal: '公式字面量非有限数',
+  formula_unknown_ref: '公式引用未知变量',
+  formula_unknown_operator: '公式算子未知',
+  formula_wrong_arity: '公式算子参数个数错误',
+  formula_division_by_zero: '公式除以零',
+}
+
+const STATISTIC_LABELS: Record<string, string> = {
+  mean: '均值',
+  median: '中位数',
+  p_loss: '亏损概率',
+}
+
+const THRESHOLD_MODE_LABELS: Record<string, string> = {
+  p_loss: '亏损概率',
+  arm_flip: '臂翻转',
+}
+
+const FIT_KIND_LABELS: Record<string, string> = {
+  policy_thresholds: '策略阈值',
+  rule_weights: '规则权重',
+}
+
+const DIRECTION_LABELS: Record<string, string> = {
+  increase: '增大',
+  decrease: '减小',
+}
+
+const ARM_LABELS: Record<string, string> = {
+  baseline: '基线',
+  strategy: '策略',
+}
+
+function labelOrEmpty(map: Record<string, string>, value: string): string {
+  return map[value] ?? ''
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -38,8 +98,8 @@ export function VariableBindingsView({ data }: { data: VariableRunRead }) {
       {template && (
         <div>
           <SectionTitle>模板快照</SectionTitle>
-          <KeyValue label="模板" value={`${template.name} (${template.id})`} />
-          <KeyValue label="领域" value={template.domain_id} />
+          <KeyValue label="模板" value={template.name} />
+          <KeyValue label="领域" value={domainLabel(template.domain_id) || template.domain_id} />
           <KeyValue label="内置预设" value={template.is_builtin ? '是（只读）' : '否'} />
           {template.state_fields.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-x-6 sm:grid-cols-3">
@@ -121,11 +181,16 @@ export function VariableBindingsView({ data }: { data: VariableRunRead }) {
             {validation.is_valid ? '变量表有效' : '变量表无效'}
           </span>
           <span className="text-xs text-slate-500">{validation.variable_count} 个变量</span>
-          {validation.issues.map((issue, index) => (
-            <span key={index} className="text-xs text-red-300">
-              {issue.kind} · {issue.variable} · {issue.message}
-            </span>
-          ))}
+          {validation.issues.map((issue, index) => {
+            const kindLabel = labelOrEmpty(ISSUE_KIND_LABELS, issue.kind)
+            return (
+              <span key={index} className="text-xs text-red-300">
+                {kindLabel ? `${kindLabel} · ` : ''}
+                {issue.variable ? `${issue.variable} · ` : ''}
+                {issue.message}
+              </span>
+            )
+          })}
         </div>
       )}
     </div>
@@ -165,9 +230,9 @@ export function EnsembleView({ result }: { result: MonteCarloResult }) {
       {Object.keys(result.strategy_levers).length > 0 && (
         <KeyValue
           label="策略杠杆"
-          value={Object.entries(result.strategy_levers)
-            .map(([key, value]) => `${key}=${formatNumber(value)}`)
-            .join(', ')}
+          value={`${Object.keys(result.strategy_levers).length} 项：${Object.values(result.strategy_levers)
+            .map((value) => formatNumber(value))
+            .join('、')}`}
         />
       )}
       <div className="overflow-x-auto">
@@ -198,10 +263,9 @@ export function EnsembleView({ result }: { result: MonteCarloResult }) {
           <KeyValue label="平均差值" value={formatNumber(result.paired.mean_delta)} />
           <KeyValue label="P10 / P50 / P90" value={`${formatNumber(result.paired.p10)} / ${formatNumber(result.paired.p50)} / ${formatNumber(result.paired.p90)}`} />
           <KeyValue label="策略更优概率" value={formatShare(result.paired.p_strategy_better)} />
-          <KeyValue label="协议" value={result.protocol} />
         </div>
       </div>
-      <p className="font-mono text-[11px] text-slate-600">ensemble {result.ensemble_id}</p>
+      <p className="font-mono text-[11px] text-slate-600">模拟集合 {result.ensemble_id}</p>
     </div>
   )
 }
@@ -212,7 +276,6 @@ export function DeterminismView({ data }: { data: DeterminismRead }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
         <KeyValue label="种子" value={data.seed} />
-        <KeyValue label="协议" value={data.protocol} />
         <KeyValue label="输入哈希" value={formatHash(data.input_hash)} />
       </div>
       {ticks.length > 0 && (
@@ -319,7 +382,7 @@ export function RobustnessView({ data }: { data: RobustnessRead }) {
 
       {threshold && (
         <div>
-          <SectionTitle>阈值搜索 · {threshold.variable}（{threshold.mode}，目标 {formatNumber(threshold.target)}）</SectionTitle>
+          <SectionTitle>阈值搜索 · {threshold.variable}（{labelOrEmpty(THRESHOLD_MODE_LABELS, threshold.mode) || threshold.mode}，目标 {formatNumber(threshold.target)}）</SectionTitle>
           {threshold.reachable && threshold.threshold !== null ? (
             <div className="grid grid-cols-2 gap-x-6 sm:grid-cols-3">
               <KeyValue label="阈值" value={formatNumber(threshold.threshold)} />
@@ -360,7 +423,7 @@ export function RobustnessView({ data }: { data: RobustnessRead }) {
                 bootstrap[arm].map((interval) => (
                   <tr key={`${arm}-${interval.statistic}`}>
                     <td className="py-2 pr-3">{arm === 'baseline' ? '基线' : '策略'}</td>
-                    <td className="py-2 pr-3 font-mono text-xs">{interval.statistic}</td>
+                    <td className="py-2 pr-3 text-xs">{labelOrEmpty(STATISTIC_LABELS, interval.statistic) || interval.statistic}</td>
                     <td className="py-2 pr-3 font-mono text-xs">{formatNumber(interval.estimate)}</td>
                     <td className="py-2 pr-3 font-mono text-xs">{formatNumber(interval.low)}</td>
                     <td className="py-2 pr-3 font-mono text-xs">{formatNumber(interval.high)}</td>
@@ -402,14 +465,14 @@ export function DecisionGatesView({ data }: { data: DecisionGatesRead }) {
                 {registration.status === 'active' ? '生效中' : '已取代'}
               </span>
               <span className="text-xs text-slate-500">
-                注册时 ensemble {registration.ensemble_existed_at_registration ? '已存在' : '不存在'}
+                注册时模拟集合 {registration.ensemble_existed_at_registration ? '已存在' : '不存在'}
                 {registration.ensemble_id ? ` · ${registration.ensemble_id}` : ''}
               </span>
             </div>
             <ul className="mt-2 space-y-1">
               {registration.gates.map((gate) => (
                 <li key={gate.name} className="font-mono text-xs text-slate-300">
-                  {gate.name}: {gate.arm}.{gate.metric} {gate.operator} {formatNumber(gate.threshold)}
+                  {gate.name}: {labelOrEmpty(ARM_LABELS, gate.arm) || gate.arm}.{gate.metric} {gate.operator} {formatNumber(gate.threshold)}
                   {gate.metric === 'expected_shortfall' ? ` (α=${formatNumber(gate.alpha)})` : ''}
                 </li>
               ))}
@@ -435,7 +498,7 @@ export function DecisionGatesView({ data }: { data: DecisionGatesRead }) {
                     {evaluation.all_passed ? '全部通过' : '有门未通过'}
                   </span>
                   <span className="text-xs text-slate-500">
-                    预注册：{evaluation.pre_registered ? '是' : '否'} · ensemble {evaluation.ensemble_id}
+                    预注册：{evaluation.pre_registered ? '是' : '否'} · 模拟集合 {evaluation.ensemble_id}
                   </span>
                 </div>
                 <ul className="mt-2 space-y-1">
@@ -539,10 +602,10 @@ export function CalibrationFitsView({ fits }: { fits: CalibrationFitRead[] }) {
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-mono text-xs text-slate-400">{fit.id}</span>
               <span className="rounded-full border border-slate-700/60 bg-slate-800/40 px-2 py-0.5 text-[11px] text-slate-300">
-                {fit.kind}
+                {labelOrEmpty(FIT_KIND_LABELS, fit.kind) || fit.kind}
               </span>
               <span className="text-xs text-slate-500">
-                {fit.domain_id}
+                {domainLabel(fit.domain_id) || fit.domain_id}
                 {fit.metric ? ` · 目标 ${fit.metric}` : ''} · {fit.n_observations} 个观测 · λ=
                 {formatNumber(fit.ridge_strength)}
               </span>
@@ -555,7 +618,7 @@ export function CalibrationFitsView({ fits }: { fits: CalibrationFitRead[] }) {
             )}
             {metricChanges.map((change) => (
               <div key={change.metric} className="mt-2 font-mono text-xs text-slate-300">
-                {change.metric}（{change.preferred_direction}）：alert {formatNumber(change.prior_alert_threshold)} →{' '}
+                {change.metric}（{labelOrEmpty(DIRECTION_LABELS, change.preferred_direction) || change.preferred_direction}）：alert {formatNumber(change.prior_alert_threshold)} →{' '}
                 {formatNumber(change.fitted_alert_threshold)}；critical {formatNumber(change.prior_critical_threshold)} →{' '}
                 {formatNumber(change.fitted_critical_threshold)}
                 {change.unchanged_reason && (
