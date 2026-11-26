@@ -23,10 +23,32 @@ export function textValue(value: unknown, fallback = '—') {
 
 export function titleOf(item: unknown, fallback = '未命名') {
   const record = asRecord(item)
-  return textValue(
-    record.title ?? record.name ?? record.topic ?? record.label ?? record.statement ?? record.id,
-    fallback
+  const named = textValue(
+    record.title ?? record.name ?? record.topic ?? record.label ?? record.statement,
+    ''
   )
+  if (named) return named
+  // 没有名字时不再直接露编号：用公司/领域 + 创建时间拼一个可读标签
+  const who = textValue(
+    record.company_id ?? record.company ?? record.domain_id ?? record.domain,
+    ''
+  )
+  const when = shortDate(record.created_at ?? record.createdAt ?? record.updated_at ?? record.timestamp)
+  const label = [who, when].filter(Boolean).join(' · ')
+  if (label) return label
+  return fallback
+}
+
+/** 紧凑日期：2026-11-26T05:47:16 → "11-26 13:47"（本地时间） */
+export function shortDate(value: unknown) {
+  if (typeof value !== 'string' || !value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const min = String(date.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${min}`
 }
 
 export function formatDate(value: unknown) {

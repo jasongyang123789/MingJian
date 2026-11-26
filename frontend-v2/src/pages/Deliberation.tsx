@@ -326,7 +326,6 @@ export default function Deliberation() {
                     <span className="text-sm text-slate-300">
                       {record.mode} · {record.created_at}
                     </span>
-                    <span className="font-mono text-[11px] text-slate-600">{record.id}</span>
                   </div>
                   {expandedId === record.id ? (
                     <ChevronDown className="h-4 w-4 text-slate-500" />
