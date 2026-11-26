@@ -19,7 +19,7 @@ python3 probe_gate.py
 # 3. Runners, in order (all write under $BACKTEST_RUN_DIR; ambient env —
 #    do NOT apply `env -u NO_PROXY -u no_proxy` to these urllib scripts)
 python3 acme_smoke.py      # Acme P50 must be exactly 99.8143
-python3 run_classic.py     # Huawei / Nokia
+python3 run_classic.py     # Huawei / Nokia (+ Blockbuster via --case blockbuster)
 python3 run_desay.py       # Desay 2015 / 2020
 python3 run_profit_mc.py   # profit MC per case x arm
 python3 analyze_desay.py   # prints bands + trajectories (stdout)
@@ -71,5 +71,12 @@ not directly comparable (the model form changed, not the sampling).
   `reference/seamfix/` (B-arm `09-child-replay` files, ON + OFF).
 - The 2018 Desay case is NOT part of this harness (separate case build,
   `fix/desay-2018-case`, marked non-independent).
+- Blockbuster 2000 is a PARTIAL case (branch `fix/blockbuster-partial-case`,
+  2026-11-26; Ho 2026-11-24): direction + magnitude + revenue milestone
+  only, profit NOT built (1999 net margin −1.55% is below the product
+  profit chain's [0.02, 0.25] clamp). Run it explicitly with
+  `python3 run_classic.py --case blockbuster` on its own scratch backend
+  and run dir — it is NOT part of the four-case table above, and
+  `run_profit_mc.py` / `score_headlines.py` must never be run for it.
 - `run_desay_gapb.py` is intentionally not included (gapb-specific retest,
   not part of the four-case harness).

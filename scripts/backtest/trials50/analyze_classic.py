@@ -22,6 +22,9 @@ RAW = os.path.join(HERE, "raw-classic")
 REALIZED = {
     "huawei": "B 坚持投入",
     "nokia": "A 坚持Symbian",
+    # Blockbuster realized arm is A (stayed with stores); B (buy/partner
+    # Netflix) is the historically correct direction, scored separately.
+    "blockbuster": "A 坚持门店模式",
 }
 
 
@@ -48,7 +51,7 @@ def band(con, trials, field, tick):
 
 def main():
     con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-    for case in ("huawei", "nokia"):
+    for case in ("huawei", "nokia", "blockbuster"):
         mc = json.load(open(os.path.join(RAW, case, "03-anchor-monte-carlo.json")))["body"]
         mcr = json.load(open(os.path.join(RAW, case, "03b-anchor-monte-carlo-revenue.json")))["body"]
         trials = mc["trial_run_ids"]["baseline"]

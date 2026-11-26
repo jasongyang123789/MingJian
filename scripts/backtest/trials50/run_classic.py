@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Classic-case backtests on merged mainline e047f50: Huawei 2000 / Nokia 2007.
-(Blockbuster NOT run in this round, per the task. Copied from
+Blockbuster 2000 runs as a PARTIAL case (branch fix/blockbuster-partial-case,
+2026-11-26; Ho 2026-11-24: direction + magnitude + revenue milestone,
+profit NOT built — 1999 net margin -1.55%, below the product profit
+chain's [0.02, 0.25] clamp, so no profit variable and no margin wiring;
+the corporate template's default profit state field is computed by the
+backend but is NEVER scored or cited for this case). Copied from
 run_backtests_rerun.py; only BASE/OUT/case-list changed.)
 
 PROFIT MIGRATION (2026-11-23, Ho 11:05 order): the case-level decoupled
@@ -51,7 +56,7 @@ Modeling conventions (labeled, see REPORT.md for the full audit):
 - Arm growth rates are set from DECISION-POINT reasoning only, never tuned
   to the actual outcome. Sensitivity is reported in REPORT.md.
 
-Usage: python3 run_classic.py [--case huawei|nokia|all] [--skip-derive]
+Usage: python3 run_classic.py [--case huawei|nokia|blockbuster|all] [--skip-derive]
 Writes raw JSON per step to raw/<case>/ and a summary to summary.json.
 """
 from __future__ import annotations
@@ -401,6 +406,19 @@ CASES = {
         ],
     },
     "blockbuster": {
+        # PARTIAL CASE (Ho 2026-11-24; built 2026-11-26, branch
+        # fix/blockbuster-partial-case): direction + magnitude + revenue
+        # milestone only. PROFIT NOT BUILT: no profit variable, no margin
+        # wiring — 1999 net margin is -1.55% (net loss $69.2M on revenues
+        # $4,463.5M, 1999 10-K), and the pre-decision two-year mean is
+        # also negative (1998 net loss $336.6M), so margin_base AND
+        # margin_longrun would both fall below the corporate profit
+        # chain's [0.02, 0.25] clamp (template_spec.py) and the chain
+        # would pin profit at revenue x 2% by construction. The
+        # template's default profit state field is computed by the
+        # backend but is never scored or cited for this case. The
+        # $50M Netflix anecdote is DISPUTED (Antioco denied a formal
+        # acquisition discussion) and is never used as a case input.
         "company_id": "backtest-blockbuster-2000",
         "company_name": "Blockbuster (2000 retrospective)",
         "market": "video-rental",
@@ -720,10 +738,10 @@ def run_case(name: str, spec: dict, skip_derive: bool = False) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--case", choices=["huawei", "nokia", "all"], default="all")
+    ap.add_argument("--case", choices=["huawei", "nokia", "blockbuster", "all"], default="all")
     ap.add_argument("--skip-derive", action="store_true")
     args = ap.parse_args()
-    names = ["huawei", "nokia"] if args.case == "all" else [args.case]
+    names = ["huawei", "nokia", "blockbuster"] if args.case == "all" else [args.case]
     summary = {}
     for name in names:
         summary[name] = run_case(name, CASES[name], skip_derive=args.skip_derive)
