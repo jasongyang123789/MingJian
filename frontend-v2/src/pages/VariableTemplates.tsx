@@ -58,9 +58,8 @@ function isCalibratedFit(fit: CalibrationFitRead): fit is CalibrationFitRead & {
 }
 
 export default function VariableTemplates() {
-  const { data: templates, loading, error, reload } = useApi(
-    () => variablesApi.listTemplates(),
-    [],
+  const { data: templates, loading, error, reload } = useApi(() =>
+    variablesApi.listTemplates(),
   )
   const [fits, setFits] = useState<CalibrationFitRead[]>([])
   const [fitsNote, setFitsNote] = useState<string | null>(null)
